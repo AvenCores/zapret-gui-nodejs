@@ -4,7 +4,7 @@
  * `zapret:on-test-output` / `zapret:on-download-progress` events.
  * @module main/ipc-handlers
  */
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -252,7 +252,15 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.relaunchAsAdmin, async () => {
     const exe = process.execPath
-    return relaunchAppAsAdmin(exe, process.argv.slice(1))
+    const ok = await relaunchAppAsAdmin(exe, process.argv.slice(1))
+    if (ok && app.isPackaged) {
+      // Elevated copy is starting — close this non-admin instance.
+      // Delayed so the IPC response is delivered before teardown.
+      // (In dev mode we stay alive: a raw elevated electron would lack the dev env.)
+      sendLog('app', 'info', 'Restarting with administrator rights — closing this instance.')
+      setTimeout(() => app.quit(), 500).unref?.()
+    }
+    return ok
   })
 
   ipcMain.handle(IPC.exportLogs, async () => {
