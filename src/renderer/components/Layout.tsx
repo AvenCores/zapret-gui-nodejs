@@ -315,7 +315,7 @@ function AdminBanner(): React.JSX.Element | null {
     <div className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-5 py-2 text-sm text-amber-800 dark:text-amber-200">
       <span>⚠ {t('dashboard.adminMissing')}</span>
       <Btn
-        variant="secondary"
+        variant="danger"
         disabled={busy['admin']}
         onClick={() => void window.zapret.relaunchAsAdmin().catch(() => undefined)}
       >
