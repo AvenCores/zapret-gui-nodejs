@@ -3,7 +3,7 @@
  * @module shared/constants
  */
 
-export const APP_NAME = 'zapret-gui'
+export const APP_NAME = 'Zapret GUI'
 export const SERVICE_NAME = 'zapret'
 export const WINDIVERT_SERVICE = 'WinDivert'
 export const WINWS_EXE = 'winws.exe'

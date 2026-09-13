@@ -37,12 +37,12 @@ function makeWritableRecursive(dir) {
 /** Tell the user if a running app instance locks the build output. */
 function runningAppHint() {
   try {
-    const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq zapret-gui.exe', '/FO', 'CSV', '/NH'], {
+    const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq Zapret GUI.exe', '/FO', 'CSV', '/NH'], {
       windowsHide: true,
       encoding: 'utf8'
     })
-    if (out.toLowerCase().includes('zapret-gui.exe')) {
-      console.error('HINT: zapret-gui.exe is currently running — close the app and retry.')
+    if (out.toLowerCase().includes('zapret gui.exe')) {
+      console.error('HINT: Zapret GUI.exe is currently running — close the app and retry.')
     }
   } catch {
     /* tasklist itself failed; nothing more to say */

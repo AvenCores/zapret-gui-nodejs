@@ -1,5 +1,5 @@
 appId: com.zapret.gui
-productName: zapret-gui
+productName: Zapret GUI
 copyright: Copyright © 2026 avencores
 directories:
   output: dist
@@ -27,7 +27,7 @@ nsis:
   uninstallerIcon: bundled-assets/icon.ico
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: zapret-gui
+  shortcutName: Zapret GUI
   # NSIS installer itself requests elevation; the app also re-asks via UAC on demand.
   perMachine: false
 portable:

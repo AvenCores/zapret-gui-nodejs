@@ -38,7 +38,7 @@ describe('getTrayLabels', () => {
       status: 'Работает',
       start: 'Запустить',
       stop: 'Остановить',
-      open: 'Открыть zapret-gui',
+      open: 'Открыть Zapret GUI',
       quit: 'Выйти'
     })
   })
@@ -49,7 +49,7 @@ describe('getTrayLabels', () => {
       status: 'Not installed',
       start: 'Start',
       stop: 'Stop',
-      open: 'Open zapret-gui',
+      open: 'Open Zapret GUI',
       quit: 'Quit'
     })
   })

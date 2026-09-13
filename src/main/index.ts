@@ -74,7 +74,7 @@ function createWindow(): void {
     minHeight: 680,
     show: false,
     autoHideMenuBar: true,
-    title: 'zapret-gui',
+    title: 'Zapret GUI',
     icon: path.join(getBundledAssetsDir(), 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -164,7 +164,7 @@ async function firstRunCheck(): Promise<void> {
   void dialog
     .showMessageBox({
       type: 'info',
-      title: `zapret-gui — ${translate(locale, 'wizard.title')}`,
+      title: `Zapret GUI — ${translate(locale, 'wizard.title')}`,
       message: translate(locale, 'wizard.step1'),
       detail: `${translate(locale, 'wizard.step2')} ${translate(locale, 'wizard.available').replace('{names}', names)}`,
       buttons: ['OK']
@@ -192,7 +192,7 @@ app.whenReady().then(() => {
 
   initLogger(getAppLogPath())
   ensureDataDirSeeded()
-  info('app', `zapret-gui starting. Data dir: ${getDataDir()}`)
+  info('app', `Zapret GUI starting. Data dir: ${getDataDir()}`)
 
   registerIpcHandlers()
   createWindow()

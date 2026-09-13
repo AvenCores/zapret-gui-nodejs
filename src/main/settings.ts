@@ -75,7 +75,7 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
 /** Windows auto-launch via Electron login-item settings (registry). */
 export function applyAutoLaunch(enabled: boolean): void {
   try {
-    app.setLoginItemSettings({ openAtLogin: enabled, name: 'zapret-gui' })
+    app.setLoginItemSettings({ openAtLogin: enabled, name: 'Zapret GUI' })
   } catch {
     /* non-fatal (e.g. portable mode) */
   }

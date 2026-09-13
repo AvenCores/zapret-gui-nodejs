@@ -193,7 +193,7 @@ export default function Dashboard(): React.JSX.Element {
         </div>
       </Card>
 
-      <Card title="zapret-gui">
+      <Card title="Zapret GUI">
         <div className="flex flex-wrap gap-2 text-sm">
           <LinkBtn href={URLS.appRepo} icon={<GithubIcon />}>{t('dashboard.repo')}</LinkBtn>
           <LinkBtn href={URLS.appIssues} icon={<IssuesIcon />}>{t('dashboard.issues')}</LinkBtn>

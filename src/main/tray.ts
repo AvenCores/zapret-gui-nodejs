@@ -126,12 +126,12 @@ export function setupTray(status: ZapretStatus, labels: TrayLabels, cb: TrayCall
   const img = nativeImage.createFromPath(iconPath(status))
   if (tray) {
     tray.setImage(img)
-    tray.setToolTip(`zapret-gui — ${labels.status}`)
+    tray.setToolTip(`Zapret GUI — ${labels.status}`)
     tray.setContextMenu(buildMenu(status, labels, cb))
     return tray
   }
   tray = new Tray(img)
-  tray.setToolTip(`zapret-gui — ${labels.status}`)
+  tray.setToolTip(`Zapret GUI — ${labels.status}`)
   tray.setContextMenu(buildMenu(status, labels, cb))
   tray.on('double-click', cb.onShow)
   tray.on('click', cb.onShow)

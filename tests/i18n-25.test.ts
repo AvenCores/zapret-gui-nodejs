@@ -102,7 +102,7 @@ describe('25+ language support', () => {
       expect(l.status.length).toBeGreaterThan(0)
       expect(l.start.length).toBeGreaterThan(0)
       expect(l.stop.length).toBeGreaterThan(0)
-      expect(l.open).toContain('zapret-gui')
+      expect(l.open).toContain('Zapret GUI')
       expect(l.quit.length).toBeGreaterThan(0)
     }
   })

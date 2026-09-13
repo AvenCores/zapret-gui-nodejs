@@ -47,13 +47,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body: |
-            ## zapret-gui ${{ github.ref_name }}
+            ## Zapret GUI ${{ github.ref_name }}
 
             ### Changes
             ${{ steps.changelog.outputs.notes }}
 
             ### Install
-            - Download `zapret-gui-*-setup.exe` and run as Administrator.
+            - Download `Zapret GUI-*-setup.exe` and run as Administrator.
             - Or use the `-portable.zip` build.
           files: |
             dist/*.exe

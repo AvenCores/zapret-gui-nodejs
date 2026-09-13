@@ -13,7 +13,7 @@
     </a>
 </div>
 
-# zapret-gui
+# Zapret GUI
 
 Десктопный GUI для [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube)
 (обход DPI-блокировок Discord / YouTube / Telegram через `winws.exe` + WinDivert).
@@ -38,7 +38,7 @@
 
 ## Раскладка установки (без папки `zapret-discord-youtube-main`!)
 
-- Установщик (NSIS): `%LOCALAPPDATA%\Programs\zapret-gui\` (+ ярлыки на рабочем столе и в меню «Пуск»), запрашивает повышение прав
+- Установщик (NSIS): `%LOCALAPPDATA%\Programs\Zapret GUI\` (+ ярлыки на рабочем столе и в меню «Пуск»), запрашивает повышение прав
 - Рабочие данные (при первом запуске копируются из `resources/bundled-assets` установщика): `%APPDATA%\zapret-gui\data\{bin,lists,utils,strategies}`
 - Настройки: `%APPDATA%\zapret-gui\settings.json`
 
