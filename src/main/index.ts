@@ -110,7 +110,22 @@ function createWindow(): void {
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
-    void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    const devUrl = process.env['ELECTRON_RENDERER_URL']
+    // Vite may need a second to start; Electron otherwise shows a white
+    // screen with ERR_CONNECTION_REFUSED and never retries.
+    const loadWithRetry = (attempt = 0): void => {
+      mainWindow
+        ?.loadURL(devUrl)
+        .catch(() => {
+          if (attempt < 20) setTimeout(() => loadWithRetry(attempt + 1), 500)
+        })
+    }
+    mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+      err('app', `did-fail-load ${code} ${desc} ${url}`)
+      if (url === devUrl) loadWithRetry()
+    })
+    loadWithRetry()
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     void mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
@@ -154,6 +169,17 @@ async function firstRunCheck(): Promise<void> {
     })
     .catch(() => undefined)
   saveSettings({})
+}
+
+// Dev mode: keep Chromium caches out of the installed app's userData dir.
+// A dev instance and the installed app running side by side lock each
+// other's disk caches ("Unable to create cache (0x5)"). Must run before ready.
+if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'zapret-gui-dev'))
+  // Reduce disk-cache locking on Windows (access denied 0x5 when a stale
+  // Electron process still holds the Cache folder).
+  app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
+  app.commandLine.appendSwitch('disable-http-cache')
 }
 
 app.whenReady().then(() => {

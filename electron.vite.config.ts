@@ -22,6 +22,10 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/renderer',
+    // Bind IPv4 explicitly: on Windows Node may resolve 'localhost' to ::1
+    // only, while Electron/Chromium connects to 127.0.0.1 -> refused URL.
+    // Fixed port keeps ELECTRON_RENDERER_URL predictable (no 5173->5174 drift).
+    server: { host: '127.0.0.1', port: 5174, strictPort: true },
     build: {
       outDir: 'out/renderer',
       rollupOptions: {
