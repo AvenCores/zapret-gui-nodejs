@@ -6,7 +6,7 @@ import { app, BrowserWindow, shell, dialog } from 'electron'
 import path from 'node:path'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
-import { ensureDataDirSeeded, getDataDir, getAppLogPath } from './paths'
+import { ensureDataDirSeeded, getDataDir, getAppLogPath, getBundledAssetsDir } from './paths'
 import { initLogger, info, err, onLog } from './logger'
 import { registerIpcHandlers, listStrategies } from './ipc-handlers'
 import { setupTray } from './tray'
@@ -71,6 +71,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'zapret-gui',
+    icon: path.join(getBundledAssetsDir(), 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,

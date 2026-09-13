@@ -19,6 +19,7 @@
     "test:watch": "vitest",
     "lint": "tsc --noEmit -p tsconfig.json && echo OK",
     "generate:strategies": "node scripts/generate-strategies.mjs",
+    "icon": "node scripts/make-icon.mjs",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -36,7 +37,9 @@
     "electron": "^44.0.0",
     "electron-builder": "^26.0.0",
     "electron-vite": "^5.0.0",
+    "png-to-ico": "^3.0.2",
     "postcss": "^8.4.49",
+    "sharp": "^0.35.4",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",
     "vite": "^6.0.1",

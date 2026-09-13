@@ -185,7 +185,9 @@ export function parseBatContent(content: string, fileName: string): ParsedStrate
     description: describeStrategy(id, methods, args),
     args,
     rawArgs: args.join(' '),
-    desyncMethods: methods
+    desyncMethods: methods,
+    // Default origin; the import flow overrides it with 'imported'.
+    origin: 'bundled'
   }
   return { strategy, warnings }
 }

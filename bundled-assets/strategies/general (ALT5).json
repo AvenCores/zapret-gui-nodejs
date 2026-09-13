@@ -63,5 +63,6 @@
     "fake",
     "syndata",
     "multidisorder"
-  ]
+  ],
+  "origin": "bundled"
 }

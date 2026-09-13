@@ -12,6 +12,7 @@ extraResources:
   - from: bundled-assets
     to: bundled-assets
 win:
+  icon: bundled-assets/icon.ico
   target:
     - nsis
     - zip
@@ -20,6 +21,8 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  installerHeaderIcon: bundled-assets/icon.ico
+  uninstallerIcon: bundled-assets/icon.ico
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: zapret-gui

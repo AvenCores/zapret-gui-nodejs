@@ -283,6 +283,7 @@ export async function updateStrategiesFromGithub(
   for (const bat of batFiles) {
     const content = fs.readFileSync(path.join(root, bat), 'utf8')
     const { strategy } = parseBatContent(content, bat)
+    strategy.origin = 'bundled'
     fs.writeFileSync(path.join(stratDir, `${strategy.id}.json`), JSON.stringify(strategy, null, 2), 'utf8')
     if (!filesUpdated.includes(`strategies/${strategy.id}.json`)) filesUpdated.push(`strategies/${strategy.id}.json`)
   }

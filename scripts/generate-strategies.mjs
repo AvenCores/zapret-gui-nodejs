@@ -177,7 +177,8 @@ if (bats.length === 0) {
       description: describe(id, methods, args.join(' ')),
       args,
       rawArgs: args.join(' '),
-      desyncMethods: methods
+      desyncMethods: methods,
+      origin: 'bundled'
     }
     fs.writeFileSync(path.join(stratDir, `${id}.json`), JSON.stringify(strategy, null, 2), 'utf8')
     if (warnings.length > 0) console.warn(`  ${bat}: ${warnings.join('; ')}`)

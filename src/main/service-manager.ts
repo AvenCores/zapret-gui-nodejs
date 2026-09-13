@@ -292,3 +292,38 @@ export async function clearDiscordCache(appData: string, onLog?: (text: string) 
   for (const l of lines) onLog?.(l)
   return lines
 }
+
+/**
+ * Delete a user-imported strategy (`<id>.json` + sidecar `.bat` if present).
+ * Bundled Flowseal strategies are protected: they are restored on update
+ * anyway, so deleting them would only cause confusion.
+ * @returns display name of the deleted strategy
+ * @throws when the id is unknown or refers to a bundled strategy
+ */
+export function deleteImportedStrategy(strategiesDir: string, id: string): string {
+  if (id.includes('/') || id.includes('\\') || id.includes('..')) {
+    throw new Error(`Invalid strategy id: ${id}`)
+  }
+  const jsonPath = path.join(strategiesDir, `${id}.json`)
+  if (!fs.existsSync(jsonPath)) throw new Error(`Strategy not found: ${id}`)
+  // Missing `origin` (configs written before the field existed) counts as bundled.
+  let origin = 'bundled'
+  let name = id
+  let fileName: string | null = null
+  try {
+    const parsed = JSON.parse(fs.readFileSync(jsonPath, 'utf8')) as Partial<Strategy>
+    if (parsed.origin === 'imported') origin = 'imported'
+    if (parsed.name) name = parsed.name
+    if (parsed.fileName) fileName = parsed.fileName
+  } catch {
+    /* unreadable file keeps bundled default -> protected below */
+  }
+  if (origin === 'bundled') {
+    throw new Error(`Cannot delete bundled strategy "${name}" — it ships with the app`)
+  }
+  fs.rmSync(jsonPath, { force: true })
+  if (fileName && fileName.toLowerCase().endsWith('.bat') && !fileName.includes('/') && !fileName.includes('\\')) {
+    fs.rmSync(path.join(strategiesDir, fileName), { force: true })
+  }
+  return name
+}

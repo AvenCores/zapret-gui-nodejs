@@ -23,7 +23,8 @@ import {
   getAutoUpdateCheck,
   setAutoUpdateCheck,
   removeConflictingServices,
-  clearDiscordCache
+  clearDiscordCache,
+  deleteImportedStrategy
 } from './service-manager'
 import { parseBatContent, materializeArgs, quoteArg } from './strategy-parser'
 import { resolveGameFilterPorts } from './service-manager'
@@ -65,7 +66,10 @@ export function listStrategies(): Strategy[] {
       for (const f of fs.readdirSync(dir)) {
         if (!f.toLowerCase().endsWith('.json')) continue
         try {
-          out.push(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as Strategy)
+          const parsed = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as Strategy
+          // Configs generated before `origin` existed count as bundled.
+          if (parsed.origin !== 'imported') parsed.origin = 'bundled'
+          out.push(parsed)
         } catch {
           /* skip broken file */
         }
@@ -126,12 +130,23 @@ export function registerIpcHandlers(): void {
     const content = fs.readFileSync(file, 'utf8')
     const { strategy, warnings } = parseBatContent(content, path.basename(file))
     for (const warnText of warnings) sendLog('app', 'warn', `Import warnings: ${warnText}`)
+    strategy.origin = 'imported'
     fs.mkdirSync(getStrategiesDir(), { recursive: true })
     fs.writeFileSync(path.join(getStrategiesDir(), `${strategy.id}.json`), JSON.stringify(strategy, null, 2), 'utf8')
     // Keep the original .bat next to it for reference.
     fs.copyFileSync(file, path.join(getStrategiesDir(), strategy.fileName))
     sendLog('app', 'info', `Imported strategy "${strategy.name}".`)
     return strategy
+  })
+
+  ipcMain.handle(IPC.deleteStrategy, async (_e, strategyId: string) => {
+    stopTestInternal()
+    const name = deleteImportedStrategy(getStrategiesDir(), strategyId)
+    if (loadSettings().activeStrategyId === strategyId) {
+      saveSettings({ activeStrategyId: null })
+    }
+    sendLog('app', 'info', `Deleted imported strategy "${name}".`)
+    return true
   })
 
   ipcMain.handle(IPC.testStrategy, async (_e, strategyId: string) => {

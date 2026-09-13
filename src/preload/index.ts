@@ -29,6 +29,7 @@ const api = {
   startService: (): Promise<boolean> => ipcRenderer.invoke(IPC.startService),
   stopService: (): Promise<boolean> => ipcRenderer.invoke(IPC.stopService),
   importStrategy: (): Promise<Strategy | null> => ipcRenderer.invoke(IPC.importStrategy),
+  deleteStrategy: (id: string): Promise<boolean> => ipcRenderer.invoke(IPC.deleteStrategy, id),
   testStrategy: (id: string): Promise<boolean> => ipcRenderer.invoke(IPC.testStrategy, id),
   stopTest: (): Promise<boolean> => ipcRenderer.invoke(IPC.stopTest),
   getGameFilter: (): Promise<GameFilterMode> => ipcRenderer.invoke(IPC.getGameFilter),

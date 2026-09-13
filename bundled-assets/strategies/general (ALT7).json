@@ -92,5 +92,6 @@
     "fake",
     "multisplit",
     "syndata"
-  ]
+  ],
+  "origin": "bundled"
 }

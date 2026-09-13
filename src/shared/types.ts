@@ -37,6 +37,8 @@ export interface Strategy {
   rawArgs: string
   /** Desync methods referenced, e.g. ["multisplit", "fake"] */
   desyncMethods: string[]
+  /** Where the strategy came from: bundled Flowseal configs vs user import. */
+  origin: 'bundled' | 'imported'
 }
 
 /** Result of parsing a `.bat` file. */
@@ -116,6 +118,7 @@ export const IPC = {
   stopService: 'zapret:stop-service',
   listStrategies: 'zapret:list-strategies',
   importStrategy: 'zapret:import-strategy',
+  deleteStrategy: 'zapret:delete-strategy',
   testStrategy: 'zapret:test-strategy',
   stopTest: 'zapret:stop-test',
   getGameFilter: 'zapret:get-game-filter',

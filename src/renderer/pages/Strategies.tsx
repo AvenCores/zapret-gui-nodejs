@@ -29,6 +29,9 @@ export default function Strategies(): React.JSX.Element {
 
   const current = strategies.find((s) => s.id === selected)
   const filtered = strategies.filter((s) => s.name.toLowerCase().includes(query.toLowerCase()))
+  const bundled = filtered.filter((s) => s.origin !== 'imported')
+  const imported = filtered.filter((s) => s.origin === 'imported')
+  const selectSize = Math.min(12, Math.max(4, filtered.length))
 
   async function apply(): Promise<void> {
     if (!current) return
@@ -68,6 +71,22 @@ export default function Strategies(): React.JSX.Element {
     }
   }
 
+  async function removeStrategy(): Promise<void> {
+    if (!current || current.origin !== 'imported') return
+    if (!window.confirm(`${t('strategies.delete')} "${current.name}"?`)) return
+    try {
+      if (testing === current.id) {
+        await window.zapret.stopTest()
+        setTesting(null)
+      }
+      await window.zapret.deleteStrategy(current.id)
+      await refreshStrategies()
+      setSelected('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center justify-between">
@@ -87,14 +106,25 @@ export default function Strategies(): React.JSX.Element {
         <select
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
-          size={Math.min(12, Math.max(4, filtered.length))}
+          size={selectSize}
           className="w-full rounded-lg bg-slate-900 px-2 py-1.5 text-sm"
         >
-          {filtered.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
+          <optgroup label={t('strategies.bundled')}>
+            {bundled.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </optgroup>
+          {imported.length > 0 ? (
+            <optgroup label={t('strategies.imported')}>
+              {imported.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </optgroup>
+          ) : null}
         </select>
         {busy['strategies'] ? (
           <div className="mt-2">
@@ -115,6 +145,9 @@ export default function Strategies(): React.JSX.Element {
             {(status?.activeStrategy === current.name || settings?.activeStrategyId === current.id) && (
               <Badge tone="green">active</Badge>
             )}
+            {current.origin === 'imported' ? (
+              <Badge tone="yellow">{t('strategies.imported')}</Badge>
+            ) : null}
           </div>
           <Code>{current.rawArgs}</Code>
           <p className="mt-2 text-xs text-slate-400">{t('strategies.applyHint')}</p>
@@ -125,6 +158,11 @@ export default function Strategies(): React.JSX.Element {
             <Btn variant="secondary" onClick={() => void toggleTest()} disabled={!status?.isAdmin}>
               {testing ? t('strategies.testStop') : t('action.test')}
             </Btn>
+            {current.origin === 'imported' ? (
+              <Btn variant="danger" onClick={() => void removeStrategy()}>
+                {t('strategies.delete')}
+              </Btn>
+            ) : null}
           </div>
           {testing ? (
             <div className="mt-3">
