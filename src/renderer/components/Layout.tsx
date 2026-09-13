@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useUi, type Page } from '../store'
 import { Btn } from './ui'
+import { SUPPORTED_LOCALES, type Locale } from '../../shared/i18n'
 import appIconUrl from '../assets/app-icon.png'
 
 const NAV: Array<{ id: Page }> = [
@@ -49,14 +50,15 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
               <GlobeIcon />
               {t('settings.language')}
             </span>
-            <Picker
+            <Picker<Locale>
               label={t('settings.language')}
               value={locale}
               onChange={(v) => void applySettings({ locale: v })}
-              options={[
-                { value: 'ru', label: 'Русский', icon: <FlagRu /> },
-                { value: 'en', label: 'English', icon: <FlagGb /> }
-              ]}
+              options={SUPPORTED_LOCALES.map((l) => ({
+                value: l.code,
+                label: l.nativeName,
+                icon: <Flag code={l.code} />
+              }))}
             />
           </div>
           <div className="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
@@ -196,7 +198,7 @@ function Picker<T extends string>(props: {
         <ul
           role="listbox"
           aria-label={props.label}
-          className="absolute bottom-full right-0 z-20 mb-1 w-max min-w-full overflow-hidden rounded-md border border-slate-300 bg-white py-0.5 shadow-lg dark:border-slate-600 dark:bg-slate-700"
+          className="absolute bottom-full right-0 z-20 mb-1 max-h-64 w-max min-w-full overflow-y-auto rounded-md border border-slate-300 bg-white py-0.5 shadow-lg dark:border-slate-600 dark:bg-slate-700"
         >
           {props.options.map((o) => (
             <li key={o.value} role="option" aria-selected={o.value === props.value}>
@@ -286,24 +288,282 @@ function SunIcon(): React.JSX.Element {
   )
 }
 
-function FlagRu(): React.JSX.Element {
+function Flag(props: { code: Locale }): React.JSX.Element {
+  let body: React.ReactNode = null
+  switch (props.code) {
+    case 'ru':
+      body = (
+        <>
+          <rect width="18" height="4" y="0" fill="#ffffff" />
+          <rect width="18" height="4" y="4" fill="#0039a6" />
+          <rect width="18" height="4" y="8" fill="#d52b1e" />
+        </>
+      )
+      break
+    case 'en':
+      body = (
+        <>
+          <rect width="18" height="12" fill="#012169" />
+          <path d="M0 0l18 12M18 0L0 12" stroke="#ffffff" strokeWidth="2.4" />
+          <path d="M0 0l18 12M18 0L0 12" stroke="#c8102e" strokeWidth="0.8" />
+          <path d="M9 0v12M0 6h18" stroke="#ffffff" strokeWidth="4" />
+          <path d="M9 0v12M0 6h18" stroke="#c8102e" strokeWidth="2.4" />
+        </>
+      )
+      break
+    case 'uk':
+      body = (
+        <>
+          <rect width="18" height="6" y="0" fill="#005bbb" />
+          <rect width="18" height="6" y="6" fill="#ffd500" />
+        </>
+      )
+      break
+    case 'be':
+      body = (
+        <>
+          <rect width="18" height="12" fill="#ce1720" />
+          <rect width="18" height="4" y="8" fill="#007c30" />
+          <rect width="2.5" height="12" x="0" fill="#ffffff" />
+          <rect width="2.5" height="1.5" x="0" fill="#ce1720" />
+          <rect width="2.5" height="1.5" x="0" y="3" fill="#ce1720" />
+          <rect width="2.5" height="1.5" x="0" y="6" fill="#ce1720" />
+        </>
+      )
+      break
+    case 'kk':
+      body = (
+        <>
+          <rect width="18" height="12" fill="#00afca" />
+          <circle cx="9" cy="6" r="2.6" fill="none" stroke="#fec50c" strokeWidth="0.9" />
+          <circle cx="9" cy="6" r="0.9" fill="#fec50c" />
+        </>
+      )
+      break
+    case 'de':
+      body = (
+        <>
+          <rect width="18" height="4" y="0" fill="#000000" />
+          <rect width="18" height="4" y="4" fill="#dd0000" />
+          <rect width="18" height="4" y="8" fill="#ffce00" />
+        </>
+      )
+      break
+    case 'fr':
+      body = (
+        <>
+          <rect width="6" height="12" x="0" fill="#0055a4" />
+          <rect width="6" height="12" x="6" fill="#ffffff" />
+          <rect width="6" height="12" x="12" fill="#ef4135" />
+        </>
+      )
+      break
+    case 'es':
+      body = (
+        <>
+          <rect width="18" height="12" fill="#aa151b" />
+          <rect width="18" height="6" y="3" fill="#f1bf00" />
+        </>
+      )
+      break
+    case 'it':
+      body = (
+        <>
+          <rect width="6" height="12" x="0" fill="#009246" />
+          <rect width="6" height="12" x="6" fill="#ffffff" />
+          <rect width="6" height="12" x="12" fill="#ce2b37" />
+        </>
+      )
+      break
+    case 'pt':
+      body = (
+        <>
+          <rect width="7" height="12" x="0" fill="#046a38" />
+          <rect width="11" height="12" x="7" fill="#da291c" />
+        </>
+      )
+      break
+    case 'nl':
+      body = (
+        <>
+          <rect width="18" height="4" y="0" fill="#ae1c28" />
+          <rect width="18" height="4" y="4" fill="#ffffff" />
+          <rect width="18" height="4" y="8" fill="#21468b" />
+        </>
+      )
+      break
+    case 'pl':
+      body = (
+        <>
+          <rect width="18" height="6" y="0" fill="#ffffff" />
+          <rect width="18" height="6" y="6" fill="#dc143c" />
+        </>
+      )
+      break
+    case 'cs':
+      body = (
+        <>
+          <rect width="18" height="6" y="0" fill="#ffffff" />
+          <rect width="18" height="6" y="6" fill="#d7141a" />
+          <polygon points="0,0 9,6 0,12" fill="#11457e" />
+        </>
+      )
+      break
+    case 'sk':
+      body = (
+        <>
+          <rect width="18" height="4" y="0" fill="#ffffff" />
+          <rect width="18" height="4" y="4" fill="#0b4ea2" />
+          <rect width="18" height="4" y="8" fill="#ee1c25" />
+        </>
+      )
+      break
+    case 'hu':
+      body = (
+        <>
+          <rect width="18" height="4" y="0" fill="#ce2939" />
+          <rect width="18" height="4" y="4" fill="#ffffff" />
+          <rect width="18" height="4" y="8" fill="#477050" />
+        </>
+      )
+      break
+    case 'ro':
+      body = (
+        <>
+          <rect width="6" height="12" x="0" fill="#002b7f" />
+          <rect width="6" height="12" x="6" fill="#fcd116" />
+          <rect width="6" height="12" x="12" fill="#ce1126" />
+        </>
+      )
+      break
+    case 'bg':
+      body = (
+        <>
+          <rect width="18" height="4" y="0" fill="#ffffff" />
+          <rect width="18" height="4" y="4" fill="#00966e" />
+          <rect width="18" height="4" y="8" fill="#d62612" />
+        </>
+      )
+      break
+    case 'sr':
+      body = (
+        <>
+          <rect width="18" height="4" y="0" fill="#c6363c" />
+          <rect width="18" height="4" y="4" fill="#0c4076" />
+          <rect width="18" height="4" y="8" fill="#ffffff" />
+        </>
+      )
+      break
+    case 'hr':
+      body = (
+        <>
+          <rect width="18" height="4" y="0" fill="#ff0000" />
+          <rect width="18" height="4" y="4" fill="#ffffff" />
+          <rect width="18" height="4" y="8" fill="#171796" />
+        </>
+      )
+      break
+    case 'el':
+      body = (
+        <>
+          <rect width="18" height="12" fill="#ffffff" />
+          <rect width="18" height="1.35" y="0" fill="#0d5eaf" />
+          <rect width="18" height="1.35" y="2.7" fill="#0d5eaf" />
+          <rect width="18" height="1.35" y="5.4" fill="#0d5eaf" />
+          <rect width="18" height="1.35" y="8.1" fill="#0d5eaf" />
+          <rect width="11" height="1.35" y="10.65" x="7" fill="#0d5eaf" />
+          <rect width="7" height="6.75" x="0" y="0" fill="#0d5eaf" />
+          <rect width="7" height="1.35" x="0" y="2.7" fill="#ffffff" />
+          <rect width="1.4" height="6.75" x="2.8" y="0" fill="#ffffff" />
+        </>
+      )
+      break
+    case 'tr':
+      body = (
+        <>
+          <rect width="18" height="12" fill="#e30a17" />
+          <circle cx="7" cy="6" r="3" fill="#ffffff" />
+          <circle cx="7.7" cy="6" r="2.4" fill="#e30a17" />
+          <circle cx="10.6" cy="6" r="0.9" fill="#ffffff" />
+        </>
+      )
+      break
+    case 'ar':
+      body = (
+        <>
+          <rect width="18" height="12" fill="#006c35" />
+          <rect width="10" height="1" x="4" y="4" fill="#ffffff" />
+          <rect width="10" height="0.8" x="4" y="8" fill="#ffffff" />
+        </>
+      )
+      break
+    case 'fa':
+      body = (
+        <>
+          <rect width="18" height="4" y="0" fill="#239f40" />
+          <rect width="18" height="4" y="4" fill="#ffffff" />
+          <rect width="18" height="4" y="8" fill="#da0000" />
+        </>
+      )
+      break
+    case 'zh':
+      body = (
+        <>
+          <rect width="18" height="12" fill="#ee1c25" />
+          <polygon
+            points="3.5,1.5 4.1,3.3 6,3.3 4.5,4.5 5,6.3 3.5,5.2 2,6.3 2.5,4.5 1,3.3 2.9,3.3"
+            fill="#ffde00"
+          />
+          <circle cx="8" cy="2" r="0.6" fill="#ffde00" />
+          <circle cx="9.5" cy="3.5" r="0.6" fill="#ffde00" />
+          <circle cx="9.5" cy="5.8" r="0.6" fill="#ffde00" />
+          <circle cx="8" cy="7.3" r="0.6" fill="#ffde00" />
+        </>
+      )
+      break
+    case 'ja':
+      body = (
+        <>
+          <rect width="18" height="12" fill="#ffffff" />
+          <circle cx="9" cy="6" r="3" fill="#bc002d" />
+        </>
+      )
+      break
+    case 'ko':
+      body = (
+        <>
+          <rect width="18" height="12" fill="#ffffff" />
+          <path d="M6 6a3 3 0 0 1 6 0a1.5 1.5 0 0 1-3 0a1.5 1.5 0 0 0-3 0" fill="#cd2e3a" />
+          <path d="M6 6a1.5 1.5 0 0 0 3 0a1.5 1.5 0 0 1 3 0a3 3 0 0 1-6 0" fill="#0047a0" />
+          <rect width="2.4" height="0.7" x="2" y="2" fill="#000000" />
+          <rect width="2.4" height="0.7" x="13.6" y="2" fill="#000000" />
+          <rect width="2.4" height="0.7" x="2" y="9.3" fill="#000000" />
+          <rect width="2.4" height="0.7" x="13.6" y="9.3" fill="#000000" />
+        </>
+      )
+      break
+    case 'hi':
+      body = (
+        <>
+          <rect width="18" height="4" y="0" fill="#ff9933" />
+          <rect width="18" height="4" y="4" fill="#ffffff" />
+          <rect width="18" height="4" y="8" fill="#138808" />
+          <circle cx="9" cy="6" r="1.4" fill="none" stroke="#000080" strokeWidth="0.5" />
+        </>
+      )
+      break
+    case 'id':
+      body = (
+        <>
+          <rect width="18" height="6" y="0" fill="#ff0000" />
+          <rect width="18" height="6" y="6" fill="#ffffff" />
+        </>
+      )
+      break
+  }
   return (
     <svg aria-hidden viewBox="0 0 18 12" className="h-3 w-[18px] shrink-0 overflow-hidden rounded-[2px]">
-      <rect width="18" height="4" y="0" fill="#ffffff" />
-      <rect width="18" height="4" y="4" fill="#0039a6" />
-      <rect width="18" height="4" y="8" fill="#d52b1e" />
-    </svg>
-  )
-}
-
-function FlagGb(): React.JSX.Element {
-  return (
-    <svg aria-hidden viewBox="0 0 60 30" className="h-3 w-6 shrink-0 overflow-hidden rounded-[2px]">
-      <rect width="60" height="30" fill="#012169" />
-      <path d="M0 0l60 30M60 0L0 30" stroke="#ffffff" strokeWidth="6" />
-      <path d="M0 0l60 30M60 0L0 30" stroke="#c8102e" strokeWidth="2" />
-      <path d="M30 0v30M0 15h60" stroke="#ffffff" strokeWidth="10" />
-      <path d="M30 0v30M0 15h60" stroke="#c8102e" strokeWidth="6" />
+      {body}
     </svg>
   )
 }

@@ -34,7 +34,7 @@
 - **Обновления** — проверка версии zapret, обновление IPSet-списка, diff и применение hosts, обновление стратегий из release-ZIP с GitHub (с бэкапом), автообновление самого приложения
 - **Диагностика** — BFE, прокси, TCP timestamps, AdGuard/Killer/Intel/Check Point/SmartByte/VPN, кириллица в пути, OneDrive, Secure DNS, WinDivert64.sys, записи YouTube в hosts, зависший WinDivert, конфликтующие сервисы; очистка кэша Discord; запуск PowerShell-тестов
 - **Логи** — живой поток app/winws/updater + экспорт в файл
-- Локализация RU/EN, тёмная/светлая тема, иконка трея с цветом статуса
+- Локализация на 28 языков (RU/EN/UK/BE/KK/DE/FR/ES/IT/PT/NL/PL/CS/SK/HU/RO/BG/SR/HR/EL/TR/AR/FA/ZH/JA/KO/HI/ID) с автоопределением языка ОС и fallback на английский, тёмная/светлая тема, иконка трея с цветом статуса
 
 ## Раскладка установки (без папки `zapret-discord-youtube-main`!)
 
@@ -65,9 +65,9 @@ src/
                 strategy-parser.ts strategy-updater.ts diagnostics.ts
                 settings.ts paths.ts exec.ts logger.ts
   preload/      index.ts            # типизированный мост window.zapret
-  renderer/     App.tsx store.ts    # zustand + ru/en
+  renderer/     App.tsx store.ts    # zustand + i18n (28 языков)
                 pages/ Dashboard Strategies Settings Updates Diagnostics Logs
-  shared/       types.ts constants.ts i18n.ts
+  shared/       types.ts constants.ts i18n.ts locales/ (28 словарей)
 bundled-assets/ bin/ lists/ utils/ strategies/ bat/ service/
 scripts/        generate-strategies.mjs
 tests/          strategy-parser.test.ts service-manager.test.ts

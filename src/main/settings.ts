@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import { app, nativeTheme } from 'electron'
 import { getSettingsPath } from './paths'
 import type { AppSettings } from '../shared/types'
-import type { Locale } from '../shared/i18n'
+import { normalizeLocale, resolveSystemLocale as resolveSystemLocaleImpl, type Locale } from '../shared/i18n'
 
 const BASE_DEFAULTS = {
   autoLaunch: false,
@@ -19,11 +19,14 @@ const BASE_DEFAULTS = {
 
 /**
  * Map an OS locale tag (e.g. `ru-RU`, `en-US`) to a supported app locale.
- * Pure — covered by unit tests.
+ * Pure — covered by unit tests. Re-exported from shared/i18n for
+ * backward compatibility with existing imports.
  */
 export function resolveSystemLocale(tag: string): Locale {
-  return tag.toLowerCase().startsWith('ru') ? 'ru' : 'en'
+  return resolveSystemLocaleImpl(tag)
 }
+
+export { normalizeLocale }
 
 /**
  * First-run defaults taken from the OS: UI language from the system locale,
@@ -49,13 +52,19 @@ export function systemDefaults(): Pick<AppSettings, 'locale' | 'theme'> {
 export function loadSettings(): AppSettings {
   try {
     const raw = fs.readFileSync(getSettingsPath(), 'utf8')
-    return { ...BASE_DEFAULTS, ...systemDefaults(), ...(JSON.parse(raw) as Partial<AppSettings>) }
+    const parsed = JSON.parse(raw) as Partial<AppSettings>
+    const merged: AppSettings = { ...BASE_DEFAULTS, ...systemDefaults(), ...parsed }
+    // Backward compat: old files store 'ru' | 'en'; new files store any
+    // supported code. Unknown/corrupted values fall back to English.
+    merged.locale = normalizeLocale((parsed as Record<string, unknown>).locale ?? merged.locale)
+    return merged
   } catch {
     return { ...BASE_DEFAULTS, ...systemDefaults() }
   }
 }
 
 export function saveSettings(patch: Partial<AppSettings>): AppSettings {
+  if (patch.locale !== undefined) patch = { ...patch, locale: normalizeLocale(patch.locale) }
   const next = { ...loadSettings(), ...patch }
   fs.mkdirSync(require('node:path').dirname(getSettingsPath()), { recursive: true })
   fs.writeFileSync(getSettingsPath(), JSON.stringify(next, null, 2), 'utf8')

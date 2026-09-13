@@ -11,10 +11,23 @@ describe('resolveSystemLocale', () => {
     expect(resolveSystemLocale('ru')).toBe('ru')
   })
 
-  it('maps everything else to en', () => {
+  it('maps supported tags to their locale', () => {
     expect(resolveSystemLocale('en-US')).toBe('en')
-    expect(resolveSystemLocale('de-DE')).toBe('en')
+    expect(resolveSystemLocale('de-DE')).toBe('de')
+    expect(resolveSystemLocale('fr-FR')).toBe('fr')
+    expect(resolveSystemLocale('uk-UA')).toBe('uk')
+    expect(resolveSystemLocale('pt-BR')).toBe('pt')
+    expect(resolveSystemLocale('zh-CN')).toBe('zh')
+    expect(resolveSystemLocale('ja-JP')).toBe('ja')
+    expect(resolveSystemLocale('ar-SA')).toBe('ar')
+  })
+
+  it('handles underscore / case variants and aliases', () => {
+    expect(resolveSystemLocale('en_US')).toBe('en')
+    expect(resolveSystemLocale('DE-de')).toBe('de')
+    expect(resolveSystemLocale('bs-BA')).toBe('sr')
     expect(resolveSystemLocale('')).toBe('en')
+    expect(resolveSystemLocale('xx-YY')).toBe('en')
   })
 })
 

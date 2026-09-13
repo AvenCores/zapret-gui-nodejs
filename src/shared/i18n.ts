@@ -1,329 +1,168 @@
 /**
- * Minimal built-in localization (ru/en) shared by main and renderer.
+ * Built-in localization (28 languages) shared by main and renderer.
+ * Dictionaries live in `./locales/*` (one file per language).
  * The renderer keeps the active locale in the zustand store; the main
  * process always returns raw data + label keys so the UI can translate.
  * @module shared/i18n
  */
+import { ru } from './locales/ru'
+import { en } from './locales/en'
+import { uk } from './locales/uk'
+import { be } from './locales/be'
+import { kk } from './locales/kk'
+import { de } from './locales/de'
+import { fr } from './locales/fr'
+import { es } from './locales/es'
+import { it } from './locales/it'
+import { pt } from './locales/pt'
+import { nl } from './locales/nl'
+import { pl } from './locales/pl'
+import { cs } from './locales/cs'
+import { sk } from './locales/sk'
+import { hu } from './locales/hu'
+import { ro } from './locales/ro'
+import { bg } from './locales/bg'
+import { sr } from './locales/sr'
+import { hr } from './locales/hr'
+import { el } from './locales/el'
+import { tr } from './locales/tr'
+import { ar } from './locales/ar'
+import { fa } from './locales/fa'
+import { zh } from './locales/zh'
+import { ja } from './locales/ja'
+import { ko } from './locales/ko'
+import { hi } from './locales/hi'
+import { id } from './locales/id'
 
-export type Locale = 'ru' | 'en'
+export const SUPPORTED_LOCALES = [
+  { code: 'ru', nativeName: 'Русский' },
+  { code: 'en', nativeName: 'English' },
+  { code: 'uk', nativeName: 'Українська' },
+  { code: 'be', nativeName: 'Беларуская' },
+  { code: 'kk', nativeName: 'Қазақша' },
+  { code: 'de', nativeName: 'Deutsch' },
+  { code: 'fr', nativeName: 'Français' },
+  { code: 'es', nativeName: 'Español' },
+  { code: 'it', nativeName: 'Italiano' },
+  { code: 'pt', nativeName: 'Português' },
+  { code: 'nl', nativeName: 'Nederlands' },
+  { code: 'pl', nativeName: 'Polski' },
+  { code: 'cs', nativeName: 'Čeština' },
+  { code: 'sk', nativeName: 'Slovenčina' },
+  { code: 'hu', nativeName: 'Magyar' },
+  { code: 'ro', nativeName: 'Română' },
+  { code: 'bg', nativeName: 'Български' },
+  { code: 'sr', nativeName: 'Srpski' },
+  { code: 'hr', nativeName: 'Hrvatski' },
+  { code: 'el', nativeName: 'Ελληνικά' },
+  { code: 'tr', nativeName: 'Türkçe' },
+  { code: 'ar', nativeName: 'العربية' },
+  { code: 'fa', nativeName: 'فارسی' },
+  { code: 'zh', nativeName: '中文' },
+  { code: 'ja', nativeName: '日本語' },
+  { code: 'ko', nativeName: '한국어' },
+  { code: 'hi', nativeName: 'हिन्दी' },
+  { code: 'id', nativeName: 'Indonesia' }
+] as const
 
-const ru = {
-  'nav.dashboard': 'Дашборд',
-  'nav.strategies': 'Стратегии',
-  'nav.settings': 'Настройки',
-  'nav.updates': 'Обновления',
-  'nav.diagnostics': 'Диагностика',
-  'nav.logs': 'Логи',
-  'status.running': 'Работает',
-  'status.stopped': 'Остановлен',
-  'status.not-installed': 'Не установлен',
-  'status.unknown': 'Неизвестно',
-  'action.start': 'Запустить',
-  'action.stop': 'Остановить',
-  'action.restart': 'Перезапустить',
-  'action.apply': 'Применить',
-  'action.test': 'Тест',
-  'action.refresh': 'Обновить',
-  'action.save': 'Сохранить',
-  'action.cancel': 'Отмена',
-  'action.close': 'Закрыть',
-  'action.export': 'Экспорт',
-  'action.check': 'Проверить обновления',
-  'action.install': 'Установить сервис',
-  'action.remove': 'Удалить сервисы',
-  'dashboard.title': 'Состояние обхода блокировок',
-  'dashboard.service': 'Сервис zapret',
-  'dashboard.windivert': 'WinDivert',
-  'dashboard.winws': 'Процесс winws.exe',
-  'dashboard.strategy': 'Активная стратегия',
-  'dashboard.admin': 'Права администратора',
-  'dashboard.adminYes': 'админ ✓',
-  'dashboard.adminNo': 'пользователь',
-  'dashboard.adminMissing': 'Нет прав администратора — большинство действий недоступно',
-  'dashboard.relaunchAdmin': 'Перезапустить с правами администратора',
-  'dashboard.repo': 'Репозиторий',
-  'dashboard.issues': 'Проблемы',
-  'dashboard.releases': 'Релизы',
-  'app.tagline': 'Менеджер обхода DPI',
-  'app.loading': 'Загрузка zapret-gui…',
-  'tray.open': 'Открыть zapret-gui',
-  'tray.quit': 'Выйти',
-  'dashboard.none': '—',
-  'strategies.title': 'Стратегии DPI-обхода',
-  'strategies.applyHint': 'Применение остановит текущий сервис и зарегистрирует новый.',
-  'strategies.import': 'Импорт .bat',
-  'strategies.bundled': 'Flowseal (встроенные)',
-  'strategies.imported': 'Импортированные',
-  'strategies.search': 'Поиск… general…',
-  'strategies.active': 'активна',
-  'strategies.waitingOutput': '(ожидание вывода winws…)',
-  'strategies.delete': 'Удалить',
-  'strategies.testStop': 'Остановить тест',
-  'strategies.testing': 'Тест запущен в отдельном процессе — проверьте доступ к Discord/YouTube, затем остановите.',
-  'settings.gameFilter': 'Game Filter (порты 1024–65535)',
-  'settings.gameDisabled': 'Отключён',
-  'settings.gameAll': 'TCP+UDP',
-  'settings.gameTcp': 'Только TCP',
-  'settings.gameUdp': 'Только UDP',
-  'settings.ipsetNone': 'Нет',
-  'settings.ipsetLoaded': 'Загружен',
-  'settings.ipsetAny': 'Любой',
-  'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Автопроверка обновлений zapret',
-  'settings.autoLaunch': 'Автозапуск с Windows',
-  'settings.tray': 'Сворачивать в трей при закрытии',
-  'settings.startMinimized': 'Запускаться свёрнутым в трей',
-  'settings.fakes': 'Активные фейки',
-  'settings.discordFake': 'Discord UDP',
-  'settings.gameFake': 'Game UDP',
-  'settings.language': 'Язык',
-  'settings.theme': 'Тема',
-  'settings.themeDark': 'Тёмная',
-  'settings.themeLight': 'Светлая',
-  'updates.current': 'Версия данных zapret',
-  'updates.remote': 'Актуальная версия',
-  'updates.app': 'Версия приложения',
-  'updates.available': 'Доступно обновление zapret!',
-  'updates.upToDate': 'У вас последняя версия.',
-  'updates.updateIpSet': 'Обновить IPSet список',
-  'updates.updateHosts': 'Обновить Hosts',
-  'updates.updateStrategies': 'Обновить стратегии с GitHub',
-  'updates.applyHosts': 'Применить в системный hosts',
-  'updates.hostsTitle': 'hosts',
-  'updates.hostsDiffers': 'hosts отличается от upstream',
-  'updates.hostsUpToDate': 'hosts актуален',
-  'updates.ipsetResult': 'IPSet: {lines} строк, {bytes} байт',
-  'updates.strategiesResult': 'Обновлено файлов: {count} из {tag}. Бэкап: {dir}',
-  'updates.hostsApplied': 'Системный hosts обновлён (бэкап: hosts.zapret-gui.bak).',
-  'diag.run': 'Запустить диагностику',
-  'diag.clearDiscord': 'Очистить кэш Discord',
-  'diag.removeConflicts': 'Удалить конфликтующие сервисы',
-  'diag.runTests': 'Запустить тесты (PowerShell)',
-  'diag.testsLaunched': 'Тесты запущены в отдельном окне PowerShell — следите за выводом там.',
-  'diag.bfe': 'Base Filtering Engine',
-  'diag.proxy': 'Системный прокси',
-  'diag.timestamps': 'TCP timestamps',
-  'diag.adguard': 'AdGuard',
-  'diag.killer': 'Killer Network',
-  'diag.intel': 'Intel Connectivity',
-  'diag.checkpoint': 'Check Point',
-  'diag.smartbyte': 'SmartByte',
-  'diag.cyrillic': 'Кириллица в пути',
-  'diag.onedrive': 'OneDrive',
-  'diag.dns': 'Secure DNS',
-  'diag.sysfile': 'WinDivert64.sys',
-  'diag.hosts': 'Записи YouTube в hosts',
-  'diag.vpn': 'VPN-сервисы',
-  'diag.windivertStuck': 'Залипший WinDivert',
-  'diag.conflicts': 'Конфликтующие сервисы обхода',
-  'diag.tools': 'Инструменты',
-  'level.ok': 'ОК',
-  'level.warn': 'Внимание',
-  'level.fail': 'Ошибка',
-  'diag.detail.running': 'Работает',
-  'diag.detail.bfeFail': 'Base Filtering Engine не запущена — нужна для WinDivert/zapret',
-  'diag.detail.disabled': 'Отключен',
-  'diag.detail.proxyOn': 'Включён ({server}) — проверьте, что он корректен, или отключите',
-  'diag.detail.enabled': 'Включены',
-  'diag.detail.tsAuto': 'Были отключены — включены автоматически',
-  'diag.detail.tsFail': 'Отключены, включить автоматически не удалось',
-  'diag.detail.notDetected': 'Не обнаружено',
-  'diag.detail.adguardFail': 'AdguardSvc.exe обнаружен — может ломать голосовой Discord',
-  'diag.detail.conflictFail': '{list} — конфликтует с zapret',
-  'diag.detail.checkpointFail': '{list} — удалите Check Point',
-  'diag.detail.smartbyteFail': '{list} — отключите через services.msc',
-  'diag.detail.pathOk': 'Путь в порядке',
-  'diag.detail.cyrillicWarn': 'В пути установки есть кириллица: {path}',
-  'diag.detail.ok': 'OK',
-  'diag.detail.onedriveFail': 'Установлено в папку OneDrive — перенесите, например в C:\\zapret',
-  'diag.detail.dnsOk': 'Шифрованный DNS настроен',
-  'diag.detail.dnsWarn': 'Настройте Secure DNS в браузере / параметрах Windows 11',
-  'diag.detail.sysOk': 'WinDivert64.sys на месте',
-  'diag.detail.sysFail': 'WinDivert64.sys НЕ найден в bin/',
-  'diag.detail.clean': 'Чисто',
-  'diag.detail.hostsWarn': 'В hosts есть записи youtube — возможны проблемы с YouTube',
-  'diag.detail.hostsReadFail': 'Не удалось прочитать hosts',
-  'diag.detail.noStale': 'Залипаний нет',
-  'diag.detail.stuckRemoved': 'winws не запущен, а WinDivert активен — зависшая служба удалена',
-  'diag.detail.none': 'Нет',
-  'diag.detail.conflictsFail': 'Найдены: {list}',
-  'diag.detail.vpnWarn': 'Найдены VPN-службы: {list} — отключите VPN',
-  'logs.title': 'Логи',
-  'logs.empty': 'Пока пусто. Логи winws и операций появятся здесь.',
-  'logs.filter': 'Фильтр',
-  'wizard.title': 'Первоначальная настройка',
-  'wizard.step1': 'Выберите стратегию. Если не знаете с чего начать — оставьте general.',
-  'wizard.step2': 'Настройте Secure DNS в браузере (иначе часть блокировок не обойти).',
-  'wizard.available': 'Доступно: {names}…',
-  'dialog.importTitle': 'Импорт .bat стратегии',
-  'dialog.importFilter': 'BAT стратегия',
-  'dialog.exportTitle': 'Экспорт логов',
-  'dialog.exportFilter': 'Лог',
-  'wizard.finish': 'Готово'
-} as const
+export type Locale = (typeof SUPPORTED_LOCALES)[number]['code']
 
-const en: Record<keyof typeof ru, string> = {
-  'nav.dashboard': 'Dashboard',
-  'nav.strategies': 'Strategies',
-  'nav.settings': 'Settings',
-  'nav.updates': 'Updates',
-  'nav.diagnostics': 'Diagnostics',
-  'nav.logs': 'Logs',
-  'status.running': 'Running',
-  'status.stopped': 'Stopped',
-  'status.not-installed': 'Not installed',
-  'status.unknown': 'Unknown',
-  'action.start': 'Start',
-  'action.stop': 'Stop',
-  'action.restart': 'Restart',
-  'action.apply': 'Apply',
-  'action.test': 'Test',
-  'action.refresh': 'Refresh',
-  'action.save': 'Save',
-  'action.cancel': 'Cancel',
-  'action.close': 'Close',
-  'action.export': 'Export',
-  'action.check': 'Check for updates',
-  'action.install': 'Install service',
-  'action.remove': 'Remove services',
-  'dashboard.title': 'Bypass status',
-  'dashboard.service': 'zapret service',
-  'dashboard.windivert': 'WinDivert',
-  'dashboard.winws': 'winws.exe process',
-  'dashboard.strategy': 'Active strategy',
-  'dashboard.admin': 'Administrator rights',
-  'dashboard.adminYes': 'admin ✓',
-  'dashboard.adminNo': 'user',
-  'dashboard.adminMissing': 'No administrator rights — most actions are unavailable',
-  'dashboard.relaunchAdmin': 'Relaunch as administrator',
-  'dashboard.repo': 'Repository',
-  'dashboard.issues': 'Issues',
-  'dashboard.releases': 'Releases',
-  'app.tagline': 'DPI bypass manager',
-  'app.loading': 'Loading zapret-gui…',
-  'tray.open': 'Open zapret-gui',
-  'tray.quit': 'Quit',
-  'dashboard.none': '—',
-  'strategies.title': 'DPI bypass strategies',
-  'strategies.applyHint': 'Applying will stop the current service and register a new one.',
-  'strategies.import': 'Import .bat',
-  'strategies.bundled': 'Flowseal (bundled)',
-  'strategies.imported': 'Imported',
-  'strategies.search': 'Search… general…',
-  'strategies.active': 'active',
-  'strategies.waitingOutput': '(waiting for winws output…)',
-  'strategies.delete': 'Delete',
-  'strategies.testStop': 'Stop test',
-  'strategies.testing': 'Test is running in a separate process — check Discord/YouTube access, then stop it.',
-  'settings.gameFilter': 'Game Filter (ports 1024–65535)',
-  'settings.gameDisabled': 'Disabled',
-  'settings.gameAll': 'TCP+UDP',
-  'settings.gameTcp': 'TCP only',
-  'settings.gameUdp': 'UDP only',
-  'settings.ipsetNone': 'none',
-  'settings.ipsetLoaded': 'loaded',
-  'settings.ipsetAny': 'any',
-  'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Auto-check zapret updates',
-  'settings.autoLaunch': 'Launch with Windows',
-  'settings.tray': 'Minimize to tray on close',
-  'settings.startMinimized': 'Start minimized to tray',
-  'settings.fakes': 'Active fakes',
-  'settings.discordFake': 'Discord UDP',
-  'settings.gameFake': 'Game UDP',
-  'settings.language': 'Language',
-  'settings.theme': 'Theme',
-  'settings.themeDark': 'Dark',
-  'settings.themeLight': 'Light',
-  'updates.current': 'Zapret data version',
-  'updates.remote': 'Latest version',
-  'updates.app': 'App version',
-  'updates.available': 'zapret update available!',
-  'updates.upToDate': 'You are up to date.',
-  'updates.updateIpSet': 'Update IPSet list',
-  'updates.updateHosts': 'Update Hosts',
-  'updates.updateStrategies': 'Update strategies from GitHub',
-  'updates.applyHosts': 'Apply to system hosts',
-  'updates.hostsTitle': 'hosts',
-  'updates.hostsDiffers': 'hosts differs from upstream',
-  'updates.hostsUpToDate': 'hosts is up to date',
-  'updates.ipsetResult': 'IPSet: {lines} lines, {bytes} bytes',
-  'updates.strategiesResult': 'Updated {count} files from {tag}. Backup: {dir}',
-  'updates.hostsApplied': 'System hosts updated (backup: hosts.zapret-gui.bak).',
-  'diag.run': 'Run diagnostics',
-  'diag.clearDiscord': 'Clear Discord cache',
-  'diag.removeConflicts': 'Remove conflicting services',
-  'diag.runTests': 'Run tests (PowerShell)',
-  'diag.testsLaunched': 'Tests launched in a separate PowerShell window — watch the output there.',
-  'diag.bfe': 'Base Filtering Engine',
-  'diag.proxy': 'System proxy',
-  'diag.timestamps': 'TCP timestamps',
-  'diag.adguard': 'AdGuard',
-  'diag.killer': 'Killer Network',
-  'diag.intel': 'Intel Connectivity',
-  'diag.checkpoint': 'Check Point',
-  'diag.smartbyte': 'SmartByte',
-  'diag.cyrillic': 'Cyrillic in install path',
-  'diag.onedrive': 'OneDrive',
-  'diag.dns': 'Secure DNS',
-  'diag.sysfile': 'WinDivert64.sys',
-  'diag.hosts': 'YouTube entries in hosts',
-  'diag.vpn': 'VPN services',
-  'diag.windivertStuck': 'Stuck WinDivert',
-  'diag.conflicts': 'Conflicting bypass services',
-  'diag.tools': 'Tools',
-  'level.ok': 'OK',
-  'level.warn': 'Warning',
-  'level.fail': 'Fail',
-  'diag.detail.running': 'Running',
-  'diag.detail.bfeFail': 'Base Filtering Engine is not running — required for WinDivert/zapret',
-  'diag.detail.disabled': 'Disabled',
-  'diag.detail.proxyOn': 'Enabled ({server}) — make sure it is valid or disable it',
-  'diag.detail.enabled': 'Enabled',
-  'diag.detail.tsAuto': 'Was disabled — enabled automatically',
-  'diag.detail.tsFail': 'Disabled and could not enable automatically',
-  'diag.detail.notDetected': 'Not detected',
-  'diag.detail.adguardFail': 'AdguardSvc.exe detected — may break Discord voice',
-  'diag.detail.conflictFail': '{list} — conflicts with zapret',
-  'diag.detail.checkpointFail': '{list} — uninstall Check Point',
-  'diag.detail.smartbyteFail': '{list} — disable via services.msc',
-  'diag.detail.pathOk': 'Path OK',
-  'diag.detail.cyrillicWarn': 'Install path contains Cyrillic: {path}',
-  'diag.detail.ok': 'OK',
-  'diag.detail.onedriveFail': 'Installed inside a OneDrive folder — move it, e.g. to C:\\zapret',
-  'diag.detail.dnsOk': 'Encrypted DNS configured',
-  'diag.detail.dnsWarn': 'Configure Secure DNS in browser / Windows 11 settings',
-  'diag.detail.sysOk': 'WinDivert64.sys present',
-  'diag.detail.sysFail': 'WinDivert64.sys NOT found in bin/',
-  'diag.detail.clean': 'Clean',
-  'diag.detail.hostsWarn': 'Hosts contains youtube entries — may break YouTube',
-  'diag.detail.hostsReadFail': 'Could not read hosts file',
-  'diag.detail.noStale': 'No stale state',
-  'diag.detail.stuckRemoved': 'winws not running but WinDivert active — removed stale service',
-  'diag.detail.none': 'None',
-  'diag.detail.conflictsFail': 'Found: {list}',
-  'diag.detail.vpnWarn': 'VPN services detected: {list} — disable VPNs',
-  'logs.title': 'Logs',
-  'logs.empty': 'Empty for now. winws and operation logs will appear here.',
-  'logs.filter': 'Filter',
-  'wizard.title': 'Initial setup',
-  'wizard.step1': 'Pick a strategy. If unsure — keep "general".',
-  'wizard.step2': 'Configure Secure DNS in your browser (some blocks cannot be bypassed without it).',
-  'wizard.available': 'Available: {names}…',
-  'dialog.importTitle': 'Import .bat strategy',
-  'dialog.importFilter': 'BAT strategy',
-  'dialog.exportTitle': 'Export logs',
-  'dialog.exportFilter': 'Log',
-  'wizard.finish': 'Done'
+/** Alias map for OS tags whose primary subtag is not directly supported. */
+const LOCALE_ALIASES: Record<string, Locale> = {
+  bs: 'sr',
+  mk: 'bg',
+  sl: 'hr',
+  ca: 'es',
+  gl: 'es',
+  eu: 'es',
+  gsw: 'de',
+  lb: 'de',
+  frp: 'fr',
+  pt_br: 'pt',
+  zh_tw: 'zh',
+  zh_hk: 'zh',
+  ckb: 'ar',
+  ur: 'hi',
+  ms: 'id'
+}
+
+function supportedSet(): Set<string> {
+  return new Set(SUPPORTED_LOCALES.map((l) => l.code))
+}
+
+/** Type guard for persisted / external locale values. */
+export function isSupportedLocale(value: unknown): value is Locale {
+  return typeof value === 'string' && supportedSet().has(value)
+}
+
+/** Normalize any external value to a supported locale (fallback `en`). */
+export function normalizeLocale(value: unknown): Locale {
+  return isSupportedLocale(value) ? value : 'en'
+}
+
+/**
+ * Map an OS locale tag (e.g. `ru-RU`, `en_US`, `pt-BR`) to a supported app locale.
+ * Pure — covered by unit tests.
+ */
+export function resolveSystemLocale(tag: string): Locale {
+  const norm = String(tag ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, '-')
+  if (norm === '') return 'en'
+  const primary = norm.split('-')[0].split(':')[0]
+  if (primary === '') return 'en'
+  if (isSupportedLocale(primary)) return primary
+  const alias = LOCALE_ALIASES[primary] ?? LOCALE_ALIASES[norm.replace(/-/g, '_')]
+  if (alias != null) return alias
+  // e.g. `zh-Hant-HK` → try second subtag as well before falling back.
+  const parts = norm.split('-')
+  for (const p of parts.slice(1)) {
+    if (isSupportedLocale(p)) return p
+  }
+  return 'en'
 }
 
 export type I18nKey = keyof typeof ru
 
-export const dictionaries: Record<Locale, Record<I18nKey, string>> = { ru, en }
+// Every supported locale must export a full `Record<I18nKey, string>`
+// from its `./locales/*` file. `translate()` additionally falls back
+// to English at runtime, so a missing key never crashes the UI.
+export const dictionaries: Record<Locale, Record<I18nKey, string>> = {
+  ru,
+  en,
+  uk,
+  be,
+  kk,
+  de,
+  fr,
+  es,
+  it,
+  pt,
+  nl,
+  pl,
+  cs,
+  sk,
+  hu,
+  ro,
+  bg,
+  sr,
+  hr,
+  el,
+  tr,
+  ar,
+  fa,
+  zh,
+  ja,
+  ko,
+  hi,
+  id
+}
 
-/** Tiny `t()` helper usable outside React. */
+/** Tiny `t()` helper usable outside React (with en → ru → key fallback). */
 export function translate(locale: Locale, key: I18nKey): string {
-  return dictionaries[locale][key] ?? key
+  const dict = dictionaries[locale] as Record<string, string> | undefined
+  return dict?.[key] ?? dictionaries.en[key] ?? dictionaries.ru[key] ?? key
 }
 
 /** Render a diagnostic `detailKey` template with `{param}` substitution. */
@@ -331,7 +170,9 @@ export function formatDetail(
   locale: Locale,
   check: { detailKey?: string; detailParams?: Record<string, string>; detail: string }
 ): string {
-  const dict = dictionaries[locale] as Record<string, string>
-  const template = (check.detailKey != null && dict[check.detailKey]) || check.detail
+  const dict = (dictionaries[locale] ?? dictionaries.en) as Record<string, string>
+  const enDict = dictionaries.en as Record<string, string>
+  const template =
+    (check.detailKey != null && (dict[check.detailKey] ?? enDict[check.detailKey])) || check.detail
   return template.replace(/\{(\w+)\}/g, (m, name: string) => check.detailParams?.[name] ?? m)
 }

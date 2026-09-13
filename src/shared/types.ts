@@ -2,7 +2,7 @@
  * Shared types used by both the Electron main process and the renderer.
  * @module shared/types
  */
-import type { I18nKey } from './i18n'
+import type { I18nKey, Locale } from './i18n'
 
 /** Windows service state as reported by `sc query`. */
 export type ServiceState =
@@ -105,7 +105,7 @@ export interface LogLine {
 
 /** App settings persisted to disk (`%APPDATA%/zapret-gui/settings.json`). */
 export interface AppSettings {
-  locale: 'ru' | 'en'
+  locale: Locale
   theme: 'dark' | 'light'
   autoLaunch: boolean
   startMinimizedToTray: boolean
