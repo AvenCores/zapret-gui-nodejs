@@ -3,19 +3,35 @@ import React, { useEffect, useState } from 'react'
 import { useUi } from '../store'
 import { Btn, Card, Row, Spinner } from '../components/ui'
 import type { GameFilterMode, IPSetMode } from '../../shared/types'
+import type { I18nKey } from '../../shared/i18n'
 
-const GAME_OPTIONS: Array<{ v: GameFilterMode; label: string }> = [
-  { v: 'disabled', label: 'Disabled' },
-  { v: 'all', label: 'TCP+UDP' },
-  { v: 'tcp', label: 'TCP only' },
-  { v: 'udp', label: 'UDP only' }
-]
+const GAME_VALUES: GameFilterMode[] = ['disabled', 'all', 'tcp', 'udp']
 
-const IPSET_OPTIONS: Array<{ v: IPSetMode; label: string }> = [
-  { v: 'none', label: 'none' },
-  { v: 'loaded', label: 'loaded' },
-  { v: 'any', label: 'any' }
-]
+const IPSET_VALUES: IPSetMode[] = ['none', 'loaded', 'any']
+
+function gameLabel(t: (k: I18nKey) => string, v: GameFilterMode): string {
+  switch (v) {
+    case 'disabled':
+      return t('settings.gameDisabled')
+    case 'all':
+      return t('settings.gameAll')
+    case 'tcp':
+      return t('settings.gameTcp')
+    case 'udp':
+      return t('settings.gameUdp')
+  }
+}
+
+function ipsetLabel(t: (k: I18nKey) => string, v: IPSetMode): string {
+  switch (v) {
+    case 'none':
+      return t('settings.ipsetNone')
+    case 'loaded':
+      return t('settings.ipsetLoaded')
+    case 'any':
+      return t('settings.ipsetAny')
+  }
+}
 
 export default function Settings(): React.JSX.Element {
   const { t, settings, applySettings, setError, status } = useUi()
@@ -79,17 +95,17 @@ export default function Settings(): React.JSX.Element {
 
       <Card title={t('settings.gameFilter')}>
         <div className="flex flex-wrap gap-2">
-          {GAME_OPTIONS.map((o) => (
+          {GAME_VALUES.map((v) => (
             <Btn
-              key={o.v}
-              variant={game === o.v ? 'primary' : 'secondary'}
+              key={v}
+              variant={game === v ? 'primary' : 'secondary'}
               disabled={disabled}
               onClick={() => void wrap(async () => {
-                await window.zapret.setGameFilter(o.v)
-                setGame(o.v)
+                await window.zapret.setGameFilter(v)
+                setGame(v)
               })}
             >
-              {o.label}
+              {gameLabel(t, v)}
             </Btn>
           ))}
         </div>
@@ -97,17 +113,17 @@ export default function Settings(): React.JSX.Element {
 
       <Card title={t('settings.ipset')}>
         <div className="flex flex-wrap gap-2">
-          {IPSET_OPTIONS.map((o) => (
+          {IPSET_VALUES.map((v) => (
             <Btn
-              key={o.v}
-              variant={ipset === o.v ? 'primary' : 'secondary'}
+              key={v}
+              variant={ipset === v ? 'primary' : 'secondary'}
               disabled={disabled}
               onClick={() => void wrap(async () => {
-                await window.zapret.setIPSetMode(o.v)
-                setIpset(o.v)
+                await window.zapret.setIPSetMode(v)
+                setIpset(v)
               })}
             >
-              {o.label}
+              {ipsetLabel(t, v)}
             </Btn>
           ))}
         </div>

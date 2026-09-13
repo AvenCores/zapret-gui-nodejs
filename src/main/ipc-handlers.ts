@@ -40,6 +40,7 @@ import {
 } from './strategy-updater'
 import { getDataDir, getBinDir, getListsDir, getStrategiesDir, getUtilsDir, getBundledAssetsDir } from './paths'
 import { loadSettings, saveSettings } from './settings'
+import { translate } from '../shared/i18n'
 import { getBufferedLogs, info, warn, err } from './logger'
 import { isAdmin, relaunchAppAsAdmin, spawnLong } from './exec'
 import { WINWS_EXE } from '../shared/constants'
@@ -120,9 +121,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.importStrategy, async () => {
     const w = win()
+    const locale = loadSettings().locale
     const res = await dialog.showOpenDialog(w ?? undefined as unknown as BrowserWindow, {
-      title: 'Import .bat strategy',
-      filters: [{ name: 'BAT strategy', extensions: ['bat'] }],
+      title: translate(locale, 'dialog.importTitle'),
+      filters: [{ name: translate(locale, 'dialog.importFilter'), extensions: ['bat'] }],
       properties: ['openFile']
     })
     if (res.canceled || res.filePaths.length === 0) return null
@@ -290,10 +292,11 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.exportLogs, async () => {
     const w = win()
+    const locale = loadSettings().locale
     const res = await dialog.showSaveDialog(w ?? undefined as unknown as BrowserWindow, {
-      title: 'Export logs',
+      title: translate(locale, 'dialog.exportTitle'),
       defaultPath: `zapret-gui-logs-${new Date().toISOString().slice(0, 10)}.log`,
-      filters: [{ name: 'Log', extensions: ['log', 'txt'] }]
+      filters: [{ name: translate(locale, 'dialog.exportFilter'), extensions: ['log', 'txt'] }]
     })
     if (res.canceled || !res.filePath) return null
     const text = getBufferedLogs().map((l) => `[${l.ts}] [${l.source}/${l.level}] ${l.text}`).join('\n')

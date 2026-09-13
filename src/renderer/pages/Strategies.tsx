@@ -100,7 +100,7 @@ export default function Strategies(): React.JSX.Element {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="general…"
+          placeholder={t('strategies.search')}
           className="mb-2 w-full rounded-lg bg-slate-100 px-3 py-1.5 text-sm outline-none ring-sky-600 focus:ring-1 dark:bg-slate-900"
         />
         <select
@@ -143,7 +143,7 @@ export default function Strategies(): React.JSX.Element {
               </Badge>
             ))}
             {(status?.activeStrategy === current.name || settings?.activeStrategyId === current.id) && (
-              <Badge tone="green">active</Badge>
+              <Badge tone="green">{t('strategies.active')}</Badge>
             )}
             {current.origin === 'imported' ? (
               <Badge tone="yellow">{t('strategies.imported')}</Badge>
@@ -167,7 +167,7 @@ export default function Strategies(): React.JSX.Element {
           {testing ? (
             <div className="mt-3">
               <p className="mb-1 text-xs text-amber-700 dark:text-amber-300">⚠ {t('strategies.testing')}</p>
-              <Code>{testOut || '(waiting for winws output…)'}</Code>
+              <Code>{testOut || t('strategies.waitingOutput')}</Code>
             </div>
           ) : null}
         </Card>

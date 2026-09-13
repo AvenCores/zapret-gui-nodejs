@@ -80,7 +80,7 @@ export default function Updates(): React.JSX.Element {
             disabled={disabled || busyKey !== null}
             onClick={() => void wrap('ipset', async () => {
               const r = await window.zapret.updateIPSet()
-              setResult(`IPSet: ${r.lines} lines, ${r.bytes} bytes`)
+              setResult(t('updates.ipsetResult').replace('{lines}', String(r.lines)).replace('{bytes}', String(r.bytes)))
             })}
           >
             {spin('ipset')} {t('updates.updateIpSet')}
@@ -102,7 +102,12 @@ export default function Updates(): React.JSX.Element {
               const off = window.zapret.onDownloadProgress(setProgress)
               void wrap('strategies', async () => {
                 const r = await window.zapret.updateStrategies()
-                setResult(`Updated ${r.filesUpdated.length} files from ${r.tag}. Backup: ${r.backupDir}`)
+                setResult(
+                  t('updates.strategiesResult')
+                    .replace('{count}', String(r.filesUpdated.length))
+                    .replace('{tag}', r.tag)
+                    .replace('{dir}', r.backupDir)
+                )
               }).finally(() => {
                 off()
                 setProgress(null)
@@ -121,9 +126,9 @@ export default function Updates(): React.JSX.Element {
       </Card>
 
       {hosts ? (
-        <Card title="hosts">
+        <Card title={t('updates.hostsTitle')}>
           <p className="mb-2 text-sm text-slate-600 dark:text-slate-300">
-            {hosts.needsUpdate ? '⚠ hosts differs from upstream' : '✓ hosts is up to date'}
+            {hosts.needsUpdate ? `⚠ ${t('updates.hostsDiffers')}` : `✓ ${t('updates.hostsUpToDate')}`}
           </p>
           <Code>{hosts.remoteContent.slice(0, 4000)}</Code>
           {hosts.needsUpdate ? (
@@ -132,7 +137,7 @@ export default function Updates(): React.JSX.Element {
                 disabled={disabled}
                 onClick={() => void wrap('apply-hosts', async () => {
                   await window.zapret.applyHosts(hosts.remoteContent)
-                  setResult('System hosts updated (backup: hosts.zapret-gui.bak).')
+                  setResult(t('updates.hostsApplied'))
                 })}
               >
                 {spin('apply-hosts')} {t('updates.applyHosts')}

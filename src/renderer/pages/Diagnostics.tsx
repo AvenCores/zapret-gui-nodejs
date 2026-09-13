@@ -39,7 +39,7 @@ export default function Diagnostics(): React.JSX.Element {
       if (key === 'tests') {
         setToolOut(t('diag.testsLaunched'))
       } else {
-        setToolOut(Array.isArray(r) ? r.join('\n') : String(r ?? 'OK'))
+        setToolOut(Array.isArray(r) ? r.join('\n') : String(r ?? t('level.ok')))
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -75,7 +75,7 @@ export default function Diagnostics(): React.JSX.Element {
         </Card>
       ) : (
         <Card>
-          <p className="text-sm text-slate-500 dark:text-slate-400">—</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{t('dashboard.none')}</p>
         </Card>
       )}
 

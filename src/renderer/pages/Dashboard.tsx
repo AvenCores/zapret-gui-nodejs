@@ -74,7 +74,7 @@ export default function Dashboard(): React.JSX.Element {
         <Row label={t('dashboard.windivert')}>
           <Badge tone={stateTone(status.windivert)}>
             <Dot tone={stateTone(status.windivert)} />
-            {status.windivert}
+            {status.windivert === 'RUNNING' ? t('status.running') : t(`status.${stateKey(status.windivert)}`)}
           </Badge>
         </Row>
         <Row label={t('dashboard.winws')}>
@@ -87,7 +87,7 @@ export default function Dashboard(): React.JSX.Element {
           <span className="text-sm text-slate-900 dark:text-slate-100">{status.activeStrategy ?? settings?.activeStrategyId ?? t('dashboard.none')}</span>
         </Row>
         <Row label={t('dashboard.admin')}>
-          <Badge tone={status.isAdmin ? 'green' : 'yellow'}>{status.isAdmin ? 'admin ✓' : 'user'}</Badge>
+          <Badge tone={status.isAdmin ? 'green' : 'yellow'}>{status.isAdmin ? t('dashboard.adminYes') : t('dashboard.adminNo')}</Badge>
         </Row>
 
         <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-700/60">
@@ -112,9 +112,9 @@ export default function Dashboard(): React.JSX.Element {
 
       <Card title="zapret-gui">
         <div className="flex flex-wrap gap-2 text-sm">
-          <LinkBtn href={URLS.appRepo} icon={<GithubIcon />}>Repository</LinkBtn>
-          <LinkBtn href={URLS.appIssues} icon={<IssuesIcon />}>Issues</LinkBtn>
-          <LinkBtn href={URLS.appReleases} icon={<ReleasesIcon />}>Releases</LinkBtn>
+          <LinkBtn href={URLS.appRepo} icon={<GithubIcon />}>{t('dashboard.repo')}</LinkBtn>
+          <LinkBtn href={URLS.appIssues} icon={<IssuesIcon />}>{t('dashboard.issues')}</LinkBtn>
+          <LinkBtn href={URLS.appReleases} icon={<ReleasesIcon />}>{t('dashboard.releases')}</LinkBtn>
           <LinkBtn href={URLS.youtube} icon={<YoutubeIcon />}>YouTube</LinkBtn>
           <LinkBtn href={URLS.telegram} icon={<TelegramIcon />}>Telegram</LinkBtn>
           <LinkBtn href={URLS.vk} icon={<VkIcon />}>VK</LinkBtn>

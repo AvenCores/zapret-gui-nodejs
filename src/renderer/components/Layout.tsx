@@ -23,7 +23,7 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
           <img src={appIconUrl} alt="zapret-gui logo" className="h-9 w-9 shrink-0 rounded-lg bg-slate-900 p-0.5 dark:bg-transparent dark:p-0" />
           <div className="min-w-0">
             <div className="text-lg font-bold leading-tight tracking-tight">zapret-gui</div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">DPI bypass manager</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">{t('app.tagline')}</div>
             <div className="text-[11px] text-slate-400 dark:text-slate-500">by avencores</div>
           </div>
         </div>

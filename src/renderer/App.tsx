@@ -10,7 +10,7 @@ import Logs from './pages/Logs'
 import { useUi } from './store'
 
 export default function App(): React.JSX.Element {
-  const { page, init, theme } = useUi()
+  const { page, init, theme, t } = useUi()
   const [ready, setReady] = useState<boolean>(false)
 
   useEffect(() => {
@@ -25,7 +25,7 @@ export default function App(): React.JSX.Element {
   if (!ready) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-200">
-        <div className="text-sm">Loading zapret-gui…</div>
+        <div className="text-sm">{t('app.loading')}</div>
       </div>
     )
   }

@@ -14,6 +14,7 @@ import { loadSettings, saveSettings } from './settings'
 import { getStatus } from './service-manager'
 import { isAdmin } from './exec'
 import { IPC } from '../shared/types'
+import { translate } from '../shared/i18n'
 import type { ZapretStatus } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
@@ -159,12 +160,13 @@ async function firstRunCheck(): Promise<void> {
   }
   const strategies = listStrategies()
   const names = strategies.slice(0, 5).map((s) => s.name).join(', ')
+  const locale = settings.locale
   void dialog
     .showMessageBox({
       type: 'info',
-      title: 'zapret-gui — first run',
-      message: 'Welcome! Pick a strategy on the Strategies tab and press Apply.',
-      detail: `If unsure, keep "general". Available: ${names}… Also configure Secure DNS in your browser.`,
+      title: `zapret-gui — ${translate(locale, 'wizard.title')}`,
+      message: translate(locale, 'wizard.step1'),
+      detail: `${translate(locale, 'wizard.step2')} ${translate(locale, 'wizard.available').replace('{names}', names)}`,
       buttons: ['OK']
     })
     .catch(() => undefined)
