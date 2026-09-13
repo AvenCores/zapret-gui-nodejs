@@ -1,0 +1,18 @@
+{
+  // Single aggregate config: type-checks main + preload + renderer + shared.
+  // VS Code auto-discovers only `tsconfig.json`, so this file is what the
+  // editor uses. `npm run lint` runs this same config (electron-vite does
+  // the real build and doesn't depend on these settings).
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src", "scripts", "tests", "electron.vite.config.ts", "vitest.config.ts"]
+}

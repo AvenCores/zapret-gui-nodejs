@@ -1,0 +1,65 @@
+# Create a GitHub Release with auto-generated changelog when a v* tag is pushed.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate changelog
+        id: changelog
+        shell: pwsh
+        run: |
+          $prev = (git describe --tags --abbrev=0 HEAD~1 2>$null)
+          if (-not $prev) { $prev = (git rev-list --max-parents=0 HEAD) }
+          $log = (git log "$prev..HEAD" --pretty=format:'- %s (%h)') -join "`n"
+          if (-not $log) { $log = '- maintenance build' }
+          "notes<<EOF" >> $env:GITHUB_OUTPUT
+          $log >> $env:GITHUB_OUTPUT
+          "EOF" >> $env:GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## zapret-gui ${{ github.ref_name }}
+
+            ### Changes
+            ${{ steps.changelog.outputs.notes }}
+
+            ### Install
+            - Download `zapret-gui-*-setup.exe` and run as Administrator.
+            - Or use the `-portable.zip` build.
+          files: |
+            dist/*.exe
+            dist/*.zip
+            dist/latest.yml
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

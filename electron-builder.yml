@@ -1,0 +1,34 @@
+appId: com.zapret.gui
+productName: zapret-gui
+copyright: Copyright © 2026 avencores
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+  - bundled-assets/**/*
+extraResources:
+  - from: bundled-assets
+    to: bundled-assets
+win:
+  target:
+    - nsis
+    - zip
+  requestedExecutionLevel: requireAdministrator
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: zapret-gui
+  # NSIS installer itself requests elevation; the app also re-asks via UAC on demand.
+  perMachine: false
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+publish:
+  provider: github
+  owner: AvenCores
+  repo: zapret-gui-nodejs
+  releaseType: release

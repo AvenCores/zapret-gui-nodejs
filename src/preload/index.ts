@@ -1,0 +1,99 @@
+/**
+ * Preload: exposes a typed `window.zapret` API to the renderer.
+ * @module preload/index
+ */
+import { contextBridge, ipcRenderer } from 'electron'
+import { IPC } from '../shared/types'
+import type {
+  AppSettings,
+  DiagnosticCheck,
+  DownloadProgress,
+  GameFilterMode,
+  IPSetMode,
+  LogLine,
+  StatusSnapshot,
+  Strategy,
+  UpdateInfo
+} from '../shared/types'
+
+export interface TestOutput {
+  stream: 'stdout' | 'stderr' | 'exit'
+  text: string
+}
+
+const api = {
+  getStatus: (): Promise<StatusSnapshot> => ipcRenderer.invoke(IPC.getStatus),
+  listStrategies: (): Promise<Strategy[]> => ipcRenderer.invoke(IPC.listStrategies),
+  installStrategy: (id: string): Promise<boolean> => ipcRenderer.invoke(IPC.installStrategy, id),
+  removeServices: (): Promise<boolean> => ipcRenderer.invoke(IPC.removeServices),
+  startService: (): Promise<boolean> => ipcRenderer.invoke(IPC.startService),
+  stopService: (): Promise<boolean> => ipcRenderer.invoke(IPC.stopService),
+  importStrategy: (): Promise<Strategy | null> => ipcRenderer.invoke(IPC.importStrategy),
+  testStrategy: (id: string): Promise<boolean> => ipcRenderer.invoke(IPC.testStrategy, id),
+  stopTest: (): Promise<boolean> => ipcRenderer.invoke(IPC.stopTest),
+  getGameFilter: (): Promise<GameFilterMode> => ipcRenderer.invoke(IPC.getGameFilter),
+  setGameFilter: (mode: GameFilterMode): Promise<boolean> => ipcRenderer.invoke(IPC.setGameFilter, mode),
+  getIPSetMode: (): Promise<IPSetMode> => ipcRenderer.invoke(IPC.getIPSetMode),
+  setIPSetMode: (mode: IPSetMode): Promise<boolean> => ipcRenderer.invoke(IPC.setIPSetMode, mode),
+  getAutoUpdateCheck: (): Promise<boolean> => ipcRenderer.invoke(IPC.getAutoUpdateCheck),
+  setAutoUpdateCheck: (v: boolean): Promise<boolean> => ipcRenderer.invoke(IPC.setAutoUpdateCheck, v),
+  listFakes: (): Promise<{ discordActive: string | null; gameActive: string | null; all: string[] }> =>
+    ipcRenderer.invoke(IPC.listFakes),
+  replaceFake: (kind: 'discord' | 'game', fake: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.replaceFake, kind, fake),
+  checkUpdates: (): Promise<UpdateInfo> => ipcRenderer.invoke(IPC.checkUpdates),
+  updateIPSet: (): Promise<{ lines: number; bytes: number }> => ipcRenderer.invoke(IPC.updateIPSet),
+  updateHosts: (): Promise<{ needsUpdate: boolean; firstLine: string; lastLine: string; remoteContent: string }> =>
+    ipcRenderer.invoke(IPC.updateHosts),
+  applyHosts: (remoteContent: string): Promise<boolean> => ipcRenderer.invoke(IPC.applyHosts, remoteContent),
+  updateStrategies: (): Promise<{ tag: string; filesUpdated: string[]; backupDir: string }> =>
+    ipcRenderer.invoke(IPC.updateStrategies),
+  runDiagnostics: (): Promise<DiagnosticCheck[]> => ipcRenderer.invoke(IPC.runDiagnostics),
+  clearDiscordCache: (): Promise<string[]> => ipcRenderer.invoke(IPC.clearDiscordCache),
+  removeConflicts: (): Promise<string[]> => ipcRenderer.invoke(IPC.removeConflicts),
+  runTests: (): Promise<boolean> => ipcRenderer.invoke(IPC.runTests),
+  getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.getSettings),
+  saveSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke(IPC.saveSettings, patch),
+  relaunchAsAdmin: (): Promise<boolean> => ipcRenderer.invoke(IPC.relaunchAsAdmin),
+  exportLogs: (): Promise<string | null> => ipcRenderer.invoke(IPC.exportLogs),
+  onLog: (cb: (line: LogLine) => void): (() => void) => {
+    const fn = (_e: unknown, line: LogLine): void => cb(line)
+    ipcRenderer.on(IPC.onLog, fn)
+    return () => ipcRenderer.removeListener(IPC.onLog, fn)
+  },
+  onTestOutput: (cb: (out: TestOutput) => void): (() => void) => {
+    const fn = (_e: unknown, out: TestOutput): void => cb(out)
+    ipcRenderer.on(IPC.onTestOutput, fn)
+    return () => ipcRenderer.removeListener(IPC.onTestOutput, fn)
+  },
+  onDownloadProgress: (cb: (p: DownloadProgress) => void): (() => void) => {
+    const fn = (_e: unknown, p: DownloadProgress): void => cb(p)
+    ipcRenderer.on(IPC.onDownloadProgress, fn)
+    return () => ipcRenderer.removeListener(IPC.onDownloadProgress, fn)
+  },
+  onTrayStart: (cb: () => void): (() => void) => {
+    const fn = (): void => cb()
+    ipcRenderer.on('zapret:tray-start', fn)
+    return () => ipcRenderer.removeListener('zapret:tray-start', fn)
+  },
+  onTrayStop: (cb: () => void): (() => void) => {
+    const fn = (): void => cb()
+    ipcRenderer.on('zapret:tray-stop', fn)
+    return () => ipcRenderer.removeListener('zapret:tray-stop', fn)
+  },
+  onAppUpdateAvailable: (cb: (version: string) => void): (() => void) => {
+    const fn = (_e: unknown, version: string): void => cb(version)
+    ipcRenderer.on('zapret:app-update-available', fn)
+    return () => ipcRenderer.removeListener('zapret:app-update-available', fn)
+  }
+}
+
+export type ZapretApi = typeof api
+
+contextBridge.exposeInMainWorld('zapret', api)
+
+declare global {
+  interface Window {
+    zapret: ZapretApi
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "zapret-gui",
+  "version": "1.10.2",
+  "description": "Desktop GUI for zapret DPI bypass (Discord / YouTube / Telegram) — Electron + React + TypeScript",
+  "author": "avencores",
+  "license": "MIT",
+  "private": true,
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run generate:strategies && electron-vite build",
+    "build:win": "npm run build && electron-builder --win nsis zip --publish never",
+    "build:win:publish": "npm run build && electron-builder --win nsis zip --publish always",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit -p tsconfig.json && echo OK",
+    "generate:strategies": "node scripts/generate-strategies.mjs",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@electron-toolkit/utils": "^4.0.0",
+    "electron-updater": "^6.8.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^5.0.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.1",
+    "vitest": "^3.0.0"
+  },
+  "packageManager": "npm@10.9.0"
+}

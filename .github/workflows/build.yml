@@ -1,0 +1,68 @@
+# Build + publish zapret-gui (Windows x64)
+#
+# Triggers:
+# - push to main      -> build installer + portable zip, upload as artifacts
+# - tags v*           -> same + publish to GitHub Release + update latest.yml
+# - workflow_dispatch -> manual build
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify bundled assets
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'bundled-assets/bin/winws.exe')) {
+            Write-Error 'bundled-assets/bin/winws.exe missing. Commit bundled-assets/ or add a step that downloads the upstream release ZIP.'
+            exit 1
+          }
+          if (-not (Test-Path 'bundled-assets/WinDivert64.sys') -and -not (Test-Path 'bundled-assets/bin/WinDivert64.sys')) {
+            Write-Error 'WinDivert64.sys missing under bundled-assets/bin/.'
+            exit 1
+          }
+          npm run generate:strategies
+          npm test
+          npm run lint
+
+      - name: Build installer + portable
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zapret-gui-windows
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/latest.yml
+          if-no-files-found: error
+
+      - name: Publish to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npm run build:win:publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
