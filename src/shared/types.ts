@@ -70,11 +70,14 @@ export interface DiagnosticCheck {
 
 /** Update info from the upstream repository. */
 export interface UpdateInfo {
+  /** Bundled zapret *data* version (NOT the app version). */
   localVersion: string
   remoteVersion: string | null
   updateAvailable: boolean
   releaseUrl: string
   checkedAt: string
+  /** App version from package.json (via `app.getVersion()`). */
+  appVersion: string
 }
 
 /** Progress event for long downloads. */

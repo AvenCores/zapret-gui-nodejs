@@ -7,9 +7,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import https from 'node:https'
 import { execFile } from 'node:child_process'
+import { app } from 'electron'
 import { URLS } from '../shared/constants'
 import type { DownloadProgress, UpdateInfo } from '../shared/types'
-import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir } from './paths'
+import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir, getBundledAssetsDir } from './paths'
 import { parseBatContent } from './strategy-parser'
 
 export type ProgressCb = (p: DownloadProgress) => void
@@ -99,19 +100,25 @@ export function compareVersions(a: string, b: string): number {
   return 0
 }
 
-export function getLocalVersion(): string {
+/**
+ * Local zapret *data* version shipped with the app
+ * (`bundled-assets/service/version.txt`, mirrors upstream `.service/version.txt`).
+ * NOTE: this is intentionally not the app version from package.json —
+ * the two evolve independently.
+ */
+export function getBundledZapretVersion(): string {
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as { version?: string }
-    if (pkg.version) return pkg.version
+    const v = fs.readFileSync(path.join(getBundledAssetsDir(), 'service', 'version.txt'), 'utf8').trim()
+    if (v) return v
   } catch {
     /* ignore */
   }
   return '0.0.0'
 }
 
-/** Fetch upstream version.txt and compare with local version. */
+/** Fetch upstream version.txt and compare with the bundled zapret data version. */
 export async function checkZapretUpdates(): Promise<UpdateInfo> {
-  const localVersion = getLocalVersion()
+  const localVersion = getBundledZapretVersion()
   let remoteVersion: string | null = null
   try {
     remoteVersion = (await fetchText(URLS.versionTxt)).trim()
@@ -125,7 +132,8 @@ export async function checkZapretUpdates(): Promise<UpdateInfo> {
     remoteVersion,
     updateAvailable,
     releaseUrl: remoteVersion ? URLS.releaseTag(remoteVersion) : URLS.releasesPage,
-    checkedAt: new Date().toISOString()
+    checkedAt: new Date().toISOString(),
+    appVersion: app.getVersion()
   }
 }
 

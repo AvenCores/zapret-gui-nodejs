@@ -39,6 +39,9 @@ export default function Updates(): React.JSX.Element {
         <Row label={t('updates.remote')}>
           <Badge tone={info?.updateAvailable ? 'yellow' : 'gray'}>{info?.remoteVersion ?? '…'}</Badge>
         </Row>
+        <Row label={t('updates.app')}>
+          <Badge tone="gray">{info?.appVersion ?? '…'}</Badge>
+        </Row>
         {info ? (
           <p className="py-1 text-sm">
             {info.updateAvailable ? (
