@@ -231,18 +231,30 @@ function AboutModal(props: { onClose: () => void }): React.JSX.Element {
           {t('about.license')}: GPL-3.0 · by avencores
         </div>
 
-        <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-          <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">💰 {t('about.donate')}</div>
-          <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">{t('about.donateHint')}</div>
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <span className="font-mono text-sm font-semibold tracking-wide">SBER · {SBER_CARD_DISPLAY}</span>
-            <button
-              type="button"
-              onClick={() => void copyCard()}
-              className="shrink-0 rounded-md bg-slate-200 px-2.5 py-1 text-xs font-medium hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600"
-            >
-              {copied ? `✓ ${t('about.copied')}` : t('about.copy')}
-            </button>
+        <div className="mt-4 overflow-hidden rounded-xl border border-sky-500/40 bg-gradient-to-br from-sky-500/25 via-sky-500/10 to-transparent shadow-[0_0_28px_-8px_rgba(14,165,233,0.45)]">
+          <div className="p-4">
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-sky-600 text-sm shadow-md">
+                💰
+              </span>
+              <div className="text-sm font-bold text-sky-900 dark:text-sky-100">{t('about.donate')}</div>
+            </div>
+            <div className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">{t('about.donateHint')}</div>
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-sky-500/50 bg-white/60 px-3 py-2 dark:bg-black/40">
+              <span className="shrink-0 rounded bg-[#21A038] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                Sber
+              </span>
+              <span className="flex-1 break-all font-mono text-[13px] font-semibold tracking-[0.1em] text-slate-800 dark:text-slate-100">
+                {SBER_CARD_DISPLAY}
+              </span>
+              <button
+                type="button"
+                onClick={() => void copyCard()}
+                className="shrink-0 rounded-md bg-gradient-to-r from-sky-600 to-sky-500 px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition hover:brightness-110 active:scale-95"
+              >
+                {copied ? `✓ ${t('about.copied')}` : t('about.copy')}
+              </button>
+            </div>
           </div>
         </div>
 
