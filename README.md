@@ -13,10 +13,10 @@
     </a>
 </div>
 
-# Zapret GUI
+# 🚀 Zapret GUI
 
 Десктопный GUI для [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube)
-(обход DPI-блокировок Discord / YouTube / Telegram через `winws.exe` + WinDivert).
+— обход DPI-блокировок Discord / YouTube / Telegram через `winws.exe` + WinDivert.
 
 Автор: **avencores** — https://github.com/AvenCores/zapret-gui-nodejs
 
@@ -26,66 +26,214 @@
 > Только Windows 10/11 x64. Требуются права администратора
 > (драйвер WinDivert + служба `zapret` + файл hosts).
 
-## Возможности (паритет с `service.bat`)
+## ✨ Возможности (паритет с `service.bat`)
 
-- **Дашборд** — статус `zapret` / WinDivert / `winws.exe`, активная стратегия, кнопки Старт/Стоп/Рестарт
-- **Стратегии** — все 22 стратегии из upstream, установка службой Windows, тестовый запуск в foreground-режиме, импорт своих `.bat`
-- **Настройки** — Game Filter, режим IPSet, флаг автопроверки обновлений, автозапуск, трей, активные `.bin`-фейки
-- **Обновления** — проверка версии zapret, обновление IPSet-списка, diff и применение hosts, обновление стратегий из release-ZIP с GitHub (с бэкапом), автообновление самого приложения
-- **Диагностика** — BFE, прокси, TCP timestamps, AdGuard/Killer/Intel/Check Point/SmartByte/VPN, кириллица в пути, OneDrive, Secure DNS, WinDivert64.sys, записи YouTube в hosts, зависший WinDivert, конфликтующие сервисы; очистка кэша Discord; запуск PowerShell-тестов
-- **Логи** — живой поток app/winws/updater + экспорт в файл
-- Локализация на 28 языков (RU/EN/UK/BE/KK/DE/FR/ES/IT/PT/NL/PL/CS/SK/HU/RO/BG/SR/HR/EL/TR/AR/FA/ZH/JA/KO/HI/ID) с автоопределением языка ОС и fallback на английский, тёмная/светлая тема, иконка трея с цветом статуса
+| Страница | Что умеет |
+|---|---|
+| Дашборд | Статус `zapret` / WinDivert / `winws.exe`, активная стратегия, путь сервиса, кнопки Старт / Стоп / Рестарт / Удалить, детект чужого сервиса + takeover |
+| Стратегии | Все 22 стратегии из upstream, установка службой Windows, тестовый запуск в foreground-режиме с живым выводом, поиск, бейджи desync-методов, импорт своих `.bat`, удаление импортированных |
+| Настройки | Game Filter, режим IPSet, флаг автопроверки обновлений, автозапуск, трей, старт свёрнутым, активные `.bin`-фейки Discord/Game |
+| Обновления | Проверка версии zapret-данных, обновление IPSet-списка, diff и применение hosts (с бэкапом `.zapret-gui.bak`), обновление стратегий из release-ZIP с GitHub (с бэкапом `data/_backup/<timestamp>`), автообновление самого приложения |
+| Диагностика | 17 проверок + инструменты: очистка кэша Discord, удаление конфликтующих сервисов, запуск PowerShell-тестов |
+| Логи | Живой поток `app` / `winws` / `updater` / `diag` (ринг-буфер 2000 строк + `app.log`), фильтр, экспорт в файл |
+| Прочее | 28 языков с автоопределением языка ОС и fallback на английский, тёмная/светлая тема, иконка трея с цветом статуса, мастер первого запуска, флаги языков в сайдбаре |
 
-## Раскладка установки (без папки `zapret-discord-youtube-main`!)
+## 📊 Дашборд
 
-- Установщик (NSIS): `%LOCALAPPDATA%\Programs\Zapret GUI\` (+ ярлыки на рабочем столе и в меню «Пуск»), запрашивает повышение прав
-- Рабочие данные (при первом запуске копируются из `resources/bundled-assets` установщика): `%APPDATA%\zapret-gui\data\{bin,lists,utils,strategies}`
-- Настройки: `%APPDATA%\zapret-gui\settings.json`
+* Бейджи состояний `RUNNING` / `STOPPED` / `NOT_INSTALLED` / `START_PENDING` / `STOP_PENDING` / `UNKNOWN`
+* Активная стратегия (из реестра `HKLM\…\Services\zapret\zapret-discord-youtube` + `settings.json`)
+* Путь сервиса (`ImagePath`) и путь запущенного `winws.exe` (через `Get-Process`)
+* Бейдж прав администратора + баннер с кнопкой «Перезапустить с правами администратора» (UAC через `Start-Process -Verb RunAs`)
+* Детект чужого сервиса:
+  * `ownership === 'foreign'` — сервис `zapret` запущен не из `%APPDATA%\zapret-gui\data\bin` → баннер + кнопки «Взять под управление» / «Удалить чужой сервис»
+  * Портативный кейс — сервиса нет, но `winws.exe` запущен → предупреждение о конфликте
+* Блок ссылок: репозиторий, проблемы, релизы, YouTube, Telegram, VK, Dzen
 
-## Разработка
+## 🧩 Стратегии
+
+* 22 встроенные стратегии (`bundled-assets/strategies/*.json`, сгенерированы из `bundled-assets/bat/*.bat`):
+  `general`, `general (ALT…ALT13)`, `general (EXP)`, `general (FAKE TLS AUTO…)`, `general (SIMPLE FAKE…)` и др.
+* Поиск по имени, группы `Flowseal (встроенные)` / `Импортированные`
+* Автоописание по desync-методам: `fake`, `fakedsplit`, `multisplit`, `multidisorder`, `hostfakesplit`, `syndata`, `split`, `disorder`, `fake QUIC`, `fake TLS`, `фильтр Discord voice/STUN`, `game-фильтр`, `экспериментальная`
+* Foreground-тест: `spawnLong(<data>/bin/winws.exe, args)` + стрим `stdout/stderr/exit` через `zapret:on-test-output`
+* Импорт: диалог выбора `.bat` → `parseBatContent()` → `<id>.json` (`origin: 'imported'`) + копия исходного `.bat` рядом
+* Удаление только импортированных (встроенные защищены от удаления)
+* Применение спрашивает подтверждение и останавливает активный тест
+
+## ⚙️ Настройки
+
+| Параметр | Значения / поведение |
+|---|---|
+| Game Filter (`utils/game_filter.enabled`) | `disabled` / `all` (TCP+UDP) / `tcp` / `udp` — порты `1024-65535` vs `12` |
+| IPSet (`lists/ipset-all.txt`) | `none` (`203.0.113.113/32`) / `loaded` (restore из `.backup`) / `any` (пустой файл) |
+| Автопроверка обновлений | Флаг-файл `utils/check_updates.enabled` |
+| Автозапуск с Windows | `app.setLoginItemSettings({ openAtLogin })` |
+| Трей | Сворачивать в трей при закрытии + старт свёрнутым в трей |
+| Фейки (`.bin`) | Списки из `bin/*.bin` (без `ACTIVE_*`), замена `ACTIVE_DISCORD_UDP.bin` / `ACTIVE_GAME_UDP.bin` копией выбранного фейка |
+| Язык / Тема | Сохраняются в `settings.json`, применяются мгновенно (трей обновляется по таймеру ~15с) |
+
+## 🔄 Обновления
+
+* `checkZapretUpdates()` — сравнивает локальный `bundled-assets/service/version.txt` (сейчас `1.10.2`, это версия **zapret-данных**, не приложения!) с upstream `.service/version.txt` через `compareVersions()`
+* `updateIPSetList()` — качает `.service/ipset-service.txt` → `lists/ipset-all.txt`, удаляет stale `.backup`, возвращает `{ lines, bytes }`
+* `checkHosts()` / `applyHosts()` — качает `.service/hosts`, сравнивает первую/последнюю строки с системным `hosts`, при применении заменяет zapret-блок или дописывает + бэкап `hosts.zapret-gui.bak`
+* `updateStrategiesFromGithub()`:
+  1. `api.github.com/.../releases/latest` → выбор `.zip`-ассета или `zipball`
+  2. Скачивание с прогрессом `zapret:on-download-progress` (0–80%)
+  3. Бэкап `bin/lists/utils/strategies` → `data/_backup/<timestamp>`
+  4. `Expand-Archive` через PowerShell, обход одного top-level каталога
+  5. Копирование только изменённых файлов (сравнение по размеру + хешу), `lists/*-user.txt` никогда не затираются
+  6. Регенерация `strategies/*.json` из `*.bat` корня архива (`origin: 'bundled'`)
+* Автообновление приложения: `electron-updater` (`autoDownload: false`, проверка при старте + каждые 6ч, событие `zapret:app-update-available`)
+
+## 🩺 Диагностика (17 проверок)
+
+| № | Проверка | Смысл |
+|---|---|---|
+| 1 | BFE | `Base Filtering Engine` должен быть `RUNNING`, иначе WinDivert/zapret не работают |
+| 2 | Системный прокси | `ProxyEnable` + `ProxyServer` из реестра — предупреждение, если включён |
+| 3 | TCP timestamps | `netsh interface tcp show global`, автофикс `timestamps=enabled` (как в `service.bat`) |
+| 4 | AdGuard | `AdguardSvc.exe` может ломать голосовой Discord |
+| 5 | Killer Network | Сервисы `*killer*` конфликтуют с zapret |
+| 6 | Intel Connectivity | `intel*connectivity` — конфликт |
+| 7 | Check Point | `TracSrvWrapper` / `EPWD` — только удаление |
+| 8 | SmartByte | `smartbyte` — отключать через `services.msc` |
+| 9 | Кириллица в пути | Символы `[\u0400-\u04FF]` в пути установки |
+| 10 | OneDrive | Установка внутри OneDrive → перенести, напр. в `C:\zapret` |
+| 11 | WinDivert64.sys | Наличие `.sys` в `bin/` |
+| 12 | VPN-сервисы | `sc query` + фильтр `/vpn/i` |
+| 13 | Secure DNS | `DohFlags > 0` в `Dnscache\InterfaceSpecificParameters` — OK, если настроен DoH |
+| 14 | Записи YouTube в hosts | `youtube.com` / `youtu.be` в системном hosts |
+| 15 | Залипший WinDivert | `winws` не запущен, а `WinDivert` активен → автоудаление stale-службы |
+| 16 | Сторонний zapret | Чужой `ImagePath` или портативный `winws.exe` без сервиса |
+| 17 | Конфликтующие сервисы | `GoodbyeDPI`, `discordfix_zapret`, `winws1`, `winws2` |
+
+Инструменты:
+
+* Очистка кэша Discord — варианты `discord` / `discordptb` / `discordcanary` / `discorddevelopment` (`Cache`, `Code Cache`, `GPUCache`), с завершением процессов `Discord*.exe`
+* Удаление конфликтующих сервисов + остатков `WinDivert` / `WinDivert14`
+* Запуск `utils/test zapret.ps1` в отдельном видимом окне PowerShell (`cmd /c start "" powershell …`, как в `service.bat`)
+
+## 📝 Логи
+
+* Источники: `app` / `winws` / `updater` / `diag`, уровни `info` / `warn` / `error`
+* Файл `%APPDATA%\zapret-gui\app.log` + in-memory буфер 2000 строк
+* Страница «Логи»: фильтр по тексту/источнику, моноширинный вывод `HH:MM:SS [source] text`, экспорт через диалог сохранения + автооткрытие папки
+
+## 🌍 Локализация (28 языков)
+
+RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL • CS • SK • HU • RO • BG • SR • HR • EL • TR • AR • FA • ZH • JA • KO • HI • ID
+
+* Словари: `src/shared/locales/*.ts`, тип `I18nKey = keyof typeof ru`
+* Язык ОС → локаль приложения: `resolveSystemLocale()` (нормализация `ru-RU`/`en_US`, алиасы `bs→sr`, `pt-BR→pt`, `zh-TW→zh` и др., fallback `en`)
+* `translate()` с fallback `locale → en → ru → key`, `formatDetail()` подставляет `{placeholders}` в шаблоны диагностики
+* Main-процесс возвращает сырые данные + `labelKey`/`detailKey`, переводит только renderer (zustand `t()`)
+* Первый запуск: локаль из `app.getLocale()`, тема из `nativeTheme.shouldUseDarkColors` (по умолчанию тёмная)
+
+## 🎨 Тема и трей
+
+* Тёмная/светлая тема через класс `dark` + Tailwind, анимация переключения `.theme-anim` ~350мс
+* Трей: иконка по статусу `running` / `stopped` / `not-installed` / `unknown` (готовые `bundled-assets/tray/tray-*.png` или генерация 16×16 PNG-кружка), тултип `Zapret GUI — <статус>`, меню Старт / Стоп / Открыть / Выйти, дабл-клик/клик — показать окно, автообновление каждые 15с
+* Модалка «О программе»: версии приложения/данных, ссылки, лицензия GPL-3.0, донат-блок SBER с кнопкой копирования
+
+## 💾 Раскладка установки (без папки `zapret-discord-youtube-main`!)
+
+* Установщик (NSIS): `%LOCALAPPDATA%\Programs\Zapret GUI\` (+ ярлыки на рабочем столе и в меню «Пуск»), запрашивает повышение прав (`requestedExecutionLevel: requireAdministrator`, `oneClick: false`, цели `nsis` + `zip`)
+* Рабочие данные (при первом запуске копируются из `resources/bundled-assets` установщика, пользовательские файлы не перезаписываются): `%APPDATA%\zapret-gui\data\{bin,lists,utils,strategies}`
+  * `bin/` — `winws.exe`, `WinDivert64.sys`, `WinDivert.dll`, `cygwin1.dll`, `tls_clienthello_*.bin` / `quic_initial_*.bin` / `stun*.bin` / `ACTIVE_*.bin`
+  * `lists/` — `ipset-all.txt`, `list-general.txt`, `list-google.txt`, `list-exclude.txt`, `ipset-exclude.txt` + создаваемые `*-user.txt` заглушки
+  * `utils/` — `test zapret.ps1`, `targets.txt`, флаги `check_updates.enabled` / `game_filter.enabled`
+  * `strategies/` — 22 × `*.json`
+* Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`)
+* Лог: `%APPDATA%\zapret-gui\app.log`
+* Dev-режим: `bundled-assets` из репозитория, данные в `<repo>/.data`, `userData` изолирован в `zapret-gui-dev` во избежание лока кэша Chromium
+
+## 🛠️ Разработка
 
 ```powershell
-npm install
-npm run dev        # electron-vite dev (для функций служб нужна Windows)
-npm test           # vitest
-npm run lint       # typecheck
-npm run build:win  # установщик + portable zip в dist/
-npm run clean      # удалить out/ и dist/
-npm run rebuild    # clean + полная пересборка из исходников
+npm install                  # зависимости
+npm run dev                  # electron-vite dev (для функций служб нужна Windows)
+npm test                     # vitest run
+npm run test:watch           # vitest watch
+npm run lint                 # typecheck (tsc --noEmit)
+npm run typecheck            # то же самое
+npm run generate:strategies  # перепарсить bundled-assets/bat/*.bat → bundled-assets/strategies/*.json
+npm run build                # generate:strategies + electron-vite build
+npm run build:win            # установщик NSIS + portable zip в dist/ (--publish never)
+npm run build:win:publish    # то же + публикация в GitHub Releases (--publish always)
+npm run clean                # удалить out/ и dist/ (scripts/clean.mjs)
+npm run rebuild              # clean + полная пересборка из исходников
+npm run icon                 # сгенерировать иконки (scripts/make-icon.mjs)
+npm run preview              # electron-vite preview
 ```
 
-`npm run generate:strategies` перепарсивает `bundled-assets/bat/*.bat`
-в `bundled-assets/strategies/*.json` (автоматически перед каждой сборкой).
+`npm run generate:strategies` автоматически выполняется перед каждой сборкой.
+В CI `bundled-assets/` уже закоммичен, скрипт только идемпотентно пересинхронизирует JSON-конфиги.
 
-## Структура проекта
+Тесты (vitest, 8 файлов): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray` (+ `setup.ts`).
+
+CI (`.github/workflows/`): `build.yml` + `release.yml`.
+
+## 📁 Структура проекта
 
 ```
 src/
-  main/         index.ts tray.ts ipc-handlers.ts service-manager.ts
-                strategy-parser.ts strategy-updater.ts diagnostics.ts
-                settings.ts paths.ts exec.ts logger.ts
-  preload/      index.ts            # типизированный мост window.zapret
-  renderer/     App.tsx store.ts    # zustand + i18n (28 языков)
+  main/         index.ts (окно 1500x875, tray, auto-updater, first-run wizard)
+                tray.ts (цветные иконки, меню Start/Stop/Show/Quit)
+                ipc-handlers.ts (все IPC + foreground-тест + экспорт логов)
+                service-manager.ts (sc/net/reg/tasklist, install/remove/start/stop, GameFilter, IPSet, Discord-кэш, конфликты)
+                strategy-parser.ts (парсинг .bat в args, плейсхолдеры <BIN>/<LISTS>/<GAME_TCP>)
+                strategy-updater.ts (version/IPSet/hosts/release-ZIP, .bin-фейки)
+                diagnostics.ts + diagnostics-helpers.ts (17 проверок)
+                settings.ts (settings.json + systemDefaults + autoLaunch)
+                paths.ts (bundled-assets vs %APPDATA%/zapret-gui/data)
+                exec.ts (cmd/powershell, isAdmin, RunAs, spawnLong)
+                logger.ts (файл + буфер 2000 + zapret:on-log)
+  preload/      index.ts — типизированный мост window.zapret
+  renderer/     App.tsx + main.tsx + store.ts — zustand (page/locale/theme/status/strategies/logs/busy/error)
+                components/ Layout.tsx (сайдбар, пикер языка с флагами SVG, темы, AboutModal с донатом) + ui.tsx
                 pages/ Dashboard Strategies Settings Updates Diagnostics Logs
-  shared/       types.ts constants.ts i18n.ts locales/ (28 словарей)
-bundled-assets/ bin/ lists/ utils/ strategies/ bat/ service/
-scripts/        generate-strategies.mjs
-tests/          strategy-parser.test.ts service-manager.test.ts
+                assets/ app-icon.png
+  shared/       types.ts (ServiceState, Strategy, StatusSnapshot, DiagnosticCheck, UpdateInfo, AppSettings, IPC)
+                constants.ts (SERVICE_NAME=zapret, UPSTREAM_OWNER=Flowseal, URLS, CONFLICTING_SERVICES, FAKE_*.bin)
+                i18n.ts + locales/ (28 словарей)
+bundled-assets/ bin/ lists/ utils/ strategies/ (22 JSON) bat/ (исходные .bat) service/ (version.txt + hosts) tray/ icon.ico
+scripts/        generate-strategies.mjs + clean.mjs + make-icon.mjs
+tests/          8 x *.test.ts + setup.ts
 .github/workflows/ build.yml release.yml
+electron-builder.yml electron.vite.config.ts tailwind.config.js postcss.config.cjs
 ```
 
-## Как работает служба
+## ⚙️ Как работает служба
 
 Применение стратегии повторяет `service.bat :service_install`:
 
 1. `netsh … timestamps=enabled`
 2. `net stop zapret` / `sc delete zapret`
-3. `sc create zapret binPath= "<data>\bin\winws.exe <подставленные аргументы>" start= auto`
+3. `sc create zapret binPath= "<data>\bin\winws.exe <подставленные аргументы>" start= auto` + `sc description`
 4. `sc start zapret` + имя стратегии в `HKLM\…\Services\zapret\zapret-discord-youtube`
 
-Bat-переменные `%GameFilterTCP/UDP%` и `%BIN%/%LISTS%` при парсинге
-превращаются в плейсхолдеры (`<GAME_TCP>`, `<BIN>` …) и подставляются
-под конкретную машину в момент применения.
+Bat-переменные при парсинге превращаются в плейсхолдеры и подставляются под конкретную машину в момент применения:
+
+| .bat | Плейсхолдер | На применении |
+|---|---|---|
+| `%BIN%`, `%~dp0bin\` | `<BIN>` | `%APPDATA%\zapret-gui\data\bin` |
+| `%LISTS%`, `%~dp0lists\` | `<LISTS>` | `%APPDATA%\zapret-gui\data\lists` |
+| `%GameFilterTCP%` | `<GAME_TCP>` | `1024-65535` / `12` |
+| `%GameFilterUDP%` | `<GAME_UDP>` | `1024-65535` / `12` |
+| `%~dp0` | `<ROOT>` | `bin`-директория |
+| `^!` | `!` | Снятие batch-экранирования |
+
+Определение состояния — через `Get-Service` (locale-independent, в отличие от парсинга `sc query`, который на русской Windows возвращает `СОСТОЯНИЕ` вместо `STATE`), `sc` остаётся fallback-ом.
+
+## ❓ FAQ
+
+* **«Нет прав администратора»** — нажмите «Перезапустить с правами администратора», иначе недоступны старт/стоп/применение/hosts/диагностика.
+* **«Обнаружен сторонний zapret»** — удалите чужой сервис (кнопка спросит подтверждение с путём) и примените стратегию из вкладки «Стратегии».
+* **OneDrive / кириллица в пути** — перенесите установку, напр. в `C:\zapret` (подскажет диагностика).
+* **YouTube не открывается** — проверьте записи `youtube.com` в hosts + настройте Secure DNS (DoH) в браузере/Windows 11.
+* **Конфликты (GoodbyeDPI и др.)** — кнопка «Удалить конфликтующие сервисы» в диагностике.
+* **Голосовой Discord хрипит** — проверьте AdGuard / Killer / SmartByte / VPN, очистите кэш Discord, попробуйте другую стратегию + foreground-тест.
 
 # 📜 Лицензия
 
