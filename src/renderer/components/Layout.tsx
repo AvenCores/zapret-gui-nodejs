@@ -36,7 +36,7 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
             <button
               key={n.id}
               onClick={() => setPage(n.id)}
-              className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition ${
+              className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition active:scale-[0.98] ${
                 page === n.id ? 'bg-sky-600/90 font-medium text-white' : 'text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700/60'
               }`}
             >
@@ -82,7 +82,7 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
           <button
             type="button"
             onClick={() => setAboutOpen(true)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-500 transition hover:bg-slate-200 hover:text-slate-800 dark:border-slate-700/60 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-500 transition hover:bg-slate-200 hover:text-slate-800 active:scale-[0.98] dark:border-slate-700/60 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
           >
             <InfoIcon />
             {t('about.title')}
@@ -156,7 +156,7 @@ function AboutModal(props: { onClose: () => void }): React.JSX.Element {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/60 p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -164,7 +164,7 @@ function AboutModal(props: { onClose: () => void }): React.JSX.Element {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-800"
+        className="max-h-[85vh] w-full max-w-md animate-zoom-in overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-800"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -393,7 +393,7 @@ function Picker<T extends string>(props: {
         <ul
           role="listbox"
           aria-label={props.label}
-          className="absolute bottom-full right-0 z-20 mb-1 max-h-64 w-max min-w-full overflow-y-auto rounded-md border border-slate-300 bg-white py-0.5 shadow-lg dark:border-slate-600 dark:bg-slate-700"
+          className="absolute bottom-full right-0 z-20 mb-1 max-h-64 w-max min-w-full origin-bottom-right animate-menu-in overflow-y-auto rounded-md border border-slate-300 bg-white py-0.5 shadow-lg dark:border-slate-600 dark:bg-slate-700"
         >
           {props.options.map((o) => (
             <li key={o.value} role="option" aria-selected={o.value === props.value}>
@@ -777,7 +777,7 @@ function AdminBanner(): React.JSX.Element | null {
   const { status, t, busy } = useUi()
   if (!status || status.isAdmin) return null
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-5 py-2 text-sm text-amber-800 dark:text-amber-200">
+    <div className="flex animate-slide-down items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-5 py-2 text-sm text-amber-800 dark:text-amber-200">
       <span>⚠ {t('dashboard.adminMissing')}</span>
       <Btn
         variant="danger"
@@ -794,7 +794,7 @@ function ErrorBanner(): React.JSX.Element | null {
   const { error, setError } = useUi()
   if (!error) return null
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-700 dark:text-red-200">
+    <div className="flex animate-slide-down items-center justify-between gap-3 border-b border-red-500/40 bg-red-500/10 px-5 py-2 text-sm text-red-700 dark:text-red-200">
       <span className="break-all">❌ {error}</span>
       <button onClick={() => setError(null)} className="shrink-0 rounded px-2 py-0.5 hover:bg-red-500/20">
         ✕

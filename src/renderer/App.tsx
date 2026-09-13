@@ -32,12 +32,14 @@ export default function App(): React.JSX.Element {
 
   return (
     <Layout>
+      <div key={page} className="animate-page-in">
         {page === 'dashboard' && <Dashboard />}
         {page === 'strategies' && <Strategies />}
         {page === 'settings' && <Settings />}
         {page === 'updates' && <Updates />}
         {page === 'diagnostics' && <Diagnostics />}
         {page === 'logs' && <Logs />}
+      </div>
     </Layout>
   )
 }

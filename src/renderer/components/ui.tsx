@@ -28,9 +28,15 @@ export function Badge(props: { tone: Tone; children: React.ReactNode }): React.J
   )
 }
 
-export function Dot(props: { tone: Tone }): React.JSX.Element {
+export function Dot(props: { tone: Tone; pulse?: boolean }): React.JSX.Element {
   const bg = props.tone === 'green' ? 'bg-emerald-400' : props.tone === 'red' ? 'bg-red-400' : props.tone === 'yellow' ? 'bg-amber-400' : props.tone === 'blue' ? 'bg-sky-400' : 'bg-slate-400'
-  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${bg}`} />
+  if (!props.pulse) return <span className={`inline-block h-2.5 w-2.5 rounded-full ${bg}`} />
+  return (
+    <span className="relative flex h-2.5 w-2.5">
+      <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${bg}`} />
+      <span className={`relative inline-block h-2.5 w-2.5 rounded-full ${bg}`} />
+    </span>
+  )
 }
 
 export function Btn(props: {
@@ -40,7 +46,7 @@ export function Btn(props: {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
   type?: 'button' | 'submit'
 }): React.JSX.Element {
-  const base = 'rounded-lg px-3.5 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40'
+  const base = 'rounded-lg px-3.5 py-1.5 text-sm font-medium transition active:scale-[0.97] disabled:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40'
   const v =
     props.variant === 'danger'
       ? 'bg-red-600 hover:bg-red-500 text-white'

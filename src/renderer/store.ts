@@ -85,10 +85,16 @@ export const useUi = create<UiState>((set, get) => ({
     }),
 
   applySettings: async (patch) => {
+    const prevTheme = get().theme
     const settings = await call('settings', () => window.zapret.saveSettings(patch), set, get)
     if (settings) {
       set({ settings, locale: settings.locale, theme: settings.theme })
       document.documentElement.classList.toggle('dark', settings.theme === 'dark')
+      if (settings.theme !== prevTheme) {
+        // Briefly enable surface recolor transitions (see .theme-anim in index.css).
+        document.documentElement.classList.add('theme-anim')
+        setTimeout(() => document.documentElement.classList.remove('theme-anim'), 350)
+      }
     }
   }
 }))

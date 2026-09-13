@@ -14,3 +14,24 @@ body {
   margin: 0;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
+
+/* Smooth surface recolor while the theme is switching (class toggled briefly by the store). */
+.theme-anim,
+.theme-anim *,
+.theme-anim *::before,
+.theme-anim *::after {
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease !important;
+}
+
+/* Respect users who prefer reduced motion: kill all animations/transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -132,19 +132,19 @@ export default function Dashboard(): React.JSX.Element {
       <Card>
         <Row label={t('dashboard.service')}>
           <Badge tone={serviceTone}>
-            <Dot tone={serviceTone} />
+            <Dot tone={serviceTone} pulse={running} />
             {serviceLabel}
           </Badge>
         </Row>
         <Row label={t('dashboard.windivert')}>
           <Badge tone={stateTone(status.windivert)}>
-            <Dot tone={stateTone(status.windivert)} />
+            <Dot tone={stateTone(status.windivert)} pulse={status.windivert === 'RUNNING'} />
             {status.windivert === 'RUNNING' ? t('status.running') : t(`status.${stateKey(status.windivert)}`)}
           </Badge>
         </Row>
         <Row label={t('dashboard.winws')}>
           <Badge tone={status.winwsRunning ? 'green' : 'red'}>
-            <Dot tone={status.winwsRunning ? 'green' : 'red'} />
+            <Dot tone={status.winwsRunning ? 'green' : 'red'} pulse={status.winwsRunning} />
             {status.winwsRunning ? t('status.running') : t('status.stopped')}
           </Badge>
         </Row>
