@@ -11,6 +11,8 @@
     "build": "npm run generate:strategies && electron-vite build",
     "build:win": "npm run build && electron-builder --win nsis zip --publish never",
     "build:win:publish": "npm run build && electron-builder --win nsis zip --publish always",
+    "clean": "node scripts/clean.mjs",
+    "rebuild": "npm run clean && npm run build:win",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",

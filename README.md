@@ -50,6 +50,8 @@ npm run dev        # electron-vite dev (для функций служб нуж�
 npm test           # vitest
 npm run lint       # typecheck
 npm run build:win  # установщик + portable zip в dist/
+npm run clean      # удалить out/ и dist/
+npm run rebuild    # clean + полная пересборка из исходников
 ```
 
 `npm run generate:strategies` перепарсивает `bundled-assets/bat/*.bat`

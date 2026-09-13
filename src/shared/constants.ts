@@ -12,6 +12,9 @@ export const UPSTREAM_OWNER = 'Flowseal'
 export const UPSTREAM_REPO = 'zapret-discord-youtube'
 export const UPSTREAM_BRANCH = 'main'
 
+export const APP_OWNER = 'AvenCores'
+export const APP_REPO = 'zapret-gui-nodejs'
+
 export const URLS = {
   versionTxt: `https://raw.githubusercontent.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/refs/heads/${UPSTREAM_BRANCH}/.service/version.txt`,
   ipsetTxt: `https://raw.githubusercontent.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/refs/heads/${UPSTREAM_BRANCH}/.service/ipset-service.txt`,
@@ -19,12 +22,18 @@ export const URLS = {
   releasesLatestApi: `https://api.github.com/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/releases/latest`,
   releasesPage: `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/releases/latest`,
   releaseTag: (tag: string) => `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/releases/tag/${tag}`,
-  discordInvite: 'https://discord.gg/9dEqTQce',
-  issues: `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/issues`
+  issues: `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/issues`,
+  // Links shown on the dashboard. NOTE: upstream explicitly states it runs
+  // NO Telegram/YouTube pages and NO Discord server — anything like that
+  // "from Flowseal" outside github.com/Flowseal is fake. So only GitHub links.
+  appRepo: `https://github.com/${APP_OWNER}/${APP_REPO}`,
+  appIssues: `https://github.com/${APP_OWNER}/${APP_REPO}/issues`,
+  appReleases: `https://github.com/${APP_OWNER}/${APP_REPO}/releases`,
+  upstreamRepo: `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}`,
+  upstreamDiscussions: `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/discussions`,
+  tgWsProxy: 'https://github.com/Flowseal/tg-ws-proxy',
+  bolvanZapret: 'https://github.com/bol-van/zapret'
 } as const
-
-/** Fallback invite used if constant above is ever edited incorrectly. */
-export const DISCORD_INVITE_FALLBACK = 'https://discord.gg/9dEqTQce'
 
 export const GAME_FILTER_FLAG = 'game_filter.enabled'
 export const CHECK_UPDATES_FLAG = 'check_updates.enabled'

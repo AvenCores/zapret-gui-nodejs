@@ -110,11 +110,22 @@ export default function Dashboard(): React.JSX.Element {
         </div>
       </Card>
 
-      <Card title="Links">
+      <Card title="zapret-gui">
         <div className="flex flex-wrap gap-2 text-sm">
-          <LinkBtn href={URLS.discordInvite}>Discord</LinkBtn>
-          <LinkBtn href={URLS.issues}>GitHub Issues</LinkBtn>
+          <LinkBtn href={URLS.appRepo}>Repository</LinkBtn>
+          <LinkBtn href={URLS.appIssues}>Issues</LinkBtn>
+          <LinkBtn href={URLS.appReleases}>Releases</LinkBtn>
+        </div>
+      </Card>
+
+      <Card title="Upstream (Flowseal)">
+        <div className="flex flex-wrap gap-2 text-sm">
+          <LinkBtn href={URLS.upstreamRepo}>Repository</LinkBtn>
+          <LinkBtn href={URLS.issues}>Issues</LinkBtn>
+          <LinkBtn href={URLS.upstreamDiscussions}>Discussions</LinkBtn>
           <LinkBtn href={URLS.releasesPage}>Releases</LinkBtn>
+          <LinkBtn href={URLS.tgWsProxy}>tg-ws-proxy</LinkBtn>
+          <LinkBtn href={URLS.bolvanZapret}>bol-van/zapret</LinkBtn>
         </div>
       </Card>
     </div>
