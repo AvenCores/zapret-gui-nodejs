@@ -8,6 +8,7 @@ import { Tray, Menu, nativeImage, app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import type { ZapretStatus } from '../shared/types'
+import { translate, type I18nKey, type Locale } from '../shared/i18n'
 
 let tray: Tray | null = null
 
@@ -86,32 +87,53 @@ export interface TrayCallbacks {
   onQuit: () => void
 }
 
+/** Pre-translated tray strings for the app's active locale. */
+export interface TrayLabels {
+  status: string
+  start: string
+  stop: string
+  open: string
+  quit: string
+}
+
+/** Build tray labels for a locale (pure — covered by unit tests). */
+export function getTrayLabels(locale: Locale, status: ZapretStatus): TrayLabels {
+  const t = (key: I18nKey): string => translate(locale, key)
+  return {
+    status: t(`status.${status}` as I18nKey),
+    start: t('action.start'),
+    stop: t('action.stop'),
+    open: t('tray.open'),
+    quit: t('tray.quit')
+  }
+}
+
 /** Create the tray icon (idempotent — recreates menu on status change). */
-export function setupTray(status: ZapretStatus, cb: TrayCallbacks): Tray {
+export function setupTray(status: ZapretStatus, labels: TrayLabels, cb: TrayCallbacks): Tray {
   const img = nativeImage.createFromPath(iconPath(status))
   if (tray) {
     tray.setImage(img)
-    tray.setToolTip(`zapret-gui — ${status}`)
-    tray.setContextMenu(buildMenu(status, cb))
+    tray.setToolTip(`zapret-gui — ${labels.status}`)
+    tray.setContextMenu(buildMenu(status, labels, cb))
     return tray
   }
   tray = new Tray(img)
-  tray.setToolTip(`zapret-gui — ${status}`)
-  tray.setContextMenu(buildMenu(status, cb))
+  tray.setToolTip(`zapret-gui — ${labels.status}`)
+  tray.setContextMenu(buildMenu(status, labels, cb))
   tray.on('double-click', cb.onShow)
   tray.on('click', cb.onShow)
   return tray
 }
 
-function buildMenu(status: ZapretStatus, cb: TrayCallbacks): Menu {
+function buildMenu(status: ZapretStatus, labels: TrayLabels, cb: TrayCallbacks): Menu {
   return Menu.buildFromTemplate([
-    { label: `zapret: ${status}`, enabled: false },
+    { label: `zapret: ${labels.status}`, enabled: false },
     { type: 'separator' },
-    { label: 'Start', click: cb.onStart, enabled: status !== 'running' },
-    { label: 'Stop', click: cb.onStop, enabled: status === 'running' },
+    { label: labels.start, click: cb.onStart, enabled: status !== 'running' },
+    { label: labels.stop, click: cb.onStop, enabled: status === 'running' },
     { type: 'separator' },
-    { label: 'Open zapret-gui', click: cb.onShow },
-    { label: 'Quit', click: cb.onQuit }
+    { label: labels.open, click: cb.onShow },
+    { label: labels.quit, click: cb.onQuit }
   ])
 }
 

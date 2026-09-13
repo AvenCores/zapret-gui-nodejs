@@ -9,7 +9,7 @@ import { autoUpdater } from 'electron-updater'
 import { ensureDataDirSeeded, getDataDir, getAppLogPath, getBundledAssetsDir } from './paths'
 import { initLogger, info, err, onLog } from './logger'
 import { registerIpcHandlers, listStrategies } from './ipc-handlers'
-import { setupTray } from './tray'
+import { setupTray, getTrayLabels } from './tray'
 import { loadSettings, saveSettings } from './settings'
 import { getStatus } from './service-manager'
 import { isAdmin } from './exec'
@@ -32,7 +32,10 @@ function toTrayStatus(s: string): ZapretStatus {
 async function refreshTray(): Promise<void> {
   try {
     const st = await getStatus(await isAdmin())
-    setupTray(toTrayStatus(st.zapret), trayCallbacks())
+    const zs = toTrayStatus(st.zapret)
+    // Labels follow the app language (also refreshed by the 15s timer,
+    // so a language switch applies to the tray shortly after).
+    setupTray(zs, getTrayLabels(loadSettings().locale, zs), trayCallbacks())
   } catch {
     /* tray refresh is best-effort */
   }

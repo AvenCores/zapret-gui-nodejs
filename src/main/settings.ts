@@ -3,27 +3,55 @@
  * @module main/settings
  */
 import fs from 'node:fs'
-import { app } from 'electron'
+import { app, nativeTheme } from 'electron'
 import { getSettingsPath } from './paths'
 import type { AppSettings } from '../shared/types'
+import type { Locale } from '../shared/i18n'
 
-const DEFAULTS: AppSettings = {
-  locale: 'ru',
-  theme: 'dark',
+const BASE_DEFAULTS = {
   autoLaunch: false,
   startMinimizedToTray: false,
   minimizeToTrayOnClose: true,
   activeStrategyId: null,
   discordFake: null,
   gameFake: null
+} as const
+
+/**
+ * Map an OS locale tag (e.g. `ru-RU`, `en-US`) to a supported app locale.
+ * Pure — covered by unit tests.
+ */
+export function resolveSystemLocale(tag: string): Locale {
+  return tag.toLowerCase().startsWith('ru') ? 'ru' : 'en'
+}
+
+/**
+ * First-run defaults taken from the OS: UI language from the system locale,
+ * theme from the OS dark-mode setting. Used only while no settings file
+ * exists (i.e. until the user explicitly picks a language/theme).
+ */
+export function systemDefaults(): Pick<AppSettings, 'locale' | 'theme'> {
+  let locale: Locale = 'ru'
+  try {
+    locale = resolveSystemLocale(app.getLocale())
+  } catch {
+    /* keep fallback */
+  }
+  let theme: AppSettings['theme'] = 'dark'
+  try {
+    theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+  } catch {
+    /* keep fallback */
+  }
+  return { locale, theme }
 }
 
 export function loadSettings(): AppSettings {
   try {
     const raw = fs.readFileSync(getSettingsPath(), 'utf8')
-    return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<AppSettings>) }
+    return { ...BASE_DEFAULTS, ...systemDefaults(), ...(JSON.parse(raw) as Partial<AppSettings>) }
   } catch {
-    return { ...DEFAULTS }
+    return { ...BASE_DEFAULTS, ...systemDefaults() }
   }
 }
 
