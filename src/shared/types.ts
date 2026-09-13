@@ -48,6 +48,13 @@ export interface ParsedStrategy {
   warnings: string[]
 }
 
+/** Who owns the `zapret` Windows service binary. */
+export type ServiceOwnership =
+  | 'ours'
+  | 'foreign'
+  | 'none'
+  | 'unknown'
+
 /** Dashboard snapshot. */
 export interface StatusSnapshot {
   zapret: ServiceState
@@ -57,6 +64,10 @@ export interface StatusSnapshot {
   activeStrategy: string | null
   /** Full service binary path (ImagePath) if installed */
   serviceBinPath: string | null
+  /** Delivery path of the running winws.exe (null when not running / unknown). */
+  winwsPath: string | null
+  /** Whether the installed `zapret` service points into our own data/bin dir. */
+  ownership: ServiceOwnership
   isAdmin: boolean
 }
 

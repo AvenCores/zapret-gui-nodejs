@@ -12,7 +12,7 @@ import { runCmd, runPowershell } from './exec'
 import { getBinDir, getListsDir } from './paths'
 import { materializeArgs, quoteArg } from './strategy-parser'
 import { SERVICE_NAME, WINDIVERT_SERVICE, WINWS_EXE, CONFLICTING_SERVICES } from '../shared/constants'
-import type { GameFilterMode, IPSetMode, ServiceState, StatusSnapshot, Strategy } from '../shared/types'
+import type { GameFilterMode, IPSetMode, ServiceOwnership, ServiceState, StatusSnapshot, Strategy } from '../shared/types'
 
 // Re-exported so renderer-adjacent code can import from one place.
 export type { ServiceState, StatusSnapshot }
@@ -93,6 +93,81 @@ async function readStrategyRegistry(): Promise<{ strategy: string | null; binPat
   return { strategy, binPath }
 }
 
+/**
+ * Expand `%VAR%` segments using `process.env` (case-insensitive on Windows).
+ * Pure — covered by unit tests.
+ */
+export function expandEnvVars(p: string): string {
+  return p.replace(/%([^%]+)%/g, (_m, name: string) => {
+    const key = Object.keys(process.env).find((k) => k.toLowerCase() === String(name).toLowerCase())
+    return (key != null ? process.env[key] : '') ?? ''
+  })
+}
+
+/**
+ * Normalize a Windows path for ownership comparison: expand env vars,
+ * unify slashes, strip wrapping quotes, trim, lowercase.
+ * Pure — covered by unit tests.
+ */
+export function normalizeWindowsPath(p: string): string {
+  let s = expandEnvVars(p.trim())
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1)
+  if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) s = s.slice(1, -1)
+  s = s.replace(/\//g, '\\').toLowerCase()
+  return s
+}
+
+/**
+ * Extract the exe path from a service `ImagePath` value
+ * (e.g. `"C:\\zapret\\winws.exe" --args...` → `C:\\zapret\\winws.exe`).
+ * Pure — covered by unit tests.
+ */
+export function extractExePathFromImagePath(imagePath: string): string {
+  const s = imagePath.trim()
+  if (s.startsWith('"')) {
+    const end = s.indexOf('"', 1)
+    if (end > 1) return s.slice(1, end)
+  }
+  // Unquoted: first whitespace-separated token (ImagePath never contains
+  // spaces unquoted except as arg separator).
+  const token = s.split(/\s+/)[0] ?? ''
+  return token.replace(/^["']|["']$/g, '')
+}
+
+function withTrailingSep(normalizedDir: string): string {
+  const s = normalizedDir.replace(/\\+$/, '')
+  return s + '\\'
+}
+
+/**
+ * Decide who owns the `zapret` service by comparing its binary location
+ * with our own `bin/` dir. A third-party bundle (different folder) reports
+ * `RUNNING` under the same service name, so state alone is not enough.
+ * Pure — covered by unit tests.
+ */
+export function detectServiceOwnership(
+  serviceState: ServiceState,
+  serviceBinPath: string | null,
+  ownBinDir: string
+): ServiceOwnership {
+  if (serviceState === 'NOT_INSTALLED') return 'none'
+  if (serviceBinPath == null || serviceBinPath.trim() === '') return 'unknown'
+  const exe = normalizeWindowsPath(extractExePathFromImagePath(serviceBinPath))
+  const own = withTrailingSep(normalizeWindowsPath(ownBinDir))
+  const exeDir = exe.includes('\\') ? exe.slice(0, exe.lastIndexOf('\\') + 1) : ''
+  if (exeDir === '' || own === '\\') return 'unknown'
+  return exeDir.startsWith(own) ? 'ours' : 'foreign'
+}
+
+/** Full path of a running `winws.exe` (null when not running / unknown). */
+export async function getWinwsProcessPath(): Promise<string | null> {
+  const r = await runPowershell(
+    `(Get-Process -Name 'winws' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Path -ErrorAction SilentlyContinue)`
+  )
+  const p = (r.stdout ?? '').trim()
+  return p === '' ? null : p
+}
+
 async function enableTcpTimestamps(): Promise<void> {
   // Mirrors service.bat :tcp_enable — harmless if already enabled.
   await runCmd('chcp 437 >nul & netsh interface tcp show global | findstr /i "timestamps" | findstr /i "enabled" >nul || netsh interface tcp set global timestamps=enabled >nul 2>&1')
@@ -100,18 +175,28 @@ async function enableTcpTimestamps(): Promise<void> {
 
 /** Full dashboard snapshot. */
 export async function getStatus(isAdmin: boolean): Promise<StatusSnapshot> {
-  const [zapret, windivert, winwsRunning, reg] = await Promise.all([
+  const [zapret, windivert, winwsRunning, reg, winwsPath] = await Promise.all([
     scQuery(SERVICE_NAME),
     scQuery(WINDIVERT_SERVICE),
     isProcessRunning(WINWS_EXE),
-    readStrategyRegistry()
+    readStrategyRegistry(),
+    getWinwsProcessPath()
   ])
+  let ownBinDir = ''
+  try {
+    ownBinDir = getBinDir()
+  } catch {
+    ownBinDir = ''
+  }
+  const ownership = ownBinDir === '' ? 'unknown' : detectServiceOwnership(zapret, reg.binPath, ownBinDir)
   return {
     zapret,
     windivert,
     winwsRunning,
     activeStrategy: reg.strategy,
     serviceBinPath: reg.binPath,
+    winwsPath,
+    ownership,
     isAdmin
   }
 }

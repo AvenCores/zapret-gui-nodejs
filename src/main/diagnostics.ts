@@ -9,7 +9,9 @@ import path from 'node:path'
 import os from 'node:os'
 import { runCmd, runPowershell } from './exec'
 import { getBinDir } from './paths'
+import { SERVICE_NAME } from '../shared/constants'
 import { CONFLICTING_SERVICES } from '../shared/constants'
+import { detectServiceOwnership, getWinwsProcessPath } from './service-manager'
 import type { DiagnosticCheck } from '../shared/types'
 import type { I18nKey } from '../shared/i18n'
 import { scQueryState } from './diagnostics-helpers'
@@ -214,6 +216,60 @@ async function checkConflicts(): Promise<DiagnosticCheck> {
   }
 }
 
+async function checkForeign(): Promise<DiagnosticCheck> {
+  const base = {
+    id: 'foreign',
+    labelKey: 'diag.foreign'
+  } as const
+  try {
+    const state = await scQueryState(SERVICE_NAME)
+    if (state === 'NOT_INSTALLED') {
+      // No service — but a stray winws.exe means a portable foreign bundle.
+      const r = await runCmd('tasklist /FI "IMAGENAME eq winws.exe" /FO CSV /NH')
+      const running = r.stdout.toLowerCase().includes('winws.exe')
+      if (!running) {
+        return { ...base, level: 'ok', detail: 'no foreign installs', detailKey: 'diag.detail.noForeign' }
+      }
+      let p: string | null = null
+      try {
+        p = await getWinwsProcessPath()
+      } catch {
+        p = null
+      }
+      return {
+        ...base,
+        level: 'warn',
+        detail: `winws.exe running without a service (${p ?? 'unknown path'}) — likely a foreign portable bundle`,
+        detailKey: 'diag.detail.foreignPortable',
+        detailParams: { path: p ?? 'unknown' }
+      }
+    }
+    const reg = await runCmd(`reg query "HKLM\\System\\CurrentControlSet\\Services\\${SERVICE_NAME}" /v ImagePath`)
+    const m = reg.stdout.match(/ImagePath\s+REG_(?:EXPAND_)?SZ\s+(.+)/)
+    const binPath = m?.[1]?.trim() ?? null
+    let own = ''
+    try {
+      own = getBinDir()
+    } catch {
+      own = ''
+    }
+    const ownership = own === '' ? 'unknown' : detectServiceOwnership(state, binPath, own)
+    if (ownership === 'foreign') {
+      const p = (binPath ?? 'unknown').trim()
+      return {
+        ...base,
+        level: 'fail',
+        detail: `service runs from a foreign folder: ${p} — remove it or take over`,
+        detailKey: 'diag.detail.foreignFail',
+        detailParams: { path: p }
+      }
+    }
+    return { ...base, level: 'ok', detail: 'no foreign installs', detailKey: 'diag.detail.noForeign' }
+  } catch {
+    return { ...base, level: 'ok', detail: 'no foreign installs', detailKey: 'diag.detail.noForeign' }
+  }
+}
+
 async function checkVpn(): Promise<DiagnosticCheck> {
   const r = await runCmd('sc query')
   const hits = r.stdout
@@ -253,6 +309,7 @@ export async function runDiagnostics(installDir: string, appData: string): Promi
   results.push(await checkSecureDNS())
   results.push(await checkHostsYoutube())
   results.push(await checkWinDivertStuck())
+  results.push(await checkForeign())
   results.push(await checkConflicts())
   return results
 }

@@ -1,5 +1,5 @@
 /** Dashboard: service status, quick actions, links. */
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, Dot, Row, Spinner } from '../components/ui'
 import { URLS } from '../../shared/constants'
@@ -19,8 +19,20 @@ function stateKey(s: ServiceState): 'running' | 'stopped' | 'not-installed' | 'u
   return 'unknown'
 }
 
+/** First token of a service ImagePath (`"C:\...\winws.exe" --args` → `"C:\...\winws.exe"`). */
+function shortExePath(full: string): string {
+  const s = full.trim()
+  if (s === '' || s === '—') return s
+  if (s.startsWith('"')) {
+    const end = s.indexOf('"', 1)
+    if (end > 1) return s.slice(0, end + 1)
+  }
+  return s.split(/\s+/)[0] ?? s
+}
+
 export default function Dashboard(): React.JSX.Element {
-  const { t, status, refreshStatus, busy, setError, settings } = useUi()
+  const { t, status, refreshStatus, busy, setError, settings, setPage } = useUi()
+  const [foreignExpanded, setForeignExpanded] = useState(false)
 
   useEffect(() => {
     const offStart = window.zapret.onTrayStart(() => void doAction('start'))
@@ -32,8 +44,18 @@ export default function Dashboard(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const foreignPathKey = status?.serviceBinPath ?? status?.winwsPath ?? '—'
+  useEffect(() => {
+    setForeignExpanded(false)
+  }, [foreignPathKey])
+
   async function doAction(kind: 'start' | 'stop' | 'restart' | 'refresh' | 'remove'): Promise<void> {
     try {
+      const foreign = status?.ownership === 'foreign'
+      if ((kind === 'start' || kind === 'stop' || kind === 'restart') && foreign) {
+        setError(t('dashboard.foreignHint'))
+        return
+      }
       if (kind === 'start') await window.zapret.startService()
       if (kind === 'stop') await window.zapret.stopService()
       if (kind === 'restart') {
@@ -41,7 +63,13 @@ export default function Dashboard(): React.JSX.Element {
         await window.zapret.startService()
       }
       if (kind === 'remove') {
-        if (!window.confirm(t('action.remove') + '?')) return
+        const binPath = status?.serviceBinPath ?? '—'
+        if (foreign) {
+          const msg = t('dashboard.removeForeignConfirm').replace('{path}', binPath)
+          if (!window.confirm(msg)) return
+        } else if (!window.confirm(t('action.remove') + '?')) {
+          return
+        }
         await window.zapret.removeServices()
       }
       await refreshStatus()
@@ -59,16 +87,53 @@ export default function Dashboard(): React.JSX.Element {
   }
 
   const running = status.zapret === 'RUNNING'
+  const foreign = status.ownership === 'foreign'
+  const portableForeign = status.zapret === 'NOT_INSTALLED' && status.winwsRunning
+  const serviceTone = foreign ? 'yellow' : stateTone(status.zapret)
+  const serviceLabel = foreign
+    ? `${status.zapret === 'RUNNING' ? t('status.running') : t(`status.${stateKey(status.zapret)}`)} · ${t('status.foreign')}`
+    : status.zapret === 'RUNNING'
+      ? t('status.running')
+      : t(`status.${stateKey(status.zapret)}`)
+  const foreignPath = status.serviceBinPath ?? status.winwsPath ?? '—'
+  const foreignExe = shortExePath(foreignPath)
+  const foreignStrategy = status.activeStrategy ?? t('dashboard.none')
+  const fill = (s: string): string =>
+    s.replace('{path}', foreignExe).replace('{strategy}', foreignStrategy)
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">{t('dashboard.title')}</h1>
 
+      {foreign ? (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+          <div className="font-semibold text-amber-800 dark:text-amber-200">⚠ {t('dashboard.foreignTitle')}</div>
+          <div className="mt-1 text-slate-700 dark:text-slate-200">{fill(t('dashboard.foreignDesc'))}</div>
+          <div className={`mt-1 break-all font-mono text-[11px] text-slate-600 dark:text-slate-300 ${foreignExpanded ? 'whitespace-pre-wrap' : 'line-clamp-3'}`}>
+            {foreignPath}
+          </div>
+          <button
+            type="button"
+            onClick={() => setForeignExpanded((v) => !v)}
+            className="mt-1 text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+          >
+            {foreignExpanded ? t('action.less') : t('action.more')}
+          </button>
+          <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">{t('dashboard.foreignHint')}</div>
+        </div>
+      ) : null}
+      {!foreign && portableForeign ? (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+          <div className="font-semibold text-amber-800 dark:text-amber-200">⚠ {t('dashboard.portableTitle')}</div>
+          <div className="mt-1 text-slate-700 dark:text-slate-200">{fill(t('dashboard.portableDesc'))}</div>
+        </div>
+      ) : null}
+
       <Card>
         <Row label={t('dashboard.service')}>
-          <Badge tone={stateTone(status.zapret)}>
-            <Dot tone={stateTone(status.zapret)} />
-            {status.zapret === 'RUNNING' ? t('status.running') : t(`status.${stateKey(status.zapret)}`)}
+          <Badge tone={serviceTone}>
+            <Dot tone={serviceTone} />
+            {serviceLabel}
           </Badge>
         </Row>
         <Row label={t('dashboard.windivert')}>
@@ -84,28 +149,46 @@ export default function Dashboard(): React.JSX.Element {
           </Badge>
         </Row>
         <Row label={t('dashboard.strategy')}>
-          <span className="text-sm text-slate-900 dark:text-slate-100">{status.activeStrategy ?? settings?.activeStrategyId ?? t('dashboard.none')}</span>
+          <span className="text-sm text-slate-900 dark:text-slate-100">
+            {status.activeStrategy ?? settings?.activeStrategyId ?? t('dashboard.none')}
+            {foreign ? ` · ${t('status.foreign')}` : ''}
+          </span>
         </Row>
+        {status.serviceBinPath ? (
+          <Row label={t('dashboard.servicePath')}>
+            <span className="max-w-[320px] truncate font-mono text-[11px] text-slate-600 dark:text-slate-300" title={status.serviceBinPath}>
+              {status.serviceBinPath}
+            </span>
+          </Row>
+        ) : null}
         <Row label={t('dashboard.admin')}>
           <Badge tone={status.isAdmin ? 'green' : 'yellow'}>{status.isAdmin ? t('dashboard.adminYes') : t('dashboard.adminNo')}</Badge>
         </Row>
 
         <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-700/60">
-          <Btn onClick={() => void doAction('start')} disabled={busy['status'] || running || !status.isAdmin}>
-            {t('action.start')}
-          </Btn>
-          <Btn onClick={() => void doAction('stop')} disabled={busy['status'] || !running || !status.isAdmin} variant="secondary">
-            {t('action.stop')}
-          </Btn>
-          <Btn onClick={() => void doAction('restart')} disabled={busy['status'] || !status.isAdmin} variant="secondary">
-            {t('action.restart')}
-          </Btn>
+          {foreign ? (
+            <Btn onClick={() => setPage('strategies')} disabled={busy['status']}>
+              {t('action.takeover')}
+            </Btn>
+          ) : (
+            <>
+              <Btn onClick={() => void doAction('start')} disabled={busy['status'] || running || !status.isAdmin}>
+                {t('action.start')}
+              </Btn>
+              <Btn onClick={() => void doAction('stop')} disabled={busy['status'] || !running || !status.isAdmin} variant="secondary">
+                {t('action.stop')}
+              </Btn>
+              <Btn onClick={() => void doAction('restart')} disabled={busy['status'] || !status.isAdmin} variant="secondary">
+                {t('action.restart')}
+              </Btn>
+            </>
+          )}
           <Btn onClick={() => void doAction('refresh')} disabled={busy['status']} variant="ghost">
             {busy['status'] ? <Spinner /> : t('action.refresh')}
           </Btn>
           <span className="flex-1" />
           <Btn onClick={() => void doAction('remove')} disabled={!status.isAdmin} variant="danger">
-            {t('action.remove')}
+            {foreign ? t('action.removeForeign') : t('action.remove')}
           </Btn>
         </div>
       </Card>

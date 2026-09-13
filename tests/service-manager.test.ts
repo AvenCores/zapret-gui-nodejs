@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { parseScState, mapServiceStatus, queryServiceState, getIPSetMode, setIPSetMode, getGameFilterMode, setGameFilterMode } from '../src/main/service-manager'
+import { parseScState, mapServiceStatus, queryServiceState, getIPSetMode, setIPSetMode, getGameFilterMode, setGameFilterMode, expandEnvVars, normalizeWindowsPath, extractExePathFromImagePath, detectServiceOwnership } from '../src/main/service-manager'
 import { compareVersions } from '../src/main/strategy-updater'
 
 describe('parseScState', () => {
@@ -88,5 +88,41 @@ describe('getGameFilterMode / setGameFilterMode', () => {
     setGameFilterMode(dir, 'disabled')
     expect(getGameFilterMode(dir)).toBe('disabled')
     fs.rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('foreign zapret ownership detection', () => {
+  it('extracts exe path from quoted ImagePath with args', () => {
+    expect(extractExePathFromImagePath('"C:\\zapret\\bin\\winws.exe" --wf-tcp=80')).toBe('C:\\zapret\\bin\\winws.exe')
+  })
+  it('extracts exe path from unquoted ImagePath', () => {
+    expect(extractExePathFromImagePath('C:\\zapret\\winws.exe --args')).toBe('C:\\zapret\\winws.exe')
+  })
+  it('normalizes case/slashes/quotes', () => {
+    expect(normalizeWindowsPath('"C:/Zapret/Bin/WINWS.EXE"')).toBe('c:\\zapret\\bin\\winws.exe')
+  })
+  it('expands %VAR% segments', () => {
+    process.env.ZAPRET_TEST_DIR = 'C:\\Users\\Test'
+    expect(expandEnvVars('%ZAPRET_TEST_DIR%\\bin\\winws.exe')).toBe('C:\\Users\\Test\\bin\\winws.exe')
+    delete process.env.ZAPRET_TEST_DIR
+  })
+  it('reports none when service is not installed', () => {
+    expect(detectServiceOwnership('NOT_INSTALLED', '"C:\\zapret\\winws.exe"', 'C:\\app\\bin')).toBe('none')
+  })
+  it('reports unknown when ImagePath is missing', () => {
+    expect(detectServiceOwnership('RUNNING', null, 'C:\\app\\bin')).toBe('unknown')
+    expect(detectServiceOwnership('RUNNING', '   ', 'C:\\app\\bin')).toBe('unknown')
+  })
+  it('reports ours when exe dir matches own bin dir (case-insensitive)', () => {
+    const own = 'C:\\Users\\Me\\AppData\\Roaming\\zapret-gui\\data\\bin'
+    expect(
+      detectServiceOwnership('RUNNING', `"${own}\\winws.exe" --wf-tcp=80 --wf-udp=443`, own)
+    ).toBe('ours')
+    expect(detectServiceOwnership('STOPPED', '"c:\\users\\me\\appdata\\roaming\\zapret-gui\\data\\BIN\\winws.exe"', own)).toBe('ours')
+  })
+  it('reports foreign when exe lives in another bundle folder', () => {
+    const own = 'C:\\Users\\Me\\AppData\\Roaming\\zapret-gui\\data\\bin'
+    expect(detectServiceOwnership('RUNNING', '"C:\\zapret\\bin\\winws.exe" --wf-tcp=80', own)).toBe('foreign')
+    expect(detectServiceOwnership('RUNNING', '"D:\\Flowseal\\zapret\\winws.exe"', own)).toBe('foreign')
   })
 })

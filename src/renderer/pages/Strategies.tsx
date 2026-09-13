@@ -35,7 +35,13 @@ export default function Strategies(): React.JSX.Element {
 
   async function apply(): Promise<void> {
     if (!current) return
-    if (!window.confirm(`${t('action.apply')} "${current.name}"?\n${t('strategies.applyHint')}`)) return
+    if (status?.ownership === 'foreign') {
+      const binPath = status?.serviceBinPath ?? '—'
+      const msg = t('dashboard.takeoverConfirm').replace('{path}', binPath)
+      if (!window.confirm(`${t('action.apply')} "${current.name}"?\n${msg}`)) return
+    } else if (!window.confirm(`${t('action.apply')} "${current.name}"?\n${t('strategies.applyHint')}`)) {
+      return
+    }
     try {
       await window.zapret.installStrategy(current.id)
       await refreshStatus()
@@ -95,6 +101,12 @@ export default function Strategies(): React.JSX.Element {
           {t('strategies.import')}
         </Btn>
       </div>
+      {status?.ownership === 'foreign' ? (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-slate-700 dark:text-slate-200">
+          <span className="font-semibold">⚠ {t('dashboard.foreignTitle')}: </span>
+          {t('dashboard.foreignHint')}
+        </div>
+      ) : null}
 
       <Card>
         <input
