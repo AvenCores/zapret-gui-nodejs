@@ -3,6 +3,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useUi, type Page } from '../store'
 import { Btn } from './ui'
 import { SUPPORTED_LOCALES, type Locale } from '../../shared/i18n'
+import { URLS } from '../../shared/constants'
+import type { UpdateInfo } from '../../shared/types'
 import appIconUrl from '../assets/app-icon.png'
 
 const NAV: Array<{ id: Page }> = [
@@ -16,6 +18,7 @@ const NAV: Array<{ id: Page }> = [
 
 export default function Layout(props: { children: React.ReactNode }): React.JSX.Element {
   const { page, setPage, t, status, settings, applySettings, locale } = useUi()
+  const [aboutOpen, setAboutOpen] = useState(false)
 
   return (
     <div className="flex h-screen bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
@@ -76,6 +79,14 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
               ]}
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setAboutOpen(true)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-500 transition hover:bg-slate-200 hover:text-slate-800 dark:border-slate-700/60 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
+          >
+            <InfoIcon />
+            {t('about.title')}
+          </button>
         </div>
       </aside>
 
@@ -84,7 +95,179 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
         <ErrorBanner />
         <main className="min-h-0 flex-1 overflow-y-auto p-5">{props.children}</main>
       </div>
+      {aboutOpen ? <AboutModal onClose={() => setAboutOpen(false)} /> : null}
     </div>
+  )
+}
+
+/** SBER card from README ("Поддержать автора"). Display grouped, copy plain digits. */
+const SBER_CARD_DISPLAY = '2202 2050 1464 4675'
+const SBER_CARD_RAW = '2202205014644675'
+
+function AboutModal(props: { onClose: () => void }): React.JSX.Element {
+  const { onClose } = props
+  const { t } = useUi()
+  const [info, setInfo] = useState<UpdateInfo | null>(null)
+  const [versionFailed, setVersionFailed] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    window.zapret
+      .checkUpdates()
+      .then((v) => {
+        if (alive) setInfo(v)
+      })
+      .catch(() => {
+        if (alive) setVersionFailed(true)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function copyCard(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(SBER_CARD_RAW)
+    } catch {
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = SBER_CARD_RAW
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        ta.remove()
+      } catch {
+        return
+      }
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('about.title')}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-800"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <img src={appIconUrl} alt="Zapret GUI logo" className="h-10 w-10 shrink-0 rounded-lg bg-slate-900 p-0.5 dark:bg-transparent dark:p-0" />
+            <div>
+              <div className="text-lg font-bold leading-tight">Zapret GUI</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{t('app.tagline')}</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t('action.close')}
+            className="rounded-md px-2 py-1 text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{t('about.description')}</p>
+
+        {!versionFailed ? (
+          <div className="mt-3 min-h-[44px] space-y-1 text-sm">
+            {info ? (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500 dark:text-slate-400">{t('updates.app')}</span>
+                  <span className="font-medium">{info.appVersion}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500 dark:text-slate-400">{t('updates.current')}</span>
+                  <span className="font-medium">{info.localVersion}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="h-4 w-28 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+                  <span className="h-4 w-14 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="h-4 w-28 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+                  <span className="h-4 w-14 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          {t('about.links')}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <AboutLink href={URLS.appRepo}>{t('dashboard.repo')}</AboutLink>
+          <AboutLink href={URLS.appIssues}>{t('dashboard.issues')}</AboutLink>
+          <AboutLink href={URLS.appReleases}>{t('dashboard.releases')}</AboutLink>
+          <AboutLink href={URLS.youtube}>YouTube</AboutLink>
+          <AboutLink href={URLS.telegram}>Telegram</AboutLink>
+          <AboutLink href={URLS.vk}>VK</AboutLink>
+          <AboutLink href={URLS.dzen}>Dzen</AboutLink>
+        </div>
+
+        <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+          {t('about.license')}: GPL-3.0 · by avencores
+        </div>
+
+        <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+          <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">💰 {t('about.donate')}</div>
+          <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">{t('about.donateHint')}</div>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="font-mono text-sm font-semibold tracking-wide">SBER · {SBER_CARD_DISPLAY}</span>
+            <button
+              type="button"
+              onClick={() => void copyCard()}
+              className="shrink-0 rounded-md bg-slate-200 px-2.5 py-1 text-xs font-medium hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600"
+            >
+              {copied ? `✓ ${t('about.copied')}` : t('about.copy')}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <Btn variant="secondary" onClick={onClose}>
+            {t('action.close')}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AboutLink(props: { href: string; children: React.ReactNode }): React.JSX.Element {
+  // setWindowOpenHandler in main opens these externally via shell.
+  return (
+    <a
+      href={props.href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 rounded-md bg-slate-200 px-2.5 py-1 text-xs hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600"
+    >
+      <span>{props.children}</span>
+      <span aria-hidden className="opacity-60">↗</span>
+    </a>
   )
 }
 
@@ -251,6 +434,16 @@ function GlobeIcon(): React.JSX.Element {
       <circle cx="12" cy="12" r="10" />
       <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
       <path d="M2 12h20" />
+    </StrokeIcon>
+  )
+}
+
+function InfoIcon(): React.JSX.Element {
+  return (
+    <StrokeIcon className="h-3.5 w-3.5 shrink-0">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
     </StrokeIcon>
   )
 }
