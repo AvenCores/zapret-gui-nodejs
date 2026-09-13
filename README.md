@@ -148,6 +148,16 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
 * Лог: `%APPDATA%\zapret-gui\app.log`
 * Dev-режим: `bundled-assets` из репозитория, данные в `<repo>/.data`, `userData` изолирован в `zapret-gui-dev` во избежание лока кэша Chromium
 
+## 🖥️ Windows 7 (экспериментально)
+
+Штатно поддерживаются только Windows 10/11 x64: текущий Electron не запускается на Windows 7.
+Подмена драйверов ниже решает только ошибку 577 (`ERROR_INVALID_IMAGE_HASH`), но не запуск самого приложения.
+
+* `bundled-assets/bin-win7/` — WinDivert 2.2.0-C с двойной подписью SHA1+SHA256 (аналог `win7/` из zapret-win-bundle)
+* На Windows 7 приложение само перезаписывает `WinDivert.dll` / `WinDivert64.sys` в `%APPDATA%\zapret-gui\data\bin` версиями из `bin-win7/` — при первом запуске и после каждого обновления стратегий. Вручную копировать ничего не нужно
+* Без ESU-обновлений (патч KB3033929) стоковые драйверы из `bin/` на Windows 7 не загрузятся
+* Полноценная поддержка Windows 7 потребовала бы отдельной сборки на Electron 22 + проверки `winws.exe` / `cygwin1.dll` на Win7 — пока не делается
+
 ## 🛠️ Разработка
 
 ```powershell
@@ -170,7 +180,7 @@ npm run preview              # electron-vite preview
 `npm run generate:strategies` автоматически выполняется перед каждой сборкой.
 В CI `bundled-assets/` уже закоммичен, скрипт только идемпотентно пересинхронизирует JSON-конфиги.
 
-Тесты (vitest, 8 файлов): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray` (+ `setup.ts`).
+Тесты (vitest, 9 файлов): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `paths-win7` (+ `setup.ts`).
 
 CI (`.github/workflows/`): `build.yml` + `release.yml`.
 
@@ -186,7 +196,7 @@ src/
                 strategy-updater.ts (version/IPSet/hosts/release-ZIP, .bin-фейки)
                 diagnostics.ts + diagnostics-helpers.ts (17 проверок)
                 settings.ts (settings.json + systemDefaults + autoLaunch)
-                paths.ts (bundled-assets vs %APPDATA%/zapret-gui/data)
+                paths.ts (bundled-assets vs %APPDATA%/zapret-gui/data, Win7-детект + applyWin7Drivers)
                 exec.ts (cmd/powershell, isAdmin, RunAs, spawnLong)
                 logger.ts (файл + буфер 2000 + zapret:on-log)
   preload/      index.ts — типизированный мост window.zapret
@@ -197,9 +207,9 @@ src/
   shared/       types.ts (ServiceState, Strategy, StatusSnapshot, DiagnosticCheck, UpdateInfo, AppSettings, IPC)
                 constants.ts (SERVICE_NAME=zapret, UPSTREAM_OWNER=Flowseal, URLS, CONFLICTING_SERVICES, FAKE_*.bin)
                 i18n.ts + locales/ (28 словарей)
-bundled-assets/ bin/ lists/ utils/ strategies/ (22 JSON) bat/ (исходные .bat) service/ (version.txt + hosts) tray/ icon.ico
+bundled-assets/ bin/ bin-win7/ (WinDivert с подписью для Win7) lists/ utils/ strategies/ (22 JSON) bat/ (исходные .bat) service/ (version.txt + hosts) tray/ icon.ico
 scripts/        generate-strategies.mjs + clean.mjs + make-icon.mjs
-tests/          8 x *.test.ts + setup.ts
+tests/          9 x *.test.ts + setup.ts
 .github/workflows/ build.yml release.yml
 electron-builder.yml electron.vite.config.ts tailwind.config.js postcss.config.cjs
 ```

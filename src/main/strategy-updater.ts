@@ -10,7 +10,7 @@ import { execFile } from 'node:child_process'
 import { app } from 'electron'
 import { URLS } from '../shared/constants'
 import type { DownloadProgress, UpdateInfo } from '../shared/types'
-import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir, getBundledAssetsDir } from './paths'
+import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir, getBundledAssetsDir, applyWin7Drivers, isWindows7 } from './paths'
 import { parseBatContent } from './strategy-parser'
 
 export type ProgressCb = (p: DownloadProgress) => void
@@ -273,6 +273,16 @@ export async function updateStrategiesFromGithub(
         fs.copyFileSync(f, dest)
         filesUpdated.push(`${sub}/${relP}`)
       }
+    }
+  }
+
+  // 1b. upstream ZIPs ship Win10-only drivers: on Win7 restore the
+  // dual-signed variants so WinDivert keeps loading (error 577 otherwise).
+  if (isWindows7()) {
+    const fixed = applyWin7Drivers(getBundledAssetsDir(), path.join(dataDir, 'bin'))
+    for (const name of fixed) {
+      if (!filesUpdated.includes(`bin/${name}`)) filesUpdated.push(`bin/${name}`)
+      say(`Win7 driver restored: bin/${name}`)
     }
   }
 
