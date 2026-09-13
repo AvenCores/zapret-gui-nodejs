@@ -365,17 +365,18 @@ function Picker<T extends string>(props: {
   const current = props.options.find((o) => o.value === props.value)
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative shrink-0">
       <button
         type="button"
         aria-label={props.label}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-md bg-slate-200 px-2 py-1 text-xs text-slate-800 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+        title={current?.label}
+        className="flex w-28 items-center justify-between gap-1.5 rounded-md bg-slate-200 px-2 py-1 text-xs text-slate-800 transition hover:bg-slate-300 active:scale-[0.98] dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
       >
         {current?.icon}
-        <span>{current?.label}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{current?.label}</span>
         <svg
           aria-hidden
           viewBox="0 0 24 24"
@@ -384,7 +385,7 @@ function Picker<T extends string>(props: {
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={`h-3 w-3 opacity-70 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`h-3 w-3 shrink-0 opacity-70 transition-transform ${open ? 'rotate-180' : ''}`}
         >
           <path d="m6 9 6 6 6-6" />
         </svg>
