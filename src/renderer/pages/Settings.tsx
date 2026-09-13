@@ -142,7 +142,7 @@ export default function Settings(): React.JSX.Element {
           <select
             value={discordFake}
             onChange={(e) => setDiscordFake(e.target.value)}
-            className="rounded-md bg-slate-700 px-2 py-1 text-xs"
+            className="rounded-md bg-slate-200 px-2 py-1 text-xs dark:bg-slate-700"
           >
             {fakes.all.map((f) => (
               <option key={f} value={f}>
@@ -162,7 +162,7 @@ export default function Settings(): React.JSX.Element {
           </Btn>
         </Row>
         <Row label={`${t('settings.gameFake')} (${fakes.gameActive ?? '?'})`}>
-          <select value={gameFake} onChange={(e) => setGameFake(e.target.value)} className="rounded-md bg-slate-700 px-2 py-1 text-xs">
+          <select value={gameFake} onChange={(e) => setGameFake(e.target.value)} className="rounded-md bg-slate-200 px-2 py-1 text-xs dark:bg-slate-700">
             {fakes.all.map((f) => (
               <option key={f} value={f}>
                 {f}
@@ -189,7 +189,7 @@ function Toggle(props: { value: boolean; onChange: (v: boolean) => void }): Reac
   return (
     <button
       onClick={() => props.onChange(!props.value)}
-      className={`relative h-6 w-11 rounded-full transition ${props.value ? 'bg-sky-600' : 'bg-slate-600'}`}
+      className={`relative h-6 w-11 rounded-full transition ${props.value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-slate-600'}`}
       aria-pressed={props.value}
     >
       <span

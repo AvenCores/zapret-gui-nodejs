@@ -67,10 +67,10 @@ function trayCallbacks() {
 function createWindow(): void {
   const settings = loadSettings()
   mainWindow = new BrowserWindow({
-    width: 1120,
-    height: 760,
-    minWidth: 960,
-    minHeight: 640,
+    width: 1280,
+    height: 820,
+    minWidth: 1080,
+    minHeight: 680,
     show: false,
     autoHideMenuBar: true,
     title: 'zapret-gui',

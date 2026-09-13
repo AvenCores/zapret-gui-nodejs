@@ -101,13 +101,13 @@ export default function Strategies(): React.JSX.Element {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="general…"
-          className="mb-2 w-full rounded-lg bg-slate-900 px-3 py-1.5 text-sm outline-none ring-sky-600 focus:ring-1"
+          className="mb-2 w-full rounded-lg bg-slate-100 px-3 py-1.5 text-sm outline-none ring-sky-600 focus:ring-1 dark:bg-slate-900"
         />
         <select
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
           size={selectSize}
-          className="w-full rounded-lg bg-slate-900 px-2 py-1.5 text-sm"
+          className="w-full rounded-lg bg-slate-100 px-2 py-1.5 text-sm dark:bg-slate-900"
         >
           <optgroup label={t('strategies.bundled')}>
             {bundled.map((s) => (
@@ -135,7 +135,7 @@ export default function Strategies(): React.JSX.Element {
 
       {current ? (
         <Card title={current.name}>
-          <p className="mb-2 text-sm text-slate-300">{current.description}</p>
+          <p className="mb-2 text-sm text-slate-600 dark:text-slate-300">{current.description}</p>
           <div className="mb-3 flex flex-wrap gap-1.5">
             {current.desyncMethods.map((m) => (
               <Badge key={m} tone="blue">
@@ -150,7 +150,7 @@ export default function Strategies(): React.JSX.Element {
             ) : null}
           </div>
           <Code>{current.rawArgs}</Code>
-          <p className="mt-2 text-xs text-slate-400">{t('strategies.applyHint')}</p>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t('strategies.applyHint')}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Btn onClick={() => void apply()} disabled={!status?.isAdmin}>
               {t('action.apply')}
@@ -166,7 +166,7 @@ export default function Strategies(): React.JSX.Element {
           </div>
           {testing ? (
             <div className="mt-3">
-              <p className="mb-1 text-xs text-amber-300">⚠ {t('strategies.testing')}</p>
+              <p className="mb-1 text-xs text-amber-700 dark:text-amber-300">⚠ {t('strategies.testing')}</p>
               <Code>{testOut || '(waiting for winws output…)'}</Code>
             </div>
           ) : null}

@@ -4,9 +4,9 @@ import { useUi } from '../store'
 import { Btn, Card } from '../components/ui'
 
 const levelColor: Record<string, string> = {
-  info: 'text-slate-300',
-  warn: 'text-amber-300',
-  error: 'text-red-300'
+  info: 'text-slate-600 dark:text-slate-300',
+  warn: 'text-amber-700 dark:text-amber-300',
+  error: 'text-red-600 dark:text-red-300'
 }
 
 export default function Logs(): React.JSX.Element {
@@ -33,16 +33,16 @@ export default function Logs(): React.JSX.Element {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder={t('logs.filter')}
-          className="mb-2 w-full rounded-lg bg-slate-900 px-3 py-1.5 text-sm outline-none ring-sky-600 focus:ring-1"
+          className="mb-2 w-full rounded-lg bg-slate-100 px-3 py-1.5 text-sm outline-none ring-sky-600 focus:ring-1 dark:bg-slate-900"
         />
         {shown.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-400">{t('logs.empty')}</p>
+          <p className="py-6 text-center text-sm text-slate-500 dark:text-slate-400">{t('logs.empty')}</p>
         ) : (
           <div className="max-h-[60vh] overflow-y-auto font-mono text-[11px] leading-relaxed">
             {shown.map((l, i) => (
-              <div key={i} className="whitespace-pre-wrap break-all border-b border-slate-800 py-0.5">
+              <div key={i} className="whitespace-pre-wrap break-all border-b border-slate-200 py-0.5 dark:border-slate-800">
                 <span className="text-slate-500">{l.ts.slice(11, 19)}</span>{' '}
-                <span className="text-sky-400">[{l.source}]</span>{' '}
+                <span className="text-sky-600 dark:text-sky-400">[{l.source}]</span>{' '}
                 <span className={levelColor[l.level]}>{l.text}</span>
               </div>
             ))}

@@ -45,14 +45,14 @@ export default function Updates(): React.JSX.Element {
         {info ? (
           <p className="py-1 text-sm">
             {info.updateAvailable ? (
-              <span className="text-amber-300">
+              <span className="text-amber-700 dark:text-amber-300">
                 ⚠ {t('updates.available')}{' '}
                 <a href={info.releaseUrl} target="_blank" rel="noreferrer" className="underline">
                   {info.releaseUrl}
                 </a>
               </span>
             ) : (
-              <span className="text-emerald-300">✓ {t('updates.upToDate')}</span>
+              <span className="text-emerald-700 dark:text-emerald-300">✓ {t('updates.upToDate')}</span>
             )}
           </p>
         ) : null}
@@ -117,12 +117,12 @@ export default function Updates(): React.JSX.Element {
             <ProgressBar percent={progress.percent} />
           </div>
         ) : null}
-        {result ? <p className="mt-2 text-sm text-emerald-300">✓ {result}</p> : null}
+        {result ? <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">✓ {result}</p> : null}
       </Card>
 
       {hosts ? (
         <Card title="hosts">
-          <p className="mb-2 text-sm text-slate-300">
+          <p className="mb-2 text-sm text-slate-600 dark:text-slate-300">
             {hosts.needsUpdate ? '⚠ hosts differs from upstream' : '✓ hosts is up to date'}
           </p>
           <Code>{hosts.remoteContent.slice(0, 4000)}</Code>
