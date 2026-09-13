@@ -2,6 +2,7 @@
 import React, { useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, Spinner } from '../components/ui'
+import { formatDetail } from '../../shared/i18n'
 import type { DiagnosticCheck } from '../../shared/types'
 
 function tone(level: DiagnosticCheck['level']): 'green' | 'yellow' | 'red' {
@@ -13,7 +14,7 @@ function icon(level: DiagnosticCheck['level']): string {
 }
 
 export default function Diagnostics(): React.JSX.Element {
-  const { t, setError, status } = useUi()
+  const { t, setError, status, locale } = useUi()
   const [checks, setChecks] = useState<DiagnosticCheck[] | null>(null)
   const [running, setRunning] = useState<boolean>(false)
   const [toolOut, setToolOut] = useState<string | null>(null)
@@ -59,9 +60,9 @@ export default function Diagnostics(): React.JSX.Element {
                   <div className="text-sm font-medium">
                     {icon(c.level)} {t(c.labelKey as never)}
                   </div>
-                  <div className="text-xs text-slate-400">{c.detail}</div>
+                  <div className="text-xs text-slate-400">{formatDetail(locale, c)}</div>
                 </div>
-                <Badge tone={tone(c.level)}>{c.level}</Badge>
+                <Badge tone={tone(c.level)}>{t(`level.${c.level}` as never)}</Badge>
               </li>
             ))}
           </ul>
@@ -72,7 +73,7 @@ export default function Diagnostics(): React.JSX.Element {
         </Card>
       )}
 
-      <Card title="Tools">
+      <Card title={t('diag.tools')}>
         <div className="flex flex-wrap gap-2">
           <Btn variant="secondary" disabled={disabled} onClick={() => void tool('cache', () => window.zapret.clearDiscordCache())}>
             {t('diag.clearDiscord')}

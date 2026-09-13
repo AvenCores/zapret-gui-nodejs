@@ -2,6 +2,7 @@
  * Shared types used by both the Electron main process and the renderer.
  * @module shared/types
  */
+import type { I18nKey } from './i18n'
 
 /** Windows service state as reported by `sc query`. */
 export type ServiceState =
@@ -67,7 +68,12 @@ export interface DiagnosticCheck {
   /** i18n key suffix, e.g. `diag.bfe` */
   labelKey: string
   level: CheckLevel
+  /** English fallback text (also used in exported logs). */
   detail: string
+  /** i18n key (`diag.detail.*`) for the localized detail sentence. */
+  detailKey: I18nKey
+  /** Values for `{placeholders}` in the localized template. */
+  detailParams?: Record<string, string>
 }
 
 /** Update info from the upstream repository. */

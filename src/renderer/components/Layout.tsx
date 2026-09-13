@@ -56,8 +56,8 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
               onChange={(e) => void applySettings({ theme: e.target.value as 'dark' | 'light' })}
               className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-100"
             >
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
+              <option value="dark">{t('settings.themeDark')}</option>
+              <option value="light">{t('settings.themeLight')}</option>
             </select>
           </label>
         </div>
