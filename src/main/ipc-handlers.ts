@@ -250,14 +250,24 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.runTests, async () => {
     const script = path.join(getUtilsDir(), 'test zapret.ps1')
     if (!fs.existsSync(script)) throw new Error('Test script not found (utils/test zapret.ps1)')
-    // Open in its own PowerShell window like service.bat does.
+    // Mirror service.bat: `start "" powershell ... -File "test zapret.ps1"`.
+    // NOTE: spawning powershell.exe directly does NOT work here — Node's
+    // `detached: true` maps to DETACHED_PROCESS (no console at all), and
+    // `stdio: 'ignore'` would swallow the output even if a window existed.
+    // `cmd /c start` allocates a real visible console with wired stdio;
+    // the hidden cmd launcher itself exits immediately.
+    // The empty-string title MUST stay quote-free here: Node quotes argv
+    // itself, so it reaches cmd as `start "" ...` exactly like service.bat
+    // (a bare word would be mistaken for the program name, pre-quoted text
+    // gets double-quoted and breaks parsing).
     const { spawn } = await import('node:child_process')
-    spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script], {
-      cwd: getDataDir(),
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: false
-    }).unref()
+    const launcher = spawn(
+      'cmd.exe',
+      ['/d', '/s', '/c', 'start', '', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script],
+      { cwd: getDataDir(), detached: true, stdio: 'ignore', windowsHide: true }
+    )
+    launcher.on('error', (e) => sendLog('app', 'error', `Failed to launch tests: ${String(e).slice(0, 200)}`))
+    launcher.unref()
     sendLog('app', 'info', 'Test script launched in a separate PowerShell window.')
     return true
   })

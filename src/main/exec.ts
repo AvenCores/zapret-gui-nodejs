@@ -18,13 +18,23 @@ export interface ExecResult {
 /** Run a binary and capture output. Never rejects — always resolves. */
 export function run(file: string, args: string[], opts: { cwd?: string; timeoutMs?: number } = {}): Promise<ExecResult> {
   return new Promise((resolve) => {
-    execFile(file, args, { windowsHide: true, cwd: opts.cwd, timeout: opts.timeoutMs ?? 30000 }, (error, stdout, stderr) => {
-      resolve({
-        stdout: String(stdout ?? ''),
-        stderr: String(stderr ?? ''),
-        code: error && 'code' in error ? ((error as { code?: number | null }).code ?? 1) : 0
-      })
-    })
+    // windowsVerbatimArguments is REQUIRED: without it Node backslash-escapes
+    // embedded double quotes (`"..."` -> `\"...\"`), which cmd.exe does not
+    // understand. Every command with inner quotes (tasklist /FI "...",
+    // reg query "HKLM\\...", sc create binPath= "...") silently broke —
+    // e.g. tasklist failed with "invalid filter" and winws.exe was never seen.
+    execFile(
+      file,
+      args,
+      { windowsHide: true, windowsVerbatimArguments: true, cwd: opts.cwd, timeout: opts.timeoutMs ?? 30000 },
+      (error, stdout, stderr) => {
+        resolve({
+          stdout: String(stdout ?? ''),
+          stderr: String(stderr ?? ''),
+          code: error && 'code' in error ? ((error as { code?: number | null }).code ?? 1) : 0
+        })
+      }
+    )
   })
 }
 

@@ -34,7 +34,13 @@ export default function Diagnostics(): React.JSX.Element {
   async function tool(key: 'cache' | 'conflicts' | 'tests', fn: () => Promise<unknown>): Promise<void> {
     try {
       const r = await fn()
-      setToolOut(Array.isArray(r) ? r.join('\n') : String(r ?? 'OK'))
+      // The test script runs detached in its own PowerShell window, so the
+      // IPC call only acknowledges the launch (boolean) — show a hint instead.
+      if (key === 'tests') {
+        setToolOut(t('diag.testsLaunched'))
+      } else {
+        setToolOut(Array.isArray(r) ? r.join('\n') : String(r ?? 'OK'))
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }

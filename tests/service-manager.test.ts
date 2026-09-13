@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { parseScState, getIPSetMode, setIPSetMode, getGameFilterMode, setGameFilterMode } from '../src/main/service-manager'
+import { parseScState, mapServiceStatus, queryServiceState, getIPSetMode, setIPSetMode, getGameFilterMode, setGameFilterMode } from '../src/main/service-manager'
 import { compareVersions } from '../src/main/strategy-updater'
 
 describe('parseScState', () => {
@@ -16,6 +16,26 @@ describe('parseScState', () => {
   it('maps missing service to NOT_INSTALLED', () => {
     expect(parseScState('[SC] OpenService FAILED 1060: The specified service does not exist.')).toBe('NOT_INSTALLED')
   })
+})
+
+describe('mapServiceStatus (Get-Service output, locale-independent)', () => {
+  it('maps enum names regardless of case/whitespace', () => {
+    expect(mapServiceStatus('Running')).toBe('RUNNING')
+    expect(mapServiceStatus('  Stopped\r\n')).toBe('STOPPED')
+    expect(mapServiceStatus('StartPending')).toBe('START_PENDING')
+    expect(mapServiceStatus('StopPending')).toBe('STOP_PENDING')
+  })
+  it('maps empty/unknown to UNKNOWN', () => {
+    expect(mapServiceStatus('')).toBe('UNKNOWN')
+    expect(mapServiceStatus('Paused')).toBe('UNKNOWN')
+  })
+})
+
+// Touches the real service database (read-only); Windows-only.
+describe.runIf(process.platform === 'win32')('queryServiceState', () => {
+  it('reports a missing service as NOT_INSTALLED', async () => {
+    await expect(queryServiceState('zapret-gui-definitely-missing-12345')).resolves.toBe('NOT_INSTALLED')
+  }, 30000)
 })
 
 describe('compareVersions', () => {

@@ -8,7 +8,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { runCmd } from './exec'
+import { runCmd, runPowershell } from './exec'
 import { getBinDir, getListsDir } from './paths'
 import { materializeArgs, quoteArg } from './strategy-parser'
 import { SERVICE_NAME, WINDIVERT_SERVICE, WINWS_EXE, CONFLICTING_SERVICES } from '../shared/constants'
@@ -33,18 +33,41 @@ export function parseScState(output: string): ServiceState {
 }
 
 async function scQuery(name: string): Promise<ServiceState> {
-  const r = await runCmd(`sc query "${name}"`)
-  const combined = r.stdout + '\n' + r.stderr
-  if (r.code !== 0 && /FAILED 1060|does not exist/i.test(combined)) return 'NOT_INSTALLED'
-  // Localized Windows: STATE line still contains the numeric code — fall back to it.
-  const numeric = combined.match(/STATE\s*:\s*(\d+)/i)
-  if (numeric) {
-    const code = Number(numeric[1])
-    if (code === 4) return 'RUNNING'
-    if (code === 1) return 'STOPPED'
-    if (code === 2) return 'START_PENDING'
-    if (code === 3) return 'STOP_PENDING'
-  }
+  return queryServiceState(name)
+}
+
+/**
+ * Map a `Get-Service -Name x` `.Status` value to {@link ServiceState}.
+ * .NET enum names are English identifiers regardless of the OS display
+ * language — unlike `sc query` output, which is localized (Russian Windows
+ * prints "СОСТОЯНИЕ" instead of "STATE", so text parsing yields UNKNOWN).
+ * Pure — covered by unit tests.
+ */
+export function mapServiceStatus(raw: string): ServiceState {
+  const s = raw.trim().toLowerCase()
+  if (s === '') return 'UNKNOWN'
+  if (s.includes('startpending') || s.includes('continuepending')) return 'START_PENDING'
+  if (s.includes('stoppending')) return 'STOP_PENDING'
+  if (s.includes('running')) return 'RUNNING'
+  if (s.includes('stopped')) return 'STOPPED'
+  return 'UNKNOWN'
+}
+
+/**
+ * Query a single Windows service state (NOT_INSTALLED when missing).
+ * Primary path is PowerShell `Get-Service` (locale-independent); legacy
+ * `sc` text parsing remains as a fallback.
+ */
+export async function queryServiceState(name: string): Promise<ServiceState> {
+  const safe = name.replace(/['"]/g, '')
+  const r = await runPowershell(`(Get-Service -Name '${safe}' -ErrorAction SilentlyContinue).Status`)
+  const mapped = mapServiceStatus(r.stdout)
+  if (mapped !== 'UNKNOWN') return mapped
+  const sc = await runCmd(`sc query "${safe}"`)
+  const combined = sc.stdout + '\n' + sc.stderr
+  // 1060 = service does not exist. Match digits only: the message text is
+  // localized (and OEM-decoded), but the numeric code survives any encoding.
+  if (sc.code !== 0 && /\b1060\b|does not exist/i.test(combined)) return 'NOT_INSTALLED'
   return parseScState(combined)
 }
 
