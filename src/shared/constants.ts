@@ -22,17 +22,14 @@ export const URLS = {
   releasesLatestApi: `https://api.github.com/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/releases/latest`,
   releasesPage: `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/releases/latest`,
   releaseTag: (tag: string) => `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/releases/tag/${tag}`,
-  issues: `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/issues`,
-  // Links shown on the dashboard. NOTE: upstream explicitly states it runs
-  // NO Telegram/YouTube pages and NO Discord server — anything like that
-  // "from Flowseal" outside github.com/Flowseal is fake. So only GitHub links.
+  // Project links + author socials (mirrors the badges at the top of README.md).
   appRepo: `https://github.com/${APP_OWNER}/${APP_REPO}`,
   appIssues: `https://github.com/${APP_OWNER}/${APP_REPO}/issues`,
   appReleases: `https://github.com/${APP_OWNER}/${APP_REPO}/releases`,
-  upstreamRepo: `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}`,
-  upstreamDiscussions: `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/discussions`,
-  tgWsProxy: 'https://github.com/Flowseal/tg-ws-proxy',
-  bolvanZapret: 'https://github.com/bol-van/zapret'
+  youtube: 'https://www.youtube.com/@avencores/',
+  telegram: 'https://t.me/avencoresyt',
+  vk: 'https://vk.ru/avencoresreuploads',
+  dzen: 'https://dzen.ru/avencores'
 } as const
 
 export const GAME_FILTER_FLAG = 'game_filter.enabled'

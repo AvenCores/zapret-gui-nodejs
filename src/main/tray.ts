@@ -7,12 +7,25 @@
 import { Tray, Menu, nativeImage, app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
+import { getBundledAssetsDir } from './paths'
 import type { ZapretStatus } from '../shared/types'
 import { translate, type I18nKey, type Locale } from '../shared/i18n'
 
 let tray: Tray | null = null
 
+/** File name of the pre-rendered tray icon for a status (pure — unit-tested). */
+export function trayIconFile(status: ZapretStatus): string {
+  return `tray-${status}.png`
+}
+
 function iconPath(status: ZapretStatus): string {
+  // Prefer the pre-rendered app-icon + status dot shipped in bundled assets.
+  try {
+    const bundled = path.join(getBundledAssetsDir(), 'tray', trayIconFile(status))
+    if (fs.existsSync(bundled)) return bundled
+  } catch {
+    /* fall through to the generated dot below */
+  }
   const dir = path.join(app.getPath('userData'), 'tray-icons')
   fs.mkdirSync(dir, { recursive: true })
   const file = path.join(dir, `tray-${status}.png`)

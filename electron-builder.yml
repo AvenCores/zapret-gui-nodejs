@@ -17,10 +17,12 @@ win:
     - nsis
     - zip
   requestedExecutionLevel: requireAdministrator
-  signAndEditExecutable: false
+  # Apply icon + metadata via rcedit, but skip code signing (no certificate).
+  signExecutable: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  installerIcon: bundled-assets/icon.ico
   installerHeaderIcon: bundled-assets/icon.ico
   uninstallerIcon: bundled-assets/icon.ico
   createDesktopShortcut: true

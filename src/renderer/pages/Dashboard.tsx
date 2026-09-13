@@ -115,17 +115,10 @@ export default function Dashboard(): React.JSX.Element {
           <LinkBtn href={URLS.appRepo}>Repository</LinkBtn>
           <LinkBtn href={URLS.appIssues}>Issues</LinkBtn>
           <LinkBtn href={URLS.appReleases}>Releases</LinkBtn>
-        </div>
-      </Card>
-
-      <Card title="Upstream (Flowseal)">
-        <div className="flex flex-wrap gap-2 text-sm">
-          <LinkBtn href={URLS.upstreamRepo}>Repository</LinkBtn>
-          <LinkBtn href={URLS.issues}>Issues</LinkBtn>
-          <LinkBtn href={URLS.upstreamDiscussions}>Discussions</LinkBtn>
-          <LinkBtn href={URLS.releasesPage}>Releases</LinkBtn>
-          <LinkBtn href={URLS.tgWsProxy}>tg-ws-proxy</LinkBtn>
-          <LinkBtn href={URLS.bolvanZapret}>bol-van/zapret</LinkBtn>
+          <LinkBtn href={URLS.youtube}>YouTube</LinkBtn>
+          <LinkBtn href={URLS.telegram}>Telegram</LinkBtn>
+          <LinkBtn href={URLS.vk}>VK</LinkBtn>
+          <LinkBtn href={URLS.dzen}>Dzen</LinkBtn>
         </div>
       </Card>
     </div>

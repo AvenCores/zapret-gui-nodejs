@@ -1,6 +1,8 @@
 /**
- * Regenerate the Windows app icon (`bundled-assets/icon.ico`, multi-size)
- * from the committed source art (`build/app-icon.png`).
+ * Regenerate Windows art from the committed source (`build/app-icon.png`):
+ * - `bundled-assets/icon.ico` (multi-size, exe/installer/window icon)
+ * - `bundled-assets/tray/tray-<status>.png` (app art + status dot for the tray,
+ *   pre-rendered so the runtime needs no image dependencies)
  *
  * Usage: `npm run icon`
  *
@@ -39,6 +41,36 @@ try {
   const ico = await pngToIco(files)
   fs.writeFileSync(dest, ico)
   console.log(`wrote ${dest} (${ico.length} bytes, ${SIZES.length} sizes)`)
+
+  // Tray icons: app art with a status-colored badge (bottom-right dot).
+  const TRAY_SIZE = 32
+  const STATUS_COLORS = {
+    running: '#22c55e',
+    stopped: '#ef4444',
+    'not-installed': '#9ca3af',
+    unknown: '#9ca3af'
+  }
+  const trayDir = path.join(root, 'bundled-assets', 'tray')
+  fs.mkdirSync(trayDir, { recursive: true })
+  const trayBase = await sharp(src)
+    .resize(TRAY_SIZE, TRAY_SIZE, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer()
+  for (const [name, color] of Object.entries(STATUS_COLORS)) {
+    const d = Math.round(TRAY_SIZE * 0.44)
+    const cx = TRAY_SIZE - d / 2 - 1
+    const cy = TRAY_SIZE - d / 2 - 1
+    const badge =
+      `<svg width="${TRAY_SIZE}" height="${TRAY_SIZE}">` +
+      `<circle cx="${cx}" cy="${cy}" r="${d / 2}" fill="${color}" stroke="#0f172a" stroke-width="2"/>` +
+      `</svg>`
+    const out = path.join(trayDir, `tray-${name}.png`)
+    await sharp(trayBase)
+      .composite([{ input: Buffer.from(badge), width: TRAY_SIZE, height: TRAY_SIZE }])
+      .png()
+      .toFile(out)
+    console.log(`wrote ${out}`)
+  }
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true })
 }
