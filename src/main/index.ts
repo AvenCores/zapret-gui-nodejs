@@ -27,6 +27,18 @@ import { IPC } from '../shared/types'
 import { translate } from '../shared/i18n'
 import type { GameFilterMode, IPSetMode, TrayPage, ZapretStatus } from '../shared/types'
 
+// stdout/stderr can be broken pipes (pkexec relaunch, closed terminal):
+// any console.* write — including Electron's own logging of an IPC handler
+// error — would otherwise throw EPIPE and surface as an "Uncaught
+// Exception" crash dialog on top of the real error. Swallow them globally.
+for (const stream of [process.stdout, process.stderr]) {
+  try {
+    stream?.on('error', () => undefined)
+  } catch {
+    /* extremely early failure — nothing to do */
+  }
+}
+
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 // `onLog` subscription is global (not per-window): createWindow() runs on

@@ -230,9 +230,18 @@ function clearReadonlyFlag(p: string): void {
   }
 }
 
-function isAccessError(e: unknown): boolean {
+/**
+ * Whether a failed atomic `rename(tmp, hosts)` should fall back to a
+ * copy-overwrite instead of surfacing the error.
+ * - `EPERM/EACCES/EBUSY/EROFS`: read-only/locked hosts (Windows AV, attrs).
+ * - `EXDEV`: staging tmp (`os.tmpdir()`, often a separate tmpfs) lives on
+ *   another filesystem than the hosts file — rename across devices is
+ *   impossible by design (seen on Linux: `/tmp/...` → `/etc/hosts`).
+ * Exported for unit tests.
+ */
+export function isAccessError(e: unknown): boolean {
   const code = (e as NodeJS.ErrnoException)?.code
-  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || code === 'EROFS'
+  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || code === 'EROFS' || code === 'EXDEV'
 }
 
 function hostsWriteError(what: string, hostsPath: string, e: unknown): Error {

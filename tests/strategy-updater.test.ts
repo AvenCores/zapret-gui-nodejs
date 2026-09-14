@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { getBundledZapretVersion, getSystemHostsPath, applyHosts, upstreamSourceArchiveUrl } from '../src/main/strategy-updater'
+import { getBundledZapretVersion, getSystemHostsPath, applyHosts, upstreamSourceArchiveUrl, isAccessError } from '../src/main/strategy-updater'
 
 describe('upstreamSourceArchiveUrl', () => {
   it('points at the source-tree snapshot, not release assets', () => {
@@ -33,6 +33,19 @@ describe('getSystemHostsPath', () => {
     } else {
       expect(p.toLowerCase().replace(/\//g, '\\')).toContain('system32\\drivers\\etc\\hosts')
     }
+  })
+})
+
+describe('isAccessError (rename → copy fallback)', () => {
+  it('falls back on lock/permission errors and cross-device EXDEV', () => {
+    for (const code of ['EPERM', 'EACCES', 'EBUSY', 'EROFS', 'EXDEV']) {
+      expect(isAccessError(Object.assign(new Error(code), { code }))).toBe(true)
+    }
+  })
+  it('surfaces anything else (e.g. ENOENT) as-is', () => {
+    expect(isAccessError(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))).toBe(false)
+    expect(isAccessError(new Error('plain'))).toBe(false)
+    expect(isAccessError(null)).toBe(false)
   })
 })
 
