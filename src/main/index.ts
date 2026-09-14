@@ -44,6 +44,10 @@ function toTrayStatus(s: string): ZapretStatus {
 async function refreshTray(): Promise<void> {
   try {
     const settings = loadSettings()
+    if (!settings.showTrayIcon) {
+      destroyTray()
+      return
+    }
     const admin = await isAdmin()
     const st = await getStatus(admin)
     const zs = toTrayStatus(st.zapret)
@@ -218,7 +222,7 @@ function trayCallbacks() {
         void refreshTray()
       }
     },
-    onToggleSetting: (key: 'autoLaunch' | 'minimizeToTrayOnClose' | 'startMinimizedToTray') => {
+    onToggleSetting: (key: 'autoLaunch' | 'minimizeToTrayOnClose' | 'startMinimizedToTray' | 'showTrayIcon') => {
       try {
         const cur = loadSettings()
         saveSettings({ [key]: !cur[key] } as Partial<Parameters<typeof saveSettings>[0]>)
@@ -294,7 +298,8 @@ function createWindow(): void {
 
   mainWindow.on('close', (e) => {
     const s = loadSettings()
-    if (s.minimizeToTrayOnClose && !isQuitting) {
+    // Without a tray icon there is nowhere to minimize to — let it quit.
+    if (s.minimizeToTrayOnClose && s.showTrayIcon && !isQuitting) {
       e.preventDefault()
       mainWindow?.hide()
     }

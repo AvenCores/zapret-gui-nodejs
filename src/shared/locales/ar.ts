@@ -203,5 +203,7 @@ export const ar = {
   'tray.goto': 'فتح القسم',
   'tray.openData': 'فتح مجلد البيانات',
   'tray.exportLogs': 'تصدير السجلات',
-  'tray.allStrategies': 'كل الاستراتيجيات…'
+  'tray.allStrategies': 'كل الاستراتيجيات…',
+  'settings.trayTitle': 'الدرج',
+  'settings.showTrayIcon': 'إظهار أيقونة الدرج'
 } as const

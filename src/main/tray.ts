@@ -318,7 +318,7 @@ export function setupTray(status: ZapretStatus, labels: TrayLabels, ctx: TrayCon
   return tray
 }
 
-const NAV_PAGES: TrayPage[] = ['dashboard', 'strategies', 'settings', 'lists', 'updates', 'diagnostics', 'logs']
+const NAV_PAGES: TrayPage[] = ['dashboard', 'strategies', 'lists', 'diagnostics', 'logs', 'updates', 'settings']
 
 const GAME_MODES: GameFilterMode[] = ['disabled', 'all', 'tcp', 'udp']
 

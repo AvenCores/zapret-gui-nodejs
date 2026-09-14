@@ -13,6 +13,7 @@ const BASE_DEFAULTS = {
   autoLaunch: false,
   startMinimizedToTray: false,
   minimizeToTrayOnClose: true,
+  showTrayIcon: true,
   activeStrategyId: null,
   discordFake: null,
   gameFake: null

@@ -203,5 +203,7 @@ export const de = {
   'tray.goto': 'Bereich öffnen',
   'tray.openData': 'Datenordner öffnen',
   'tray.exportLogs': 'Protokolle exportieren',
-  'tray.allStrategies': 'Alle Strategien…'
+  'tray.allStrategies': 'Alle Strategien…',
+  'settings.trayTitle': 'Tray',
+  'settings.showTrayIcon': 'Taskleistensymbol anzeigen'
 } as const

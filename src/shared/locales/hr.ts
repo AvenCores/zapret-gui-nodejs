@@ -203,5 +203,7 @@ export const hr = {
   'tray.goto': 'Otvori odjeljak',
   'tray.openData': 'Otvori mapu podataka',
   'tray.exportLogs': 'Izvezi zapisnike',
-  'tray.allStrategies': 'Sve strategije…'
+  'tray.allStrategies': 'Sve strategije…',
+  'settings.trayTitle': 'Traka',
+  'settings.showTrayIcon': 'Prikaži ikonu u traci'
 } as const

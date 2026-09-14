@@ -203,5 +203,7 @@ export const ro = {
   'tray.goto': 'Deschide secțiunea',
   'tray.openData': 'Deschide folderul de date',
   'tray.exportLogs': 'Exportă jurnalele',
-  'tray.allStrategies': 'Toate strategiile…'
+  'tray.allStrategies': 'Toate strategiile…',
+  'settings.trayTitle': 'Tray',
+  'settings.showTrayIcon': 'Afișează pictograma în tray'
 } as const

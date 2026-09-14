@@ -203,5 +203,7 @@ export const hu = {
   'tray.goto': 'Szakasz megnyitása',
   'tray.openData': 'Adatmappa megnyitása',
   'tray.exportLogs': 'Naplók exportálása',
-  'tray.allStrategies': 'Összes stratégia…'
+  'tray.allStrategies': 'Összes stratégia…',
+  'settings.trayTitle': 'Tálca',
+  'settings.showTrayIcon': 'Tálcaikon megjelenítése'
 } as const

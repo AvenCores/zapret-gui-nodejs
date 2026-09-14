@@ -203,5 +203,7 @@ export const el = {
   'tray.goto': 'Άνοιγμα ενότητας',
   'tray.openData': 'Άνοιγμα φακέλου δεδομένων',
   'tray.exportLogs': 'Εξαγωγή αρχείων καταγραφής',
-  'tray.allStrategies': 'Όλες οι στρατηγικές…'
+  'tray.allStrategies': 'Όλες οι στρατηγικές…',
+  'settings.trayTitle': 'Δίσκος',
+  'settings.showTrayIcon': 'Εμφάνιση εικονιδίου στο δίσκο'
 } as const

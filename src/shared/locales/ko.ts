@@ -203,5 +203,7 @@ export const ko = {
   'tray.goto': '섹션 열기',
   'tray.openData': '데이터 폴더 열기',
   'tray.exportLogs': '로그 내보내기',
-  'tray.allStrategies': '모든 전략…'
+  'tray.allStrategies': '모든 전략…',
+  'settings.trayTitle': '트레이',
+  'settings.showTrayIcon': '트레이 아이콘 표시'
 } as const

@@ -203,5 +203,7 @@ export const bg = {
   'tray.goto': 'Отвори раздел',
   'tray.openData': 'Отвори папката с данни',
   'tray.exportLogs': 'Експорт на логовете',
-  'tray.allStrategies': 'Всички стратегии…'
+  'tray.allStrategies': 'Всички стратегии…',
+  'settings.trayTitle': 'Трей',
+  'settings.showTrayIcon': 'Показвай иконата в трея'
 } as const

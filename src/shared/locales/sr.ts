@@ -203,5 +203,7 @@ export const sr = {
   'tray.goto': 'Otvori odeljak',
   'tray.openData': 'Otvori fasciklu sa podacima',
   'tray.exportLogs': 'Izvezi evidencije',
-  'tray.allStrategies': 'Sve strategije…'
+  'tray.allStrategies': 'Sve strategije…',
+  'settings.trayTitle': 'Sistemska kaseta',
+  'settings.showTrayIcon': 'Prikaži ikonicu u sistemskoj kaseti'
 } as const

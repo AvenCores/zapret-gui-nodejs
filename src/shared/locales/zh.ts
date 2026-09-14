@@ -203,5 +203,7 @@ export const zh = {
   'tray.goto': '打开分区',
   'tray.openData': '打开数据文件夹',
   'tray.exportLogs': '导出日志',
-  'tray.allStrategies': '所有策略…'
+  'tray.allStrategies': '所有策略…',
+  'settings.trayTitle': '托盘',
+  'settings.showTrayIcon': '显示托盘图标'
 } as const

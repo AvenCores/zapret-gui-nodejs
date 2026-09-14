@@ -203,5 +203,7 @@ export const tr = {
   'tray.goto': 'Bölümü aç',
   'tray.openData': 'Veri klasörünü aç',
   'tray.exportLogs': 'Günlükleri dışa aktar',
-  'tray.allStrategies': 'Tüm stratejiler…'
+  'tray.allStrategies': 'Tüm stratejiler…',
+  'settings.trayTitle': 'Tepsi',
+  'settings.showTrayIcon': 'Tepsi simgesini göster'
 } as const

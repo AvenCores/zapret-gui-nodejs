@@ -203,5 +203,7 @@ export const kk = {
   'tray.goto': 'Бөлімді ашу',
   'tray.openData': 'Деректер қалтасын ашу',
   'tray.exportLogs': 'Логтарды экспорттау',
-  'tray.allStrategies': 'Барлық стратегиялар…'
+  'tray.allStrategies': 'Барлық стратегиялар…',
+  'settings.trayTitle': 'Трей',
+  'settings.showTrayIcon': 'Трей белгішесін көрсету'
 } as const

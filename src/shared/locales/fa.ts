@@ -203,5 +203,7 @@ export const fa = {
   'tray.goto': 'باز کردن بخش',
   'tray.openData': 'باز کردن پوشه داده‌ها',
   'tray.exportLogs': 'خروجی گرفتن از گزارش‌ها',
-  'tray.allStrategies': 'همه راهبردها…'
+  'tray.allStrategies': 'همه راهبردها…',
+  'settings.trayTitle': 'سینی',
+  'settings.showTrayIcon': 'نمایش آیکون سینی'
 } as const

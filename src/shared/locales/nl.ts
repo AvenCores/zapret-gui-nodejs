@@ -203,5 +203,7 @@ export const nl = {
   'tray.goto': 'Sectie openen',
   'tray.openData': 'Gegevensmap openen',
   'tray.exportLogs': 'Logboeken exporteren',
-  'tray.allStrategies': 'Alle strategieën…'
+  'tray.allStrategies': 'Alle strategieën…',
+  'settings.trayTitle': 'Systeemvak',
+  'settings.showTrayIcon': 'Pictogram in systeemvak tonen'
 } as const

@@ -203,5 +203,7 @@ export const ja = {
   'tray.goto': 'セクションを開く',
   'tray.openData': 'データフォルダーを開く',
   'tray.exportLogs': 'ログをエクスポート',
-  'tray.allStrategies': 'すべての戦略…'
+  'tray.allStrategies': 'すべての戦略…',
+  'settings.trayTitle': 'トレイ',
+  'settings.showTrayIcon': 'トレイアイコンを表示'
 } as const

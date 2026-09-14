@@ -1,8 +1,9 @@
 /** Strategies: pick, apply, foreground-test, import custom .bat. */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useUi } from '../store'
-import { Badge, Btn, Card, Code, Spinner } from '../components/ui'
-import type { Strategy } from '../../shared/types'
+import { Badge, Btn, Card, Code, Row, Spinner } from '../components/ui'
+import type { GameFilterMode, IPSetMode, Strategy } from '../../shared/types'
+import type { I18nKey } from '../../shared/i18n'
 
 function splitName(name: string): { base: string; tag: string | null } {
   const m = name.match(/^(.*?)\s*\(([^)]+)\)\s*$/)
@@ -391,6 +392,169 @@ export default function Strategies(): React.JSX.Element {
           ) : null}
         </Card>
       ) : null}
+
+      <TuningCards />
     </div>
+  )
+}
+
+const GAME_VALUES: GameFilterMode[] = ['disabled', 'all', 'tcp', 'udp']
+
+const IPSET_VALUES: IPSetMode[] = ['none', 'loaded', 'any']
+
+function gameLabel(t: (k: I18nKey) => string, v: GameFilterMode): string {
+  switch (v) {
+    case 'disabled':
+      return t('settings.gameDisabled')
+    case 'all':
+      return t('settings.gameAll')
+    case 'tcp':
+      return t('settings.gameTcp')
+    case 'udp':
+      return t('settings.gameUdp')
+  }
+}
+
+function ipsetLabel(t: (k: I18nKey) => string, v: IPSetMode): string {
+  switch (v) {
+    case 'none':
+      return t('settings.ipsetNone')
+    case 'loaded':
+      return t('settings.ipsetLoaded')
+    case 'any':
+      return t('settings.ipsetAny')
+  }
+}
+
+/**
+ * Bypass tuning that lives with the strategies: game filter, IPSet mode and
+ * active fakes. Applied on top of the installed strategy (service restart
+ * needed to take effect).
+ */
+function TuningCards(): React.JSX.Element {
+  const { t, setError, status } = useUi()
+  const [game, setGame] = useState<GameFilterMode>('disabled')
+  const [ipset, setIpset] = useState<IPSetMode>('none')
+  const [fakes, setFakes] = useState<{ discordActive: string | null; gameActive: string | null; all: string[] }>({
+    discordActive: null,
+    gameActive: null,
+    all: []
+  })
+  const [discordFake, setDiscordFake] = useState<string>('')
+  const [gameFake, setGameFake] = useState<string>('')
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [g, i, f] = await Promise.all([
+          window.zapret.getGameFilter(),
+          window.zapret.getIPSetMode(),
+          window.zapret.listFakes()
+        ])
+        setGame(g)
+        setIpset(i)
+        setFakes(f)
+        setDiscordFake(f.discordActive ?? f.all[0] ?? '')
+        setGameFake(f.gameActive ?? f.all[0] ?? '')
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function wrap(fn: () => Promise<unknown>): Promise<void> {
+    try {
+      await fn()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const disabled = !status?.isAdmin
+
+  return (
+    <>
+      <Card title={t('settings.gameFilter')}>
+        <div className="flex flex-wrap gap-2">
+          {GAME_VALUES.map((v) => (
+            <Btn
+              key={v}
+              variant={game === v ? 'primary' : 'secondary'}
+              disabled={disabled}
+              onClick={() => void wrap(async () => {
+                await window.zapret.setGameFilter(v)
+                setGame(v)
+              })}
+            >
+              {gameLabel(t, v)}
+            </Btn>
+          ))}
+        </div>
+      </Card>
+
+      <Card title={t('settings.ipset')}>
+        <div className="flex flex-wrap gap-2">
+          {IPSET_VALUES.map((v) => (
+            <Btn
+              key={v}
+              variant={ipset === v ? 'primary' : 'secondary'}
+              disabled={disabled}
+              onClick={() => void wrap(async () => {
+                await window.zapret.setIPSetMode(v)
+                setIpset(v)
+              })}
+            >
+              {ipsetLabel(t, v)}
+            </Btn>
+          ))}
+        </div>
+      </Card>
+
+      <Card title={t('settings.fakes')}>
+        <Row label={`${t('settings.discordFake')} (${fakes.discordActive ?? '?'})`}>
+          <select
+            value={discordFake}
+            onChange={(e) => setDiscordFake(e.target.value)}
+            className="rounded-md bg-slate-200 px-2 py-1 text-xs dark:bg-slate-700"
+          >
+            {fakes.all.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <Btn
+            variant="secondary"
+            disabled={disabled || !discordFake}
+            onClick={() => void wrap(async () => {
+              await window.zapret.replaceFake('discord', discordFake)
+              setFakes({ ...fakes, discordActive: discordFake })
+            })}
+          >
+            {t('action.apply')}
+          </Btn>
+        </Row>
+        <Row label={`${t('settings.gameFake')} (${fakes.gameActive ?? '?'})`}>
+          <select value={gameFake} onChange={(e) => setGameFake(e.target.value)} className="rounded-md bg-slate-200 px-2 py-1 text-xs dark:bg-slate-700">
+            {fakes.all.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <Btn
+            variant="secondary"
+            disabled={disabled || !gameFake}
+            onClick={() => void wrap(async () => {
+              await window.zapret.replaceFake('game', gameFake)
+              setFakes({ ...fakes, gameActive: gameFake })
+            })}
+          >
+            {t('action.apply')}
+          </Btn>
+        </Row>
+      </Card>
+    </>
   )
 }

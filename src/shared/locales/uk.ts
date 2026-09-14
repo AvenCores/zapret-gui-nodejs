@@ -203,5 +203,7 @@ export const uk = {
   'tray.goto': 'Відкрити розділ',
   'tray.openData': 'Відкрити папку даних',
   'tray.exportLogs': 'Експорт логів',
-  'tray.allStrategies': 'Всі стратегії…'
+  'tray.allStrategies': 'Всі стратегії…',
+  'settings.trayTitle': 'Трей',
+  'settings.showTrayIcon': 'Показувати іконку в треї'
 } as const

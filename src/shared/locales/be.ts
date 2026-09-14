@@ -203,5 +203,7 @@ export const be = {
   'tray.goto': 'Адкрыць раздзел',
   'tray.openData': 'Адкрыць папку даных',
   'tray.exportLogs': 'Экспарт логаў',
-  'tray.allStrategies': 'Усе стратэгіі…'
+  'tray.allStrategies': 'Усе стратэгіі…',
+  'settings.trayTitle': 'Трэй',
+  'settings.showTrayIcon': 'Паказваць абразок у трэі'
 } as const

@@ -203,5 +203,7 @@ export const sk = {
   'tray.goto': 'Otvoriť sekciu',
   'tray.openData': 'Otvoriť priečinok s údajmi',
   'tray.exportLogs': 'Exportovať protokoly',
-  'tray.allStrategies': 'Všetky stratégie…'
+  'tray.allStrategies': 'Všetky stratégie…',
+  'settings.trayTitle': 'Panel oznámení',
+  'settings.showTrayIcon': 'Zobraziť ikonu v paneli'
 } as const

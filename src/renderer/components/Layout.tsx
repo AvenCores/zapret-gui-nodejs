@@ -10,11 +10,11 @@ import appIconUrl from '../assets/app-icon.png'
 const NAV: Array<{ id: Page }> = [
   { id: 'dashboard' },
   { id: 'strategies' },
-  { id: 'settings' },
   { id: 'lists' },
-  { id: 'updates' },
   { id: 'diagnostics' },
-  { id: 'logs' }
+  { id: 'logs' },
+  { id: 'updates' },
+  { id: 'settings' }
 ]
 
 export default function Layout(props: { children: React.ReactNode }): React.JSX.Element {

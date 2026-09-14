@@ -203,5 +203,7 @@ export const ru = {
   'tray.goto': 'Открыть раздел',
   'tray.openData': 'Открыть папку данных',
   'tray.exportLogs': 'Экспорт логов',
-  'tray.allStrategies': 'Все стратегии…'
+  'tray.allStrategies': 'Все стратегии…',
+  'settings.trayTitle': 'Трей',
+  'settings.showTrayIcon': 'Показывать иконку в трее'
 } as const

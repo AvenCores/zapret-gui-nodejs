@@ -203,5 +203,7 @@ export const fr = {
   'tray.goto': 'Ouvrir la section',
   'tray.openData': 'Ouvrir le dossier de données',
   'tray.exportLogs': 'Exporter les journaux',
-  'tray.allStrategies': 'Toutes les stratégies…'
+  'tray.allStrategies': 'Toutes les stratégies…',
+  'settings.trayTitle': 'Zone de notification',
+  'settings.showTrayIcon': 'Afficher l’icône de notification'
 } as const

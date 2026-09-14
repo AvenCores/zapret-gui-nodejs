@@ -203,5 +203,7 @@ export const en = {
   'tray.goto': 'Go to',
   'tray.openData': 'Open data folder',
   'tray.exportLogs': 'Export logs',
-  'tray.allStrategies': 'All strategies…'
+  'tray.allStrategies': 'All strategies…',
+  'settings.trayTitle': 'Tray',
+  'settings.showTrayIcon': 'Show tray icon'
 } as const

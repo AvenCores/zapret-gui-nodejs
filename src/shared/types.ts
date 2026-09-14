@@ -124,6 +124,7 @@ export interface AppSettings {
   autoLaunch: boolean
   startMinimizedToTray: boolean
   minimizeToTrayOnClose: boolean
+  showTrayIcon: boolean
   activeStrategyId: string | null
   discordFake: string | null
   gameFake: string | null

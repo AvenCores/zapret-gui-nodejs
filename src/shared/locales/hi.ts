@@ -203,5 +203,7 @@ export const hi = {
   'tray.goto': 'अनुभाग खोलें',
   'tray.openData': 'डेटा फ़ोल्डर खोलें',
   'tray.exportLogs': 'लॉग निर्यात करें',
-  'tray.allStrategies': 'सभी रणनीतियाँ…'
+  'tray.allStrategies': 'सभी रणनीतियाँ…',
+  'settings.trayTitle': 'ट्रे',
+  'settings.showTrayIcon': 'ट्रे आइकन दिखाएं'
 } as const

@@ -203,5 +203,7 @@ export const cs = {
   'tray.goto': 'Otevřít sekci',
   'tray.openData': 'Otevřít složku dat',
   'tray.exportLogs': 'Exportovat protokoly',
-  'tray.allStrategies': 'Všechny strategie…'
+  'tray.allStrategies': 'Všechny strategie…',
+  'settings.trayTitle': 'Oznamovací oblast',
+  'settings.showTrayIcon': 'Zobrazit ikonu v oznamovací oblasti'
 } as const

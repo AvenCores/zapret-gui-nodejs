@@ -203,5 +203,7 @@ export const id = {
   'tray.goto': 'Buka bagian',
   'tray.openData': 'Buka folder data',
   'tray.exportLogs': 'Ekspor log',
-  'tray.allStrategies': 'Semua strategi…'
+  'tray.allStrategies': 'Semua strategi…',
+  'settings.trayTitle': 'Baki',
+  'settings.showTrayIcon': 'Tampilkan ikon baki'
 } as const
