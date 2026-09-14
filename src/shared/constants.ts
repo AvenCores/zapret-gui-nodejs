@@ -46,18 +46,18 @@ export const BYPASS_TARGETS = [
     openUrl: 'https://www.youtube.com/'
   },
   {
-    id: 'cloudflare',
-    name: 'Cloudflare',
-    host: 'www.cloudflare.com',
-    url: 'https://www.cloudflare.com/cdn-cgi/trace',
-    openUrl: 'https://www.cloudflare.com/'
-  },
-  {
     id: 'discord',
     name: 'Discord',
     host: 'discord.com',
     url: 'https://discord.com/api/v10/gateway',
     openUrl: 'https://discord.com/'
+  },
+  {
+    id: 'cloudflare',
+    name: 'Cloudflare',
+    host: 'www.cloudflare.com',
+    url: 'https://www.cloudflare.com/cdn-cgi/trace',
+    openUrl: 'https://www.cloudflare.com/'
   }
 ] as const
 export const IPSET_ALL = 'ipset-all.txt'

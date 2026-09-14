@@ -210,6 +210,10 @@ export default function Dashboard(): React.JSX.Element {
   }
 
   const running = status.zapret === 'RUNNING'
+  const zapretInstalled = status.zapret !== 'NOT_INSTALLED'
+  // Remove only makes sense when there is something to remove: an installed
+  // service or a stray winws.exe process.
+  const somethingToRemove = zapretInstalled || status.windivert !== 'NOT_INSTALLED' || status.winwsRunning
   const foreign = status.ownership === 'foreign'
   const portableForeign = status.zapret === 'NOT_INSTALLED' && status.winwsRunning
   const serviceTone = foreign ? 'yellow' : stateTone(status.zapret)
@@ -301,7 +305,7 @@ export default function Dashboard(): React.JSX.Element {
               <Btn onClick={() => void doAction('stop')} disabled={busy['status'] || acting !== null || !running || !status.isAdmin} variant="secondary">
                 {t('action.stop')}
               </Btn>
-              <Btn onClick={() => void doAction('restart')} disabled={busy['status'] || acting !== null || !status.isAdmin} variant="secondary">
+              <Btn onClick={() => void doAction('restart')} disabled={busy['status'] || acting !== null || !status.isAdmin || !zapretInstalled} variant="secondary">
                 {acting ? <Spinner /> : t('action.restart')}
               </Btn>
             </>
@@ -310,7 +314,7 @@ export default function Dashboard(): React.JSX.Element {
             {busy['status'] ? <Spinner /> : t('action.refresh')}
           </Btn>
           <span className="flex-1" />
-          <Btn onClick={() => void doAction('remove')} disabled={!status.isAdmin || acting !== null} variant="danger">
+          <Btn onClick={() => void doAction('remove')} disabled={!status.isAdmin || acting !== null || (!foreign && !somethingToRemove)} variant="danger">
             {acting === 'remove' ? <Spinner /> : foreign ? t('action.removeForeign') : t('action.remove')}
           </Btn>
         </div>

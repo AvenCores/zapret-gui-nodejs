@@ -137,7 +137,7 @@ export const useUi = create<UiState>((set, get) => ({
       bypassChecking: { ...s.bypassChecking, youtube: true, cloudflare: true, discord: true }
     }))
     try {
-      const ids: BypassTargetId[] = ['youtube', 'cloudflare', 'discord']
+      const ids: BypassTargetId[] = ['youtube', 'discord', 'cloudflare']
       // One flaky target must not discard the other two results.
       const settled = await Promise.allSettled(ids.map((id) => window.zapret.checkBypass(id)))
       const errors: string[] = []
