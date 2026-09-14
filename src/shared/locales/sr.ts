@@ -119,6 +119,8 @@ export const sr = {
   'diag.clearDiscord': 'Očisti Discord keš',
   'diag.removeConflicts': 'Ukloni konfliktne servise',
   'diag.runTests': 'Pokreni testove (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'Testovi su pokrenuti u zasebnom PowerShell prozoru — pratite izlaz tamo.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Sistemski proksi',

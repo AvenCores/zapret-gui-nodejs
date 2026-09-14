@@ -52,9 +52,11 @@ export default function Diagnostics(): React.JSX.Element {
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{t('nav.diagnostics')}</h1>
-        <Btn onClick={() => void run()} disabled={running}>
-          {running ? <Spinner /> : t('diag.run')}
-        </Btn>
+        {checks ? (
+          <Btn onClick={() => void run()} disabled={running}>
+            {running ? <Spinner /> : t('diag.run')}
+          </Btn>
+        ) : null}
       </div>
 
       {checks ? (
@@ -75,7 +77,29 @@ export default function Diagnostics(): React.JSX.Element {
         </Card>
       ) : (
         <Card>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{t('dashboard.none')}</p>
+          <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-200 text-slate-500 dark:bg-slate-700/60 dark:text-slate-300">
+              <svg
+                aria-hidden
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-6 w-6"
+              >
+                <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />
+              </svg>
+            </span>
+            <div className="text-sm font-semibold">{t('diag.emptyTitle')}</div>
+            <p className="max-w-md text-xs leading-relaxed text-slate-500 dark:text-slate-400">{t('diag.emptyHint')}</p>
+            <div className="mt-1">
+              <Btn onClick={() => void run()} disabled={running}>
+                {running ? <Spinner /> : t('diag.run')}
+              </Btn>
+            </div>
+          </div>
         </Card>
       )}
 

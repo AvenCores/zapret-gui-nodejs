@@ -119,6 +119,8 @@ export const ko = {
   'diag.clearDiscord': 'Discord 캐시 지우기',
   'diag.removeConflicts': '충돌 서비스 제거',
   'diag.runTests': '테스트 실행(PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': '별도의 PowerShell 창에서 테스트가 시작되었습니다 — 출력을 그곳에서 확인하세요.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': '시스템 프록시',

@@ -119,6 +119,8 @@ export const fa = {
   'diag.clearDiscord': 'پاک کردن حافظه پنهان Discord',
   'diag.removeConflicts': 'حذف سرویس‌های ناسازگار',
   'diag.runTests': 'اجرای آزمایش‌ها (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'آزمایش‌ها در پنجره جداگانه PowerShell اجرا شدند — خروجی را آنجا دنبال کنید.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'پروکسی سیستمی',

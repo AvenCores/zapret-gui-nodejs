@@ -119,6 +119,8 @@ export const nl = {
   'diag.clearDiscord': 'Discord-cache wissen',
   'diag.removeConflicts': 'Conflicterende services verwijderen',
   'diag.runTests': 'Tests uitvoeren (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'Tests gestart in een apart PowerShell-venster — volg de uitvoer daar.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Systeemproxy',

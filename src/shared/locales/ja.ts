@@ -119,6 +119,8 @@ export const ja = {
   'diag.clearDiscord': 'Discord のキャッシュをクリア',
   'diag.removeConflicts': '競合するサービスを削除',
   'diag.runTests': 'テストを実行（PowerShell）',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'テストは別の PowerShell ウィンドウで起動しました — 出力はそちらで確認してください。',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'システムプロキシ',

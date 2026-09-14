@@ -119,6 +119,8 @@ export const ar = {
   'diag.clearDiscord': 'مسح ذاكرة Discord المؤقتة',
   'diag.removeConflicts': 'إزالة الخدمات المتعارضة',
   'diag.runTests': 'تشغيل الاختبارات (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'تم تشغيل الاختبارات في نافذة PowerShell منفصلة — تابع الخرج هناك.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'بروكسي النظام',

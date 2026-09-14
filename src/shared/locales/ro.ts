@@ -119,6 +119,8 @@ export const ro = {
   'diag.clearDiscord': 'Curăță cache Discord',
   'diag.removeConflicts': 'Elimină serviciile conflictuale',
   'diag.runTests': 'Rulează testele (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'Testele au fost lansate într-o fereastră PowerShell separată — urmăriți ieșirea acolo.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Proxy de sistem',

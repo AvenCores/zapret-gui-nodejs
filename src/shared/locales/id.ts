@@ -119,6 +119,8 @@ export const id = {
   'diag.clearDiscord': 'Bersihkan cache Discord',
   'diag.removeConflicts': 'Hapus layanan yang berkonflik',
   'diag.runTests': 'Jalankan pengujian (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'Pengujian diluncurkan di jendela PowerShell terpisah — pantau output di sana.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Proksi sistem',

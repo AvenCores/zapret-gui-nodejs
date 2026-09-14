@@ -119,6 +119,8 @@ export const tr = {
   'diag.clearDiscord': 'Discord önbelleğini temizle',
   'diag.removeConflicts': 'Çakışan hizmetleri kaldır',
   'diag.runTests': 'Testleri çalıştır (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'Testler ayrı bir PowerShell penceresinde başlatıldı — çıktıyı oradan izleyin.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Sistem proxy sunucusu',

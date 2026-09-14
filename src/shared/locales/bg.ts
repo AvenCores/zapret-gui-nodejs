@@ -119,6 +119,8 @@ export const bg = {
   'diag.clearDiscord': 'Изчистване на кеша на Discord',
   'diag.removeConflicts': 'Премахване на конфликтни услуги',
   'diag.runTests': 'Стартиране на тестове (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'Тестовете са стартирани в отделен прозорец на PowerShell — следете изхода там.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Системно прокси',

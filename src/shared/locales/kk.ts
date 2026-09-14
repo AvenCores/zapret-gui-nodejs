@@ -119,6 +119,8 @@ export const kk = {
   'diag.clearDiscord': 'Discord кэшін тазалау',
   'diag.removeConflicts': 'Қайшы келетін қызметтерді жою',
   'diag.runTests': 'Тесттерді іске қосу (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'Тесттер жеке PowerShell терезесінде іске қосылды — шығысты сонда бақылаңыз.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Жүйелік прокси',

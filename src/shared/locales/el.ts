@@ -119,6 +119,8 @@ export const el = {
   'diag.clearDiscord': 'Εκκαθάριση προσωρινής μνήμης Discord',
   'diag.removeConflicts': 'Κατάργηση υπηρεσιών σε διένεξη',
   'diag.runTests': 'Εκτέλεση δοκιμών (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'Οι δοκιμές ξεκίνησαν σε ξεχωριστό παράθυρο PowerShell — παρακολουθήστε την έξοδο εκεί.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Διακομιστής μεσολάβησης συστήματος',

@@ -68,8 +68,8 @@ function trayCallbacks() {
 function createWindow(): void {
   const settings = loadSettings()
   mainWindow = new BrowserWindow({
-    width: 1500,
-    height: 885,
+    width: 1625,
+    height: 935,
     minWidth: 1080,
     minHeight: 680,
     show: false,

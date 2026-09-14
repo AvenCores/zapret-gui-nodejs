@@ -119,6 +119,8 @@ export const zh = {
   'diag.clearDiscord': '清除 Discord 缓存',
   'diag.removeConflicts': '删除冲突服务',
   'diag.runTests': '运行测试（PowerShell）',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': '测试已在单独的 PowerShell 窗口中启动 — 请在那里查看输出。',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': '系统代理',

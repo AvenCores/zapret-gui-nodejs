@@ -119,6 +119,8 @@ export const hu = {
   'diag.clearDiscord': 'Discord gyorsítótár törlése',
   'diag.removeConflicts': 'Ütköző szolgáltatások eltávolítása',
   'diag.runTests': 'Tesztek futtatása (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'Tesztek külön PowerShell ablakban elindítva — kövesse a kimenetet ott.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Rendszerproxy',

@@ -119,6 +119,8 @@ export const cs = {
   'diag.clearDiscord': 'Vymazat mezipaměť Discord',
   'diag.removeConflicts': 'Odebrat konfliktní služby',
   'diag.runTests': 'Spustit testy (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'Testy spuštěny v samostatném okně PowerShell — sledujte výstup tam.',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Systémová proxy',

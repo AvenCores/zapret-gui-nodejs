@@ -119,6 +119,8 @@ export const hi = {
   'diag.clearDiscord': 'Discord कैश साफ़ करें',
   'diag.removeConflicts': 'विरोधी सेवाएँ हटाएँ',
   'diag.runTests': 'परीक्षण चलाएँ (PowerShell)',
+  'diag.emptyTitle': 'Diagnostics not run yet',
+  'diag.emptyHint': 'Press "Run diagnostics" to check the system for bypass issues.',
   'diag.testsLaunched': 'परीक्षण अलग PowerShell विंडो में शुरू हुए — आउटपुट वहाँ देखें।',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'सिस्टम प्रॉक्सी',
