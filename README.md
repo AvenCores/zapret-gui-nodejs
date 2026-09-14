@@ -169,7 +169,7 @@ npm run lint                 # typecheck (tsc --noEmit)
 npm run typecheck            # то же самое
 npm run generate:strategies  # перепарсить bundled-assets/bat/*.bat → bundled-assets/strategies/*.json
 npm run build                # generate:strategies + electron-vite build
-npm run build:win            # установщик NSIS + portable zip в dist/ (--publish never)
+npm run build:win            # установщик NSIS в dist/ (--publish never)
 npm run build:win:publish    # то же + публикация в GitHub Releases (--publish always)
 npm run clean                # удалить out/ и dist/ (scripts/clean.mjs)
 npm run rebuild              # clean + полная пересборка из исходников

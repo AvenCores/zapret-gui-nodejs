@@ -15,7 +15,6 @@ win:
   icon: bundled-assets/icon.ico
   target:
     - nsis
-    - zip
   requestedExecutionLevel: requireAdministrator
   # Apply icon + metadata via rcedit, but skip code signing (no certificate).
   signExecutable: false
@@ -30,8 +29,6 @@ nsis:
   shortcutName: Zapret GUI
   # NSIS installer itself requests elevation; the app also re-asks via UAC on demand.
   perMachine: false
-portable:
-  artifactName: ${productName}-${version}-portable.${ext}
 publish:
   provider: github
   owner: AvenCores

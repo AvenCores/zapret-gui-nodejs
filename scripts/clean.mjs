@@ -4,7 +4,7 @@
  * Usage:
  *   node scripts/clean.mjs
  *   npm run clean     — clean only
- *   npm run rebuild   — clean + full rebuild from sources (installer + portable zip)
+ *   npm run rebuild   — clean + full rebuild from sources (NSIS installer)
  *
  * Plain Node.js, no dependencies. Never fails on missing dirs and never
  * touches anything outside the project root (bundled-assets, src, etc.).

@@ -1,7 +1,7 @@
 # Build + publish zapret-gui (Windows x64)
 #
 # Triggers:
-# - push to main      -> build installer + portable zip, upload as artifacts
+# - push to main      -> build installer, upload as artifacts
 # - tags v*           -> same + publish to GitHub Release + update latest.yml
 # - workflow_dispatch -> manual build
 name: build
@@ -46,7 +46,7 @@ jobs:
           npm test
           npm run lint
 
-      - name: Build installer + portable
+      - name: Build installer
         run: npm run build:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -57,7 +57,6 @@ jobs:
           name: zapret-gui-windows
           path: |
             dist/*.exe
-            dist/*.zip
             dist/latest.yml
           if-no-files-found: error
 
