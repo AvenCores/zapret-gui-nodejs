@@ -43,7 +43,7 @@ export default function Diagnostics(): React.JSX.Element {
   const disabled = !status?.isAdmin
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="mx-auto w-full max-w-5xl space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{t('nav.diagnostics')}</h1>
         {checks ? (
@@ -122,6 +122,14 @@ export default function Diagnostics(): React.JSX.Element {
       <ConfigTesterCard />
     </div>
   )
+}
+
+function splitStrategyName(name: string): { base: string; tag: string | null } {
+  const m = name.match(/^(.*?)\s*\(([^)]+)\)\s*$/)
+  if (!m) return { base: name, tag: null }
+  const base = m[1].trim()
+  if (!base) return { base: name, tag: null }
+  return { base, tag: m[2].trim() }
 }
 
 function ConfigTesterCard(): React.JSX.Element {
@@ -230,8 +238,6 @@ function ConfigTesterCard(): React.JSX.Element {
 
   return (
     <Card title={t('diag.configTests')}>
-      <p className="mb-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{t('diag.configTestsHint')}</p>
-
       {!isAdmin ? <p className="mb-2 text-xs font-medium text-red-600 dark:text-red-400">⚠ {t('diag.requiresAdmin')}</p> : null}
       {serviceConflict ? (
         <p className="mb-2 text-xs font-medium text-amber-700 dark:text-amber-300">⚠ {t('diag.removeServiceFirst')}</p>
@@ -276,24 +282,90 @@ function ConfigTesterCard(): React.JSX.Element {
         </span>
       </div>
 
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder={t('diag.searchConfigs')}
-        disabled={running}
-        className="mb-2 w-full rounded-lg border border-transparent bg-slate-100 px-3 py-1.5 text-sm outline-none placeholder:text-slate-400 focus:border-sky-500/50 focus:bg-white dark:bg-slate-900/80 dark:text-slate-100 dark:focus:bg-slate-900"
-      />
-      <div className="mb-3 max-h-44 overflow-y-auto rounded-lg border border-slate-200/80 p-1.5 dark:border-slate-700/60">
-        {filtered.map((s) => (
-          <label
-            key={s.id}
-            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-[13px] hover:bg-slate-100 dark:hover:bg-slate-700/40"
+      <div className="relative mb-2">
+        <svg
+          viewBox="0 0 20 20"
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 fill-none stroke-slate-400 stroke-2"
+          aria-hidden="true"
+        >
+          <circle cx="9" cy="9" r="5.5" />
+          <path d="m13.5 13.5 3 3" strokeLinecap="round" />
+        </svg>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('diag.searchConfigs')}
+          disabled={running}
+          className="w-full rounded-xl border border-transparent bg-slate-100 py-2 pl-9 pr-8 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-500/50 focus:bg-white focus:ring-2 focus:ring-sky-500/20 disabled:opacity-50 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:bg-slate-900"
+        />
+        {query ? (
+          <button
+            onClick={() => setQuery('')}
+            disabled={running}
+            title="×"
+            className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-slate-300/70 text-xs leading-none text-slate-600 transition hover:bg-slate-400/70 hover:text-slate-800 disabled:opacity-40 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 dark:hover:text-white"
           >
-            <input type="checkbox" checked={sel.has(s.id)} disabled={running} onChange={() => toggle(s.id)} className="accent-sky-600" />
-            <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200">{s.name}</span>
-          </label>
-        ))}
-        {filtered.length === 0 ? <p className="px-2 py-3 text-center text-xs text-slate-400">{t('logs.empty')}</p> : null}
+            ×
+          </button>
+        ) : null}
+      </div>
+      <div className="strategy-scroll mb-3 max-h-[380px] space-y-0.5 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/60 p-1.5 dark:border-slate-700/60 dark:bg-slate-900/40">
+        {filtered.map((s) => {
+          const checked = sel.has(s.id)
+          const { base, tag } = splitStrategyName(s.name)
+          return (
+            <label
+              key={s.id}
+              title={s.name}
+              className={[
+                'group flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-[7px] text-left text-[13px] leading-tight outline-none transition-all duration-100',
+                running ? 'cursor-not-allowed opacity-60' : '',
+                checked
+                  ? 'border-sky-500/30 bg-sky-500/10 shadow-sm shadow-sky-500/10 dark:border-sky-400/25 dark:bg-sky-400/10'
+                  : 'border-transparent hover:border-slate-200 hover:bg-white dark:hover:border-slate-700/60 dark:hover:bg-slate-800/70'
+              ].join(' ')}
+            >
+              <input type="checkbox" checked={checked} disabled={running} onChange={() => toggle(s.id)} className="sr-only" />
+              <span
+                className={[
+                  'flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md border transition-all duration-100',
+                  checked
+                    ? 'border-sky-600 bg-sky-600 text-white shadow-sm shadow-sky-600/30 dark:border-sky-500 dark:bg-sky-500'
+                    : 'border-slate-300 bg-white text-transparent group-hover:border-sky-500/60 dark:border-slate-600 dark:bg-slate-800'
+                ].join(' ')}
+              >
+                <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current stroke-[2.5]" aria-hidden="true">
+                  <path d="M3 8.5 6.5 12 13 4.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                <span className="font-medium text-slate-700 dark:text-slate-200">{base}</span>
+                {tag ? (
+                  <span className="ml-1.5 inline-block rounded-md border border-sky-500/25 bg-sky-500/10 px-1.5 py-px align-middle font-mono text-[10.5px] font-semibold tracking-wide text-sky-700 dark:border-sky-400/25 dark:text-sky-300">
+                    {tag}
+                  </span>
+                ) : null}
+              </span>
+              <span
+                className={[
+                  'h-1.5 w-1.5 shrink-0 rounded-full transition-colors',
+                  checked ? 'bg-sky-500 dark:bg-sky-400' : 'bg-slate-300/60 group-hover:bg-slate-400/70 dark:bg-slate-600/60'
+                ].join(' ')}
+              />
+            </label>
+          )
+        })}
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70 dark:bg-slate-700/50">
+              <svg viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-slate-400 stroke-2" aria-hidden="true">
+                <circle cx="9" cy="9" r="5.5" />
+                <path d="m13.5 13.5 3 3" strokeLinecap="round" />
+              </svg>
+            </span>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('logs.empty')}</p>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
