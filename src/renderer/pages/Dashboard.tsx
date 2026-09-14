@@ -1,9 +1,9 @@
 /** Dashboard: service status, bypass test, quick actions. */
 import React, { useEffect, useState } from 'react'
-import { useUi } from '../store'
+import { bypassStrategyKeyOf, useUi } from '../store'
 import { Badge, Btn, Card, Dot, Row, Spinner } from '../components/ui'
 import { BYPASS_TARGETS } from '../../shared/constants'
-import type { BypassTargetId, ServiceState } from '../../shared/types'
+import type { BypassCheckResult, BypassTargetId, ServiceState } from '../../shared/types'
 
 function stateTone(s: ServiceState): 'green' | 'red' | 'gray' | 'yellow' {
   if (s === 'RUNNING') return 'green'
@@ -36,48 +36,30 @@ type BypassUi =
   | { status: 'ok'; latencyMs: number; httpStatus: number | null }
   | { status: 'fail'; latencyMs?: number; httpStatus?: number | null; error?: string | null }
 
-const initialBypass: Record<BypassTargetId, BypassUi> = {
-  youtube: { status: 'idle' },
-  cloudflare: { status: 'idle' },
-  discord: { status: 'idle' }
+/** Map a cached check result to UI state (null = never checked). */
+function toBypassUi(r: BypassCheckResult | null): BypassUi {
+  if (!r) return { status: 'idle' }
+  return r.ok
+    ? { status: 'ok', latencyMs: r.latencyMs, httpStatus: r.httpStatus }
+    : { status: 'fail', latencyMs: r.latencyMs, httpStatus: r.httpStatus, error: r.error }
 }
 
 function BypassTest(): React.JSX.Element {
-  const { t } = useUi()
-  const [results, setResults] = useState<Record<BypassTargetId, BypassUi>>(initialBypass)
-  const [checkingAll, setCheckingAll] = useState(false)
+  const { t, status, settings, bypass, bypassChecking, bypassCheckingAll, bypassStrategyKey, checkBypassOne, checkBypassAll } =
+    useUi()
+  const strategyKey = bypassStrategyKeyOf(status?.activeStrategy ?? null, settings?.activeStrategyId ?? null)
 
-  async function checkOne(id: BypassTargetId): Promise<void> {
-    setResults((prev) => ({ ...prev, [id]: { status: 'checking' } }))
-    try {
-      const r = await window.zapret.checkBypass(id)
-      setResults((prev) => ({
-        ...prev,
-        [id]: r.ok
-          ? { status: 'ok', latencyMs: r.latencyMs, httpStatus: r.httpStatus }
-          : { status: 'fail', latencyMs: r.latencyMs, httpStatus: r.httpStatus, error: r.error }
-      }))
-    } catch (e) {
-      setResults((prev) => ({
-        ...prev,
-        [id]: { status: 'fail', error: e instanceof Error ? e.message : String(e) }
-      }))
-    }
-  }
-
-  async function checkAll(): Promise<void> {
-    setCheckingAll(true)
-    try {
-      await Promise.all(BYPASS_TARGETS.map((target) => checkOne(target.id)))
-    } finally {
-      setCheckingAll(false)
-    }
-  }
-
+  // Results live in the global store, so tab switches remount this component
+  // without losing them. Auto-check only on first ever visit or when the
+  // active strategy changed since the last measurement.
   useEffect(() => {
-    void checkAll()
+    const hasAny = bypass.youtube !== null || bypass.cloudflare !== null || bypass.discord !== null
+    if (!hasAny || bypassStrategyKey !== strategyKey) {
+      void checkBypassAll(strategyKey)
+    }
+    // Intentionally not depending on `bypass`: results arriving must not retrigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [strategyKey])
 
   return (
     <div>
@@ -85,14 +67,14 @@ function BypassTest(): React.JSX.Element {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
           {t('dashboard.bypassTitle')}
         </h2>
-        <Btn variant="secondary" onClick={() => void checkAll()} disabled={checkingAll}>
-          {checkingAll ? <Spinner /> : t('dashboard.bypassCheckAll')}
+        <Btn variant="secondary" onClick={() => void checkBypassAll(strategyKey)} disabled={bypassCheckingAll}>
+          {bypassCheckingAll ? <Spinner /> : t('dashboard.bypassCheckAll')}
         </Btn>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         {BYPASS_TARGETS.map((target) => {
-          const state = results[target.id] ?? { status: 'idle' as const }
-          const checking = state.status === 'checking'
+          const checking = bypassChecking[target.id] || bypassCheckingAll
+          const state: BypassUi = checking ? { status: 'checking' } : toBypassUi(bypass[target.id])
           return (
             <Card key={target.id}>
               <div className="flex items-center gap-2">
@@ -107,7 +89,11 @@ function BypassTest(): React.JSX.Element {
                 <BypassDetail state={state} />
               </div>
               <div className="mt-3 flex items-center gap-2">
-                <Btn variant="secondary" onClick={() => void checkOne(target.id)} disabled={checking || checkingAll}>
+                <Btn
+                  variant="secondary"
+                  onClick={() => void checkBypassOne(target.id)}
+                  disabled={checking || bypassCheckingAll}
+                >
                   {checking ? <Spinner /> : t('dashboard.bypassCheck')}
                 </Btn>
                 <a

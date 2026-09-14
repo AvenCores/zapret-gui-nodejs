@@ -4,10 +4,29 @@
  * @module renderer/store
  */
 import { create } from 'zustand'
-import type { AppSettings, AppTheme, LogLine, StatusSnapshot, Strategy } from '../shared/types'
+import type {
+  AppSettings,
+  AppTheme,
+  BypassCheckResult,
+  BypassTargetId,
+  LogLine,
+  StatusSnapshot,
+  Strategy
+} from '../shared/types'
 import { translate, type I18nKey, type Locale } from '../shared/i18n'
 
 export type Page = 'dashboard' | 'strategies' | 'settings' | 'lists' | 'updates' | 'diagnostics' | 'logs'
+
+/**
+ * Identity of the strategy the cached bypass results belong to.
+ * Registry strategy name + settings selection: reinstalling / switching
+ * the strategy changes at least one of them, while plain tab switches
+ * and service start/stop keep it stable.
+ * Pure — kept outside the store for reuse in Dashboard.
+ */
+export function bypassStrategyKeyOf(activeStrategy: string | null, activeStrategyId: string | null): string {
+  return `${activeStrategy ?? ''}::${activeStrategyId ?? ''}`
+}
 
 /** Resolve a theme setting to a concrete dark flag (auto = OS color scheme). */
 export function isDarkTheme(theme: AppTheme): boolean {
@@ -54,6 +73,14 @@ interface UiState {
   pushLog: (l: LogLine) => void
   clearLogs: () => void
   applySettings: (patch: Partial<AppSettings>) => Promise<void>
+  /** Cached bypass results — survive Dashboard unmount on tab switches. */
+  bypass: Record<BypassTargetId, BypassCheckResult | null>
+  bypassChecking: Record<BypassTargetId, boolean>
+  bypassCheckingAll: boolean
+  /** Strategy key the cached `bypass` results were measured for. */
+  bypassStrategyKey: string | null
+  checkBypassOne: (id: BypassTargetId) => Promise<void>
+  checkBypassAll: (strategyKey: string) => Promise<void>
 }
 
 async function call<T>(key: string, fn: () => Promise<T>, set: (p: Partial<UiState>) => void, get: () => UiState): Promise<T | null> {
@@ -82,6 +109,44 @@ export const useUi = create<UiState>((set, get) => ({
   setBusy: (key, v) => set((s) => ({ busy: { ...s.busy, [key]: v } })),
   error: null,
   setError: (error) => set({ error }),
+  bypass: { youtube: null, cloudflare: null, discord: null },
+  bypassChecking: { youtube: false, cloudflare: false, discord: false },
+  bypassCheckingAll: false,
+  bypassStrategyKey: null,
+
+  checkBypassOne: async (id) => {
+    if (get().bypassChecking[id]) return
+    set((s) => ({ bypassChecking: { ...s.bypassChecking, [id]: true } }))
+    try {
+      const r = await window.zapret.checkBypass(id)
+      set((s) => ({ bypass: { ...s.bypass, [id]: r } }))
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      set((s) => ({ bypassChecking: { ...s.bypassChecking, [id]: false } }))
+    }
+  },
+
+  checkBypassAll: async (strategyKey) => {
+    if (get().bypassCheckingAll) return
+    set((s) => ({
+      bypassCheckingAll: true,
+      bypassChecking: { ...s.bypassChecking, youtube: true, cloudflare: true, discord: true }
+    }))
+    try {
+      const ids: BypassTargetId[] = ['youtube', 'cloudflare', 'discord']
+      const results = await Promise.all(ids.map((id) => window.zapret.checkBypass(id)))
+      set((s) => {
+        const bypass = { ...s.bypass }
+        for (const r of results) bypass[r.id] = r
+        return { bypass, bypassStrategyKey: strategyKey }
+      })
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      set({ bypassCheckingAll: false, bypassChecking: { youtube: false, cloudflare: false, discord: false } })
+    }
+  },
 
   init: async () => {
     const settings = await call('init', () => window.zapret.getSettings(), set, get)
