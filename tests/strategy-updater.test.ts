@@ -3,7 +3,15 @@ import { describe, it, expect, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { getBundledZapretVersion, getSystemHostsPath, applyHosts } from '../src/main/strategy-updater'
+import { getBundledZapretVersion, getSystemHostsPath, applyHosts, upstreamSourceArchiveUrl } from '../src/main/strategy-updater'
+
+describe('upstreamSourceArchiveUrl', () => {
+  it('points at the source-tree snapshot, not release assets', () => {
+    const url = upstreamSourceArchiveUrl()
+    expect(url).toContain('codeload.github.com/Flowseal/zapret-discord-youtube/zip/refs/heads/main')
+    expect(url).not.toContain('releases/download')
+  })
+})
 
 describe('getBundledZapretVersion', () => {
   it('matches bundled-assets/service/version.txt', () => {

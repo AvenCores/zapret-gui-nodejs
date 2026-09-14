@@ -1,6 +1,6 @@
 /**
  * Update logic: zapret version check, IPSet/hosts refresh and full
- * strategy-pack update from the upstream GitHub release ZIP.
+ * strategy-pack update from the upstream source tree (branch snapshot).
  * @module main/strategy-updater
  */
 import fs from 'node:fs'
@@ -9,7 +9,7 @@ import path from 'node:path'
 import https from 'node:https'
 import { execFile } from 'node:child_process'
 import { app } from 'electron'
-import { URLS } from '../shared/constants'
+import { URLS, UPSTREAM_BRANCH } from '../shared/constants'
 import type { DownloadProgress, UpdateInfo } from '../shared/types'
 import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir, getBundledAssetsDir, applyWin7Drivers, isWindows7 } from './paths'
 import { parseBatContent } from './strategy-parser'
@@ -326,22 +326,31 @@ export async function applyHosts(remoteContent: string, opts?: { hostsPath?: str
   }
 }
 
-interface GithubRelease {
-  tag_name: string
-  zipball_url: string
-  assets: Array<{ name: string; browser_download_url: string }>
+/**
+ * Source-tree snapshot URL for strategy/bin/lists updates.
+ * Release assets (`releases/download/...`) are avoided on purpose: they
+ * 504 far more often than codeload/raw, and the branch root already holds
+ * everything needed (strategies as `*.bat` at the root + `bin/`, `lists/`).
+ * Pure — covered by unit tests.
+ */
+export function upstreamSourceArchiveUrl(): string {
+  return URLS.repoArchive(UPSTREAM_BRANCH)
 }
 
-/** Latest upstream release metadata via GitHub API. */
-export async function getLatestRelease(): Promise<GithubRelease> {
-  const text = await fetchText(URLS.releasesLatestApi)
-  return JSON.parse(text) as GithubRelease
+/** Branch HEAD commit SHA (best-effort: null when the API is unreachable). */
+export async function getBranchHeadSha(): Promise<string | null> {
+  try {
+    const parsed = JSON.parse(await fetchText(URLS.branchHeadApi)) as { sha?: unknown }
+    return typeof parsed.sha === 'string' && /^[0-9a-f]{4,40}$/i.test(parsed.sha) ? parsed.sha : null
+  } catch {
+    return null
+  }
 }
 
 /**
- * Download the latest release ZIP, back up current bin/lists/utils/*.bat
- * into `data/_backup/<timestamp>`, extract the archive via PowerShell
- * `Expand-Archive`, then refresh strategies + copy new binaries/lists.
+ * Download the upstream branch snapshot, back up current bin/lists/utils/
+ * strategies into `data/_backup/<timestamp>`, extract the archive via
+ * PowerShell `Expand-Archive`, then refresh strategies + copy binaries/lists.
  * Emits 0..100 progress through `onProgress`.
  */
 export async function updateStrategiesFromGithub(
@@ -352,13 +361,11 @@ export async function updateStrategiesFromGithub(
   const say = (t: string): void => {
     onLog?.(t)
   }
-  say('Requesting latest release info...')
-  const rel = await getLatestRelease()
-  const tag = rel.tag_name
-  // Prefer an attached .zip asset, fall back to zipball.
-  const zipAsset = rel.assets.find((a) => a.name.toLowerCase().endsWith('.zip'))
-  const zipUrl = zipAsset?.browser_download_url ?? rel.zipball_url
-  say(`Downloading ${tag} ...`)
+  say(`Requesting ${UPSTREAM_BRANCH} branch HEAD...`)
+  const sha = await getBranchHeadSha()
+  const tag = sha ? `${UPSTREAM_BRANCH}@${sha.slice(0, 7)}` : UPSTREAM_BRANCH
+  const zipUrl = upstreamSourceArchiveUrl()
+  say(`Downloading sources (${tag}) ...`)
 
   const tmp = path.join(dataDir, '_tmp')
   fs.mkdirSync(tmp, { recursive: true })
@@ -403,7 +410,7 @@ export async function updateStrategiesFromGithub(
     }
   }
 
-  // 1b. upstream ZIPs ship Win10-only drivers: on Win7 restore the
+  // 1b. upstream ships Win10-only drivers: on Win7 restore the
   // dual-signed variants so WinDivert keeps loading (error 577 otherwise).
   if (isWindows7()) {
     const fixed = applyWin7Drivers(getBundledAssetsDir(), path.join(dataDir, 'bin'))

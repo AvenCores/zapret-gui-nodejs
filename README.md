@@ -190,7 +190,7 @@ src/
                 ipc-handlers.ts (все IPC + foreground-тест + экспорт логов)
                 service-manager.ts (sc/net/reg/tasklist, install/remove/start/stop, GameFilter, IPSet, Discord-кэш, конфликты)
                 strategy-parser.ts (парсинг .bat в args, плейсхолдеры <BIN>/<LISTS>/<GAME_TCP>)
-                strategy-updater.ts (version/IPSet/hosts/release-ZIP, .bin-фейки)
+                strategy-updater.ts (version/IPSet/hosts/source-snapshot, .bin-фейки)
                 diagnostics.ts + diagnostics-helpers.ts (17 проверок)
                 settings.ts (settings.json + systemDefaults + autoLaunch)
                 paths.ts (bundled-assets vs %APPDATA%/zapret-gui/data, Win7-детект + applyWin7Drivers)
