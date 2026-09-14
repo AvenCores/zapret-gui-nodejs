@@ -1,5 +1,5 @@
 /** App shell: sidebar navigation, header, global banners. */
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useUi, type Page } from '../store'
 import { Btn, Dot, Spinner } from './ui'
 import { SUPPORTED_LOCALES, type Locale } from '../../shared/i18n'
@@ -328,15 +328,30 @@ function AboutModal(props: { onClose: () => void }): React.JSX.Element {
   const { onClose } = props
   const { t } = useUi()
   const [copied, setCopied] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const closeTimer = useRef<number | null>(null)
+
+  // Animated close: play fade/zoom-out first, unmount after.
+  const beginClose = useCallback(() => {
+    if (closing) return
+    setClosing(true)
+    closeTimer.current = window.setTimeout(onClose, 180)
+  }, [closing, onClose])
+
+  useEffect(
+    () => () => {
+      if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
+    },
+    []
+  )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') beginClose()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [beginClose])
 
   async function copyCard(): Promise<void> {
     try {
@@ -359,15 +374,19 @@ function AboutModal(props: { onClose: () => void }): React.JSX.Element {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 ${
+        closing ? 'animate-fade-out' : 'animate-fade-in'
+      }`}
+      onClick={beginClose}
       role="dialog"
       aria-modal="true"
       aria-label={t('about.title')}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[85vh] w-full max-w-md animate-zoom-in overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-800"
+        className={`max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-800 ${
+          closing ? 'animate-zoom-out' : 'animate-zoom-in'
+        }`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -379,7 +398,7 @@ function AboutModal(props: { onClose: () => void }): React.JSX.Element {
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={beginClose}
             aria-label={t('action.close')}
             className="rounded-md px-2 py-1 text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700"
           >
@@ -448,7 +467,7 @@ function AboutModal(props: { onClose: () => void }): React.JSX.Element {
         </div>
 
         <div className="mt-4 flex justify-end">
-          <Btn variant="secondary" onClick={onClose}>
+          <Btn variant="secondary" onClick={beginClose}>
             {t('action.close')}
           </Btn>
         </div>
