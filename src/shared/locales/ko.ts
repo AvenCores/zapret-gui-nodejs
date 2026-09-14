@@ -177,6 +177,7 @@ export const ko = {
   'logs.title': '로그',
   'logs.empty': '아직 비어 있습니다. winws 및 작업 로그가 여기에 표시됩니다.',
   'logs.filter': '필터',
+  'logs.clear': '지우기',
   'wizard.title': '초기 설정',
   'wizard.step1': '전략을 선택하세요. 잘 모르면 “general”을 유지하세요.',
   'wizard.step2': '브라우저에서 Secure DNS를 구성하세요(구성하지 않으면 일부 차단을 우회할 수 없습니다).',

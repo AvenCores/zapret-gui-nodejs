@@ -177,6 +177,7 @@ export const id = {
   'logs.title': 'Log',
   'logs.empty': 'Masih kosong. Log winws dan operasi akan muncul di sini.',
   'logs.filter': 'Filter',
+  'logs.clear': 'Bersihkan',
   'wizard.title': 'Penyiapan awal',
   'wizard.step1': 'Pilih strategi. Jika ragu — tetap gunakan “general”.',
   'wizard.step2': 'Konfigurasikan Secure DNS di browser (sebagian pemblokiran tidak dapat dibypass tanpanya).',

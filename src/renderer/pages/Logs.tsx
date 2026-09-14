@@ -10,7 +10,7 @@ const levelColor: Record<string, string> = {
 }
 
 export default function Logs(): React.JSX.Element {
-  const { t, logs } = useUi()
+  const { t, logs, clearLogs } = useUi()
   const [filter, setFilter] = useState<string>('')
 
   const shown = logs.filter(
@@ -24,9 +24,14 @@ export default function Logs(): React.JSX.Element {
     <div className="mx-auto max-w-4xl space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">{t('logs.title')}</h1>
-        <Btn variant="secondary" onClick={() => void window.zapret.exportLogs()}>
-          {t('action.export')}
-        </Btn>
+        <div className="flex items-center gap-2">
+          <Btn variant="secondary" onClick={clearLogs} disabled={logs.length === 0}>
+            {t('logs.clear')}
+          </Btn>
+          <Btn variant="secondary" onClick={() => void window.zapret.exportLogs()}>
+            {t('action.export')}
+          </Btn>
+        </div>
       </div>
       <Card>
         <input

@@ -177,6 +177,7 @@ export const hr = {
   'logs.title': 'Logovi',
   'logs.empty': 'Za sada prazno. Logovi winws-a i operacija pojavit će se ovdje.',
   'logs.filter': 'Filter',
+  'logs.clear': 'Očisti',
   'wizard.title': 'Početno postavljanje',
   'wizard.step1': 'Odaberite strategiju. Ako ne znate odakle početi — ostavite general.',
   'wizard.step2': 'Podesite Secure DNS u pregledniku (inače se neke blokade ne mogu zaobići).',

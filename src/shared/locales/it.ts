@@ -177,6 +177,7 @@ export const it = {
   'logs.title': 'Log',
   'logs.empty': 'Vuoto per ora. I log di winws e delle operazioni appariranno qui.',
   'logs.filter': 'Filtro',
+  'logs.clear': 'Cancella',
   'wizard.title': 'Configurazione iniziale',
   'wizard.step1': 'Scegli una strategia. Se non sai da dove iniziare — lascia general.',
   'wizard.step2': 'Configura Secure DNS nel browser (altrimenti alcuni blocchi non si possono aggirare).',

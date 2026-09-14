@@ -27,6 +27,7 @@ interface UiState {
   refreshStatus: () => Promise<void>
   refreshStrategies: () => Promise<void>
   pushLog: (l: LogLine) => void
+  clearLogs: () => void
   applySettings: (patch: Partial<AppSettings>) => Promise<void>
 }
 
@@ -83,6 +84,8 @@ export const useUi = create<UiState>((set, get) => ({
       const logs = [...s.logs, line]
       return { logs: logs.slice(-1000) }
     }),
+
+  clearLogs: () => set({ logs: [] }),
 
   applySettings: async (patch) => {
     const prevTheme = get().theme

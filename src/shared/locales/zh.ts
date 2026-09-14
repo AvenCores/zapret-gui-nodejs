@@ -177,6 +177,7 @@ export const zh = {
   'logs.title': '日志',
   'logs.empty': '暂无内容。winws 和操作日志将显示在这里。',
   'logs.filter': '筛选',
+  'logs.clear': '清空',
   'wizard.title': '初始设置',
   'wizard.step1': '选择一个策略。如果不确定 — 保留“general”。',
   'wizard.step2': '在浏览器中配置 Secure DNS（否则部分封锁无法绕过）。',

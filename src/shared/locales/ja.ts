@@ -177,6 +177,7 @@ export const ja = {
   'logs.title': 'ログ',
   'logs.empty': 'まだ空です。winws と操作ログはここに表示されます。',
   'logs.filter': 'フィルター',
+  'logs.clear': 'クリア',
   'wizard.title': '初期設定',
   'wizard.step1': '戦略を選択してください。分からない場合は「general」のままにしてください。',
   'wizard.step2': 'ブラウザで Secure DNS を設定してください（設定しないと一部のブロックは回避できません）。',

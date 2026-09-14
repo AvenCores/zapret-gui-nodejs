@@ -177,6 +177,7 @@ export const de = {
   'logs.title': 'Logs',
   'logs.empty': 'Noch leer. winws- und Vorgangslogs erscheinen hier.',
   'logs.filter': 'Filter',
+  'logs.clear': 'Leeren',
   'wizard.title': 'Ersteinrichtung',
   'wizard.step1': 'Strategie wählen. Wenn unsicher — general beibehalten.',
   'wizard.step2': 'Secure DNS im Browser konfigurieren (sonst lassen sich manche Sperren nicht umgehen).',

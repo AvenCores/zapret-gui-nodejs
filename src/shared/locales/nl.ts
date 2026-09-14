@@ -177,6 +177,7 @@ export const nl = {
   'logs.title': 'Logboeken',
   'logs.empty': 'Nog leeg. winws- en bewerkingslogboeken verschijnen hier.',
   'logs.filter': 'Filter',
+  'logs.clear': 'Wissen',
   'wizard.title': 'Eerste installatie',
   'wizard.step1': 'Kies een strategie. Weet je het niet — houd general aan.',
   'wizard.step2': 'Stel Secure DNS in in je browser (anders kunnen sommige blokkades niet worden omzeild).',

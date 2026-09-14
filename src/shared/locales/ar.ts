@@ -177,6 +177,7 @@ export const ar = {
   'logs.title': 'السجلات',
   'logs.empty': 'فارغ حاليًا. ستظهر سجلات winws والعمليات هنا.',
   'logs.filter': 'تصفية',
+  'logs.clear': 'مسح',
   'wizard.title': 'الإعداد الأولي',
   'wizard.step1': 'اختر استراتيجية. إذا لم تعرف من أين تبدأ — اترك general.',
   'wizard.step2': 'قم بتكوين Secure DNS في المتصفح (وإلا فلن يمكن تجاوز بعض الحجب).',

@@ -177,6 +177,7 @@ export const cs = {
   'logs.title': 'Logy',
   'logs.empty': 'Zatím prázdné. Logy winws a operací se objeví zde.',
   'logs.filter': 'Filtr',
+  'logs.clear': 'Vymazat',
   'wizard.title': 'Počáteční nastavení',
   'wizard.step1': 'Vyberte strategii. Pokud nevíte — nechte general.',
   'wizard.step2': 'Nastavte Secure DNS v prohlížeči (jinak část blokací neobejdete).',

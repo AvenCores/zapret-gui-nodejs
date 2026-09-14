@@ -177,6 +177,7 @@ export const ro = {
   'logs.title': 'Jurnale',
   'logs.empty': 'Gol deocamdată. Jurnalele winws și ale operațiunilor vor apărea aici.',
   'logs.filter': 'Filtru',
+  'logs.clear': 'Curăță',
   'wizard.title': 'Configurare inițială',
   'wizard.step1': 'Alegeți o strategie. Dacă nu știți — păstrați general.',
   'wizard.step2': 'Configurați Secure DNS în browser (altfel o parte din blocări nu pot fi ocolite).',

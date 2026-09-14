@@ -177,6 +177,7 @@ export const hu = {
   'logs.title': 'Naplók',
   'logs.empty': 'Egyelőre üres. A winws és műveleti naplók itt jelennek meg.',
   'logs.filter': 'Szűrő',
+  'logs.clear': 'Törlés',
   'wizard.title': 'Kezdeti beállítás',
   'wizard.step1': 'Válasszon stratégiát. Ha bizonytalan — hagyja general.',
   'wizard.step2': 'Állítsa be a Secure DNS-t a böngészőben (különben a blokkok egy része nem kerülhető meg).',

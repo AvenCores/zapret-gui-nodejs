@@ -177,6 +177,7 @@ export const hi = {
   'logs.title': 'लॉग',
   'logs.empty': 'अभी खाली है। winws और संचालन लॉग यहाँ दिखेंगे।',
   'logs.filter': 'फ़िल्टर',
+  'logs.clear': 'साफ़ करें',
   'wizard.title': 'प्रारंभिक सेटअप',
   'wizard.step1': 'रणनीति चुनें। यदि निश्चित न हों — “general” रखें।',
   'wizard.step2': 'अपने ब्राउज़र में Secure DNS कॉन्फ़िगर करें (इसके बिना कुछ अवरोध बायपास नहीं होंगे)।',

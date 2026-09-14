@@ -177,6 +177,7 @@ export const fr = {
   'logs.title': 'Journaux',
   'logs.empty': 'Vide pour l\'instant. Les journaux winws et des opérations apparaîtront ici.',
   'logs.filter': 'Filtre',
+  'logs.clear': 'Effacer',
   'wizard.title': 'Configuration initiale',
   'wizard.step1': 'Choisissez une stratégie. En cas de doute — gardez general.',
   'wizard.step2': 'Configurez Secure DNS dans votre navigateur (sinon certains blocages ne pourront pas être contournés).',

@@ -177,6 +177,7 @@ export const tr = {
   'logs.title': 'Günlükler',
   'logs.empty': 'Şimdilik boş. winws ve işlem günlükleri burada görünecek.',
   'logs.filter': 'Filtre',
+  'logs.clear': 'Temizle',
   'wizard.title': 'İlk kurulum',
   'wizard.step1': 'Bir strateji seçin. Nereden başlayacağınızı bilmiyorsanız — general olarak bırakın.',
   'wizard.step2': 'Tarayıcıda Secure DNS yapılandırın (yoksa bazı engeller atlatılamaz).',
