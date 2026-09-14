@@ -25,6 +25,31 @@ body {
     border-color 0.25s ease !important;
 }
 
+/* Thin styled scrollbar for the strategy picker list. */
+.strategy-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184 / 0.6) transparent;
+}
+.strategy-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.strategy-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.strategy-scroll::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184 / 0.55);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.strategy-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(148 163 184 / 0.85);
+  background-clip: content-box;
+}
+:root.dark .strategy-scroll {
+  scrollbar-color: rgb(100 116 139 / 0.7) transparent;
+}
+
 /* Respect users who prefer reduced motion: kill all animations/transitions. */
 @media (prefers-reduced-motion: reduce) {
   *,

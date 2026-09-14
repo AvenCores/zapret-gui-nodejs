@@ -1,7 +1,16 @@
 /** Strategies: pick, apply, foreground-test, import custom .bat. */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, Code, Spinner } from '../components/ui'
+import type { Strategy } from '../../shared/types'
+
+function splitName(name: string): { base: string; tag: string | null } {
+  const m = name.match(/^(.*?)\s*\(([^)]+)\)\s*$/)
+  if (!m) return { base: name, tag: null }
+  const base = m[1].trim()
+  if (!base) return { base: name, tag: null }
+  return { base, tag: m[2].trim() }
+}
 
 export default function Strategies(): React.JSX.Element {
   const { t, strategies, refreshStrategies, refreshStatus, busy, setError, status, settings } = useUi()
@@ -31,7 +40,146 @@ export default function Strategies(): React.JSX.Element {
   const filtered = strategies.filter((s) => s.name.toLowerCase().includes(query.toLowerCase()))
   const bundled = filtered.filter((s) => s.origin !== 'imported')
   const imported = filtered.filter((s) => s.origin === 'imported')
-  const selectSize = Math.min(12, Math.max(4, filtered.length))
+
+  const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const itemRefs = useRef(new Map<string, HTMLButtonElement>())
+  const listRef = useRef<HTMLDivElement>(null)
+
+  const flatIds = useMemo(() => filtered.map((s) => s.id), [filtered])
+  const isActive = (s: Strategy): boolean =>
+    status?.activeStrategy === s.name || settings?.activeStrategyId === s.id
+
+  useEffect(() => {
+    if (flatIds.length === 0) {
+      setHighlightedId(null)
+      return
+    }
+    if (!highlightedId || !flatIds.includes(highlightedId)) {
+      setHighlightedId(selected && flatIds.includes(selected) ? selected : flatIds[0])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, strategies.length, flatIds.join('|')])
+
+  useEffect(() => {
+    if (selected) setHighlightedId(selected)
+  }, [selected])
+
+  useEffect(() => {
+    if (!highlightedId) return
+    itemRefs.current.get(highlightedId)?.scrollIntoView({ block: 'nearest' })
+  }, [highlightedId])
+
+  function moveHighlight(dir: 1 | -1): void {
+    if (flatIds.length === 0) return
+    const idx = flatIds.indexOf(highlightedId ?? selected)
+    const next = idx === -1 ? (dir === 1 ? 0 : flatIds.length - 1) : (idx + dir + flatIds.length) % flatIds.length
+    setHighlightedId(flatIds[next])
+  }
+
+  function handleListKey(e: React.KeyboardEvent): void {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      moveHighlight(1)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      moveHighlight(-1)
+    } else if (e.key === 'Enter') {
+      if (highlightedId) {
+        e.preventDefault()
+        setSelected(highlightedId)
+      }
+    }
+  }
+
+  function renderRow(s: Strategy): React.JSX.Element {
+    const sel = s.id === selected
+    const hl = s.id === highlightedId
+    const active = isActive(s)
+    const { base, tag } = splitName(s.name)
+    return (
+      <button
+        key={s.id}
+        ref={(el) => {
+          if (el) itemRefs.current.set(s.id, el)
+          else itemRefs.current.delete(s.id)
+        }}
+        role="option"
+        aria-selected={sel}
+        title={s.name}
+        onClick={() => setSelected(s.id)}
+        onDoubleClick={() => {
+          setSelected(s.id)
+          void apply()
+        }}
+        onMouseEnter={() => setHighlightedId(s.id)}
+        onFocus={() => setHighlightedId(s.id)}
+        className={[
+          'group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-left text-[13px] leading-tight outline-none transition-all duration-100',
+          sel
+            ? 'bg-sky-600 text-white shadow-md shadow-sky-600/25'
+            : hl
+              ? 'bg-slate-200/90 text-slate-900 dark:bg-slate-700/70 dark:text-white'
+              : 'text-slate-700 hover:bg-slate-200/60 dark:text-slate-200 dark:hover:bg-slate-700/40'
+        ].join(' ')}
+      >
+        <span
+          className={[
+            'h-1.5 w-1.5 shrink-0 rounded-full transition-colors',
+            sel ? 'bg-white' : active ? 'bg-emerald-400' : 'bg-slate-400/60 group-hover:bg-slate-400'
+          ].join(' ')}
+        />
+        <span className="min-w-0 flex-1 truncate">
+          <span className="font-medium">{base}</span>
+          {tag ? (
+            <span
+              className={[
+                'ml-1.5 inline-block rounded-md border px-1.5 py-px align-middle font-mono text-[10.5px] font-semibold tracking-wide',
+                sel
+                  ? 'border-white/30 bg-white/15 text-white'
+                  : 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:border-sky-400/25 dark:text-sky-300'
+              ].join(' ')}
+            >
+              {tag}
+            </span>
+          ) : null}
+        </span>
+        {active ? (
+          <span
+            className={[
+              'shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide',
+              sel ? 'bg-white/20 text-white' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300'
+            ].join(' ')}
+          >
+            {t('strategies.active')}
+          </span>
+        ) : null}
+        {sel ? (
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 fill-none stroke-current stroke-2" aria-hidden="true">
+            <path d="M3 8.5 6.5 12 13 4.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : null}
+      </button>
+    )
+  }
+
+  function renderGroup(label: string, items: Strategy[], icon: React.JSX.Element): React.JSX.Element | null {
+    if (items.length === 0) return null
+    return (
+      <div key={label}>
+        <div className="sticky top-0 z-10 -mx-2 flex items-center gap-2 bg-white px-3 pb-1.5 pt-2.5 dark:bg-slate-800">
+          <span className="text-slate-400 dark:text-slate-500">{icon}</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            {label}
+          </span>
+          <span className="rounded-full bg-slate-200/80 px-1.5 py-px text-[10px] font-semibold tabular-nums text-slate-600 dark:bg-slate-700/80 dark:text-slate-300">
+            {items.length}
+          </span>
+          <span className="h-px flex-1 bg-slate-200/70 dark:bg-slate-700/50" />
+        </div>
+        <div className="space-y-px pb-1">{items.map(renderRow)}</div>
+      </div>
+    )
+  }
 
   async function apply(): Promise<void> {
     if (!current) return
@@ -108,41 +256,100 @@ export default function Strategies(): React.JSX.Element {
         </div>
       ) : null}
 
-      <Card>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t('strategies.search')}
-          className="mb-2 w-full rounded-lg bg-slate-100 px-3 py-1.5 text-sm outline-none ring-sky-600 focus:ring-1 dark:bg-slate-900"
-        />
-        <select
-          value={selected}
-          onChange={(e) => setSelected(e.target.value)}
-          size={selectSize}
-          className="w-full rounded-lg bg-slate-100 px-2 py-1.5 text-sm dark:bg-slate-900"
-        >
-          <optgroup label={t('strategies.bundled')}>
-            {bundled.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </optgroup>
-          {imported.length > 0 ? (
-            <optgroup label={t('strategies.imported')}>
-              {imported.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </optgroup>
-          ) : null}
-        </select>
-        {busy['strategies'] ? (
-          <div className="mt-2">
-            <Spinner />
+      <Card className="overflow-hidden !p-0 dark:!bg-slate-800">
+        <div className="border-b border-slate-200/80 p-2.5 dark:border-slate-700/60">
+          <div className="relative">
+            <svg
+              viewBox="0 0 20 20"
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 fill-none stroke-slate-400 stroke-2"
+              aria-hidden="true"
+            >
+              <circle cx="9" cy="9" r="5.5" />
+              <path d="m13.5 13.5 3 3" strokeLinecap="round" />
+            </svg>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleListKey}
+              placeholder={t('strategies.search')}
+              className="w-full rounded-xl border border-transparent bg-slate-100 py-2 pl-9 pr-16 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-500/50 focus:bg-white focus:ring-2 focus:ring-sky-500/20 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:bg-slate-900"
+            />
+            {query ? (
+              <button
+                onClick={() => setQuery('')}
+                title="×"
+                className="absolute right-12 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-slate-300/70 text-xs leading-none text-slate-600 transition hover:bg-slate-400/70 hover:text-slate-800 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 dark:hover:text-white"
+              >
+                ×
+              </button>
+            ) : null}
+            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full bg-slate-200/90 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-600 dark:bg-slate-700/90 dark:text-slate-300">
+              {filtered.length}
+            </span>
           </div>
-        ) : null}
+        </div>
+
+        {filtered.length > 0 ? (
+          <div
+            ref={listRef}
+            role="listbox"
+            aria-label={t('strategies.title')}
+            tabIndex={0}
+            onKeyDown={handleListKey}
+            className="strategy-scroll max-h-[340px] overflow-y-auto px-2 pb-2 pt-0 outline-none"
+          >
+            {renderGroup(
+              t('strategies.bundled'),
+              bundled,
+              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current stroke-1.5" aria-hidden="true">
+                <path d="M2 5.5 8 2l6 3.5v5L8 14l-6-3.5v-5Z" strokeLinejoin="round" />
+                <path d="M2 5.5 8 9l6-3.5M8 9v5" strokeLinejoin="round" />
+              </svg>
+            )}
+            {renderGroup(
+              t('strategies.imported'),
+              imported,
+              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current stroke-1.5" aria-hidden="true">
+                <path d="M8 2v8m0 0L5 7m3 3 3-3M2.5 12.5h11" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700/60">
+              <svg viewBox="0 0 20 20" className="h-5 w-5 fill-none stroke-slate-400 stroke-2" aria-hidden="true">
+                <circle cx="9" cy="9" r="5.5" />
+                <path d="m13.5 13.5 3 3" strokeLinecap="round" />
+              </svg>
+            </span>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{t('logs.empty')}</p>
+            <button
+              onClick={() => setQuery('')}
+              className="text-xs font-medium text-sky-600 hover:text-sky-500 hover:underline dark:text-sky-400"
+            >
+              × {query}
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between border-t border-slate-200/80 px-3 py-2 text-[11px] text-slate-500 dark:border-slate-700/60 dark:text-slate-400">
+          <span className="tabular-nums">
+            {bundled.length + imported.length > 0 ? (
+              <>
+                {filtered.length} / {strategies.length}
+              </>
+            ) : null}
+            {busy['strategies'] ? (
+              <span className="ml-2 inline-block align-middle">
+                <Spinner />
+              </span>
+            ) : null}
+          </span>
+          <span className="hidden items-center gap-1 sm:flex">
+            <kbd className="rounded border border-slate-300/80 bg-slate-100 px-1 font-mono text-[10px] dark:border-slate-600 dark:bg-slate-700/60">↑↓</kbd>
+            <kbd className="rounded border border-slate-300/80 bg-slate-100 px-1 font-mono text-[10px] dark:border-slate-600 dark:bg-slate-700/60">Enter</kbd>
+          </span>
+        </div>
       </Card>
 
       {current ? (
