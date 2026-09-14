@@ -143,6 +143,8 @@ export const en = {
   'diag.removeServiceFirst': 'Remove the zapret service before testing (conflict)',
   'diag.cancelled': 'Stopped',
   'diag.testLog': 'Test log',
+  'diag.results': 'Results',
+  'diag.openFolder': 'Open folder',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'System proxy',
   'diag.timestamps': 'TCP timestamps',

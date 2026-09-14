@@ -215,6 +215,7 @@ export const IPC = {
   removeConflicts: 'zapret:remove-conflicts',
   configTesterStart: 'zapret:config-tester-start',
   configTesterStop: 'zapret:config-tester-stop',
+  configTesterOpenFile: 'zapret:config-tester-open-file',
   getSettings: 'zapret:get-settings',
   saveSettings: 'zapret:save-settings',
   listUserLists: 'zapret:list-user-lists',

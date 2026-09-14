@@ -143,6 +143,8 @@ export const ru = {
   'diag.removeServiceFirst': 'Удалите сервис zapret перед тестами (конфликт)',
   'diag.cancelled': 'Остановлено',
   'diag.testLog': 'Лог тестов',
+  'diag.results': 'Результаты',
+  'diag.openFolder': 'Открыть папку',
   'diag.bfe': 'Base Filtering Engine',
   'diag.proxy': 'Системный прокси',
   'diag.timestamps': 'TCP timestamps',

@@ -228,4 +228,6 @@ export const hr = {
   'diag.removeServiceFirst': 'Remove the zapret service before testing (conflict)',
   'diag.cancelled': 'Stopped',
   'diag.testLog': 'Test log',
+  'diag.results': 'Results',
+  'diag.openFolder': 'Open folder',
 } as const

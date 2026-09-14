@@ -132,6 +132,26 @@ function splitStrategyName(name: string): { base: string; tag: string | null } {
   return { base, tag: m[2].trim() }
 }
 
+/** Colored count pill for the results table (zeros muted). */
+function Num(props: { value: number; tone: 'green' | 'red' | 'amber' | 'slate' }): React.JSX.Element {
+  const muted = props.value === 0
+  const cls =
+    props.tone === 'green'
+      ? muted
+        ? 'bg-slate-500/10 text-slate-400 dark:text-slate-500'
+        : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+      : props.tone === 'red'
+        ? muted
+          ? 'bg-slate-500/10 text-slate-400 dark:text-slate-500'
+          : 'bg-red-500/15 text-red-600 dark:text-red-300'
+        : props.tone === 'amber'
+          ? muted
+            ? 'bg-slate-500/10 text-slate-400 dark:text-slate-500'
+            : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+          : 'bg-slate-500/10 text-slate-500 dark:text-slate-400'
+  return <span className={`inline-block min-w-[28px] rounded-md px-1.5 py-0.5 text-center font-semibold ${cls}`}>{props.value}</span>
+}
+
 function ConfigTesterCard(): React.JSX.Element {
   const { t, setError, status, strategies, refreshStatus } = useUi()
   const [mode, setMode] = useState<ConfigTestMode>('standard')
@@ -226,6 +246,15 @@ function ConfigTesterCard(): React.JSX.Element {
     try {
       await window.zapret.installStrategy(target.id)
       await refreshStatus()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  async function openResults(): Promise<void> {
+    if (!filePath) return
+    try {
+      await window.zapret.openTestResult(filePath)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -400,62 +429,134 @@ function ConfigTesterCard(): React.JSX.Element {
           </Btn>
         </div>
       ) : null}
-      {cancelled ? <p className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-300">⚠ {t('diag.cancelled')}</p> : null}
+      {cancelled ? (
+        <div className="mt-3">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
+            <svg viewBox="0 0 16 16" className="h-3 w-3 fill-current" aria-hidden="true">
+              <rect x="3" y="3" width="4" height="10" rx="1" />
+              <rect x="9" y="3" width="4" height="10" rx="1" />
+            </svg>
+            {t('diag.cancelled')}
+          </span>
+        </div>
+      ) : null}
 
       {rows.length > 0 ? (
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-left font-mono text-[11px] tabular-nums">
-            <thead>
-              <tr className="text-slate-500 dark:text-slate-400">
-                <th className="px-2 py-1 font-sans font-semibold">config</th>
-                <th className="px-2 py-1">OK</th>
-                <th className="px-2 py-1">ERR</th>
-                <th className="px-2 py-1">UNSUP</th>
-                {mode === 'standard' ? (
-                  <>
-                    <th className="px-2 py-1">ping✓</th>
-                    <th className="px-2 py-1">ping✗</th>
-                  </>
-                ) : (
-                  <th className="px-2 py-1">BLOCK</th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr
-                  key={r.configId}
-                  className={
-                    r.configName === best
-                      ? 'bg-emerald-500/10 font-bold text-emerald-700 dark:text-emerald-300'
-                      : 'text-slate-700 dark:text-slate-200'
-                  }
-                >
-                  <td className="max-w-[220px] truncate px-2 py-1 font-sans">{r.configName}</td>
-                  <td className="px-2 py-1 text-emerald-600 dark:text-emerald-400">{r.ok}</td>
-                  <td className="px-2 py-1 text-red-500">{r.err}</td>
-                  <td className="px-2 py-1 text-amber-500">{r.unsup}</td>
+        <div className="mt-3 overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-700/60">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 bg-slate-50/80 px-3 py-2 dark:border-slate-700/60 dark:bg-slate-900/60">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {t('diag.results')} · {rows.length}
+            </span>
+            {best ? (
+              <span className="inline-flex max-w-[60%] items-center gap-1 truncate rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                <svg viewBox="0 0 16 16" className="h-3 w-3 shrink-0 fill-none stroke-current stroke-2" aria-hidden="true">
+                  <path d="M2.5 8.5 6 12 13.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="truncate">{best}</span>
+              </span>
+            ) : null}
+          </div>
+          <div className="strategy-scroll max-h-72 overflow-y-auto">
+            <table className="w-full text-left text-xs tabular-nums">
+              <thead className="sticky top-0 bg-slate-100/95 backdrop-blur dark:bg-slate-800/95">
+                <tr className="text-[10.5px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  <th className="px-3 py-2 font-semibold">config</th>
+                  <th className="px-2 py-2 text-right font-semibold">OK</th>
+                  <th className="px-2 py-2 text-right font-semibold">ERR</th>
+                  <th className="px-2 py-2 text-right font-semibold">UNSUP</th>
                   {mode === 'standard' ? (
                     <>
-                      <td className="px-2 py-1">{r.pingOk}</td>
-                      <td className="px-2 py-1">{r.pingFail}</td>
+                      <th className="px-2 py-2 text-right font-semibold">ping✓</th>
+                      <th className="px-2 py-2 text-right font-semibold">ping✗</th>
                     </>
                   ) : (
-                    <td className="px-2 py-1 text-amber-500">{r.blocked}</td>
+                    <th className="px-2 py-2 text-right font-semibold">BLOCK</th>
                   )}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40">
+                {rows.map((r) => {
+                  const isBest = r.configName === best
+                  const { base, tag } = splitStrategyName(r.configName)
+                  return (
+                    <tr
+                      key={r.configId}
+                      title={r.configName}
+                      className={
+                        isBest
+                          ? 'bg-emerald-500/10 font-medium text-emerald-800 hover:bg-emerald-500/15 dark:text-emerald-200 dark:hover:bg-emerald-500/15'
+                          : 'text-slate-700 hover:bg-slate-100/80 dark:text-slate-200 dark:hover:bg-slate-700/30'
+                      }
+                    >
+                      <td className="max-w-[220px] truncate px-3 py-1.5">
+                        <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                          {isBest ? (
+                            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 fill-none stroke-current stroke-2 text-emerald-500" aria-hidden="true">
+                              <path d="M2.5 8.5 6 12 13.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          ) : null}
+                          <span className="truncate font-medium">{base}</span>
+                          {tag ? (
+                            <span className="shrink-0 rounded border border-sky-500/25 bg-sky-500/10 px-1 py-px font-mono text-[10px] font-semibold text-sky-700 dark:border-sky-400/25 dark:text-sky-300">
+                              {tag}
+                            </span>
+                          ) : null}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <Num value={r.ok} tone="green" />
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <Num value={r.err} tone="red" />
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <Num value={r.unsup} tone="amber" />
+                      </td>
+                      {mode === 'standard' ? (
+                        <>
+                          <td className="px-2 py-1.5 text-right">
+                            <Num value={r.pingOk} tone="slate" />
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <Num value={r.pingFail} tone={r.pingFail > 0 ? 'red' : 'slate'} />
+                          </td>
+                        </>
+                      ) : (
+                        <td className="px-2 py-1.5 text-right">
+                          <Num value={r.blocked} tone={r.blocked > 0 ? 'amber' : 'slate'} />
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : !running ? (
         <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">{t('diag.noTestResults')}</p>
       ) : null}
 
       {filePath ? (
-        <p className="mt-2 break-all text-[11px] text-slate-500 dark:text-slate-400">
-          {t('diag.resultsSaved').replace('{path}', filePath)}
-        </p>
+        <div className="mt-2 flex items-center gap-2 rounded-lg bg-slate-100 py-1.5 pl-2.5 pr-1.5 dark:bg-black/40">
+          <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0 fill-none stroke-slate-400 stroke-[1.8]" aria-hidden="true">
+            <path d="M2.5 6.5a2 2 0 0 1 2-2h4l2 2.5h5a2 2 0 0 1 2 2v5.5a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-8Z" strokeLinejoin="round" />
+          </svg>
+          <span title={filePath} className="min-w-0 flex-1 truncate font-mono text-[11px] text-slate-500 dark:text-slate-400">
+            {filePath}
+          </span>
+          <button
+            onClick={() => void openResults()}
+            title={t('diag.openFolder')}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-300/80 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-sky-500/40 hover:text-sky-700 active:scale-95 dark:border-slate-600/60 dark:bg-slate-700/60 dark:text-slate-200 dark:hover:border-sky-400/40 dark:hover:text-sky-300"
+          >
+            <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.8]" aria-hidden="true">
+              <path d="M2.5 6.5a2 2 0 0 1 2-2h4l2 2.5h5a2 2 0 0 1 2 2v5.5a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-8Z" strokeLinejoin="round" />
+              <path d="M10 10.5v4m0-4-1.5 1.5M10 10.5l1.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {t('diag.openFolder')}
+          </button>
+        </div>
       ) : null}
 
       {logs.length > 0 ? (

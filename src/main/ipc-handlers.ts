@@ -350,6 +350,22 @@ export function registerIpcHandlers(): void {
     return true
   })
 
+  ipcMain.handle(IPC.configTesterOpenFile, async (_e, filePath: string) => {
+    // Reveal the saved results file in Explorer. Restricted to our own
+    // `utils/test results` dir so a compromised renderer cannot pop
+    // arbitrary paths.
+    const raw = String(filePath ?? '').slice(0, 1024)
+    if (!raw) throw new Error('Empty file path')
+    const resultsDir = path.join(getUtilsDir(), 'test results')
+    const resolved = path.resolve(resultsDir, path.basename(raw))
+    if (path.dirname(resolved).toLowerCase() !== path.resolve(resultsDir).toLowerCase()) {
+      throw new Error('File is outside the test results folder')
+    }
+    if (!fs.existsSync(resolved)) throw new Error('Results file not found (it may have been deleted)')
+    shell.showItemInFolder(resolved)
+    return true
+  })
+
   ipcMain.handle(IPC.getSettings, async () => loadSettings())
   ipcMain.handle(IPC.saveSettings, async (_e, patch: Partial<AppSettings>) => saveSettings(patch))
 
