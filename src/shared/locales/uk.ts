@@ -199,5 +199,9 @@ export const uk = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Готово'
+  'wizard.finish': 'Готово',
+  'tray.goto': 'Відкрити розділ',
+  'tray.openData': 'Відкрити папку даних',
+  'tray.exportLogs': 'Експорт логів',
+  'tray.allStrategies': 'Всі стратегії…'
 } as const

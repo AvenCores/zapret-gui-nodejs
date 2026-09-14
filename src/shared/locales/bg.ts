@@ -199,5 +199,9 @@ export const bg = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Готово'
+  'wizard.finish': 'Готово',
+  'tray.goto': 'Отвори раздел',
+  'tray.openData': 'Отвори папката с данни',
+  'tray.exportLogs': 'Експорт на логовете',
+  'tray.allStrategies': 'Всички стратегии…'
 } as const

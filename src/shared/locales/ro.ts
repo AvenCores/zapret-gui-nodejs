@@ -199,5 +199,9 @@ export const ro = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Gata'
+  'wizard.finish': 'Gata',
+  'tray.goto': 'Deschide secțiunea',
+  'tray.openData': 'Deschide folderul de date',
+  'tray.exportLogs': 'Exportă jurnalele',
+  'tray.allStrategies': 'Toate strategiile…'
 } as const

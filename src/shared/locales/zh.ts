@@ -199,5 +199,9 @@ export const zh = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': '完成'
+  'wizard.finish': '完成',
+  'tray.goto': '打开分区',
+  'tray.openData': '打开数据文件夹',
+  'tray.exportLogs': '导出日志',
+  'tray.allStrategies': '所有策略…'
 } as const

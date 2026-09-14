@@ -199,5 +199,9 @@ export const de = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Fertig'
+  'wizard.finish': 'Fertig',
+  'tray.goto': 'Bereich öffnen',
+  'tray.openData': 'Datenordner öffnen',
+  'tray.exportLogs': 'Protokolle exportieren',
+  'tray.allStrategies': 'Alle Strategien…'
 } as const

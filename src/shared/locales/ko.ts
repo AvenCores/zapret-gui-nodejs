@@ -199,5 +199,9 @@ export const ko = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': '완료'
+  'wizard.finish': '완료',
+  'tray.goto': '섹션 열기',
+  'tray.openData': '데이터 폴더 열기',
+  'tray.exportLogs': '로그 내보내기',
+  'tray.allStrategies': '모든 전략…'
 } as const

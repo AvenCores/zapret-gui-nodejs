@@ -199,5 +199,9 @@ export const hu = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Kész'
+  'wizard.finish': 'Kész',
+  'tray.goto': 'Szakasz megnyitása',
+  'tray.openData': 'Adatmappa megnyitása',
+  'tray.exportLogs': 'Naplók exportálása',
+  'tray.allStrategies': 'Összes stratégia…'
 } as const

@@ -155,6 +155,9 @@ export interface UserListMeta {
   bytes: number
   exists: boolean
 }
+/** A top-level UI page that the tray menu can navigate to. */
+export type TrayPage = 'dashboard' | 'strategies' | 'settings' | 'lists' | 'updates' | 'diagnostics' | 'logs'
+
 /** IPC channel names (kept in one place to avoid typos). */
 export const IPC = {
   getStatus: 'zapret:get-status',
@@ -194,5 +197,7 @@ export const IPC = {
   exportLogs: 'zapret:export-logs',
   onLog: 'zapret:on-log',
   onTestOutput: 'zapret:on-test-output',
-  onDownloadProgress: 'zapret:on-download-progress'
+  onDownloadProgress: 'zapret:on-download-progress',
+  navigate: 'zapret:navigate',
+  statusChanged: 'zapret:status-changed'
 } as const

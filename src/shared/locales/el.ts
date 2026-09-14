@@ -199,5 +199,9 @@ export const el = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Τέλος'
+  'wizard.finish': 'Τέλος',
+  'tray.goto': 'Άνοιγμα ενότητας',
+  'tray.openData': 'Άνοιγμα φακέλου δεδομένων',
+  'tray.exportLogs': 'Εξαγωγή αρχείων καταγραφής',
+  'tray.allStrategies': 'Όλες οι στρατηγικές…'
 } as const

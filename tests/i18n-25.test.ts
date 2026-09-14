@@ -99,11 +99,10 @@ describe('25+ language support', () => {
   it('tray labels resolve for every locale without fallback crash', () => {
     for (const { code } of SUPPORTED_LOCALES) {
       const l = getTrayLabels(code, 'running')
-      expect(l.status.length).toBeGreaterThan(0)
-      expect(l.start.length).toBeGreaterThan(0)
-      expect(l.stop.length).toBeGreaterThan(0)
+      for (const [k, v] of Object.entries(l)) {
+        expect(v.length, `${code}:tray.${k}`).toBeGreaterThan(0)
+      }
       expect(l.open).toContain('Zapret GUI')
-      expect(l.quit.length).toBeGreaterThan(0)
     }
   })
 })

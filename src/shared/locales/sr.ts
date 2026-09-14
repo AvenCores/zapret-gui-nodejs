@@ -199,5 +199,9 @@ export const sr = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Gotovo'
+  'wizard.finish': 'Gotovo',
+  'tray.goto': 'Otvori odeljak',
+  'tray.openData': 'Otvori fasciklu sa podacima',
+  'tray.exportLogs': 'Izvezi evidencije',
+  'tray.allStrategies': 'Sve strategije…'
 } as const

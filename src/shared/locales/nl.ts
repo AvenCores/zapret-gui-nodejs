@@ -199,5 +199,9 @@ export const nl = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Gereed'
+  'wizard.finish': 'Gereed',
+  'tray.goto': 'Sectie openen',
+  'tray.openData': 'Gegevensmap openen',
+  'tray.exportLogs': 'Logboeken exporteren',
+  'tray.allStrategies': 'Alle strategieën…'
 } as const

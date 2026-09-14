@@ -199,5 +199,9 @@ export const tr = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Bitti'
+  'wizard.finish': 'Bitti',
+  'tray.goto': 'Bölümü aç',
+  'tray.openData': 'Veri klasörünü aç',
+  'tray.exportLogs': 'Günlükleri dışa aktar',
+  'tray.allStrategies': 'Tüm stratejiler…'
 } as const

@@ -199,5 +199,9 @@ export const kk = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Дайын'
+  'wizard.finish': 'Дайын',
+  'tray.goto': 'Бөлімді ашу',
+  'tray.openData': 'Деректер қалтасын ашу',
+  'tray.exportLogs': 'Логтарды экспорттау',
+  'tray.allStrategies': 'Барлық стратегиялар…'
 } as const

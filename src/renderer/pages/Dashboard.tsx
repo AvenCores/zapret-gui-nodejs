@@ -159,16 +159,6 @@ export default function Dashboard(): React.JSX.Element {
   const { t, status, refreshStatus, busy, setError, settings, setPage } = useUi()
   const [foreignExpanded, setForeignExpanded] = useState(false)
 
-  useEffect(() => {
-    const offStart = window.zapret.onTrayStart(() => void doAction('start'))
-    const offStop = window.zapret.onTrayStop(() => void doAction('stop'))
-    return () => {
-      offStart()
-      offStop()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const foreignPathKey = status?.serviceBinPath ?? status?.winwsPath ?? '—'
   useEffect(() => {
     setForeignExpanded(false)

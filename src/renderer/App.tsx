@@ -11,11 +11,27 @@ import Logs from './pages/Logs'
 import { useUi, syncThemeClass } from './store'
 
 export default function App(): React.JSX.Element {
-  const { page, init, theme, t } = useUi()
+  const { page, init, theme, t, setPage, refreshStatus, refreshStrategies, refreshSettings } = useUi()
   const [ready, setReady] = useState<boolean>(false)
 
   useEffect(() => {
     void init().finally(() => setReady(true))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Tray menu events: navigation requests and "something changed behind
+  // our back" (service start/stop, strategy install, setting toggles).
+  useEffect(() => {
+    const offNav = window.zapret.onNavigate((p) => setPage(p))
+    const offChanged = window.zapret.onStatusChanged(() => {
+      void refreshStatus()
+      void refreshStrategies()
+      void refreshSettings()
+    })
+    return () => {
+      offNav()
+      offChanged()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

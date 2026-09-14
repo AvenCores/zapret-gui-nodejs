@@ -199,5 +199,9 @@ export const id = {
   'lists.dedup': 'Deduplicate',
   'lists.sort': 'Sort',
   'lists.restartHint': 'Restart the zapret service to apply changes.',
-  'wizard.finish': 'Selesai'
+  'wizard.finish': 'Selesai',
+  'tray.goto': 'Buka bagian',
+  'tray.openData': 'Buka folder data',
+  'tray.exportLogs': 'Ekspor log',
+  'tray.allStrategies': 'Semua strategi…'
 } as const

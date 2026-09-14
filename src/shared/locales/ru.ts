@@ -199,5 +199,9 @@ export const ru = {
   'lists.dedup': 'Убрать дубли',
   'lists.sort': 'Сортировать',
   'lists.restartHint': 'Перезапустите сервис zapret, чтобы применить изменения.',
-  'wizard.finish': 'Готово'
+  'wizard.finish': 'Готово',
+  'tray.goto': 'Открыть раздел',
+  'tray.openData': 'Открыть папку данных',
+  'tray.exportLogs': 'Экспорт логов',
+  'tray.allStrategies': 'Все стратегии…'
 } as const

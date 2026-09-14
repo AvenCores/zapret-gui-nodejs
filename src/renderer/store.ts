@@ -73,6 +73,8 @@ interface UiState {
   pushLog: (l: LogLine) => void
   clearLogs: () => void
   applySettings: (patch: Partial<AppSettings>) => Promise<void>
+  /** Re-read settings from disk (tray checkboxes change them behind our back). */
+  refreshSettings: () => Promise<void>
   /** Cached bypass results — survive Dashboard unmount on tab switches. */
   bypass: Record<BypassTargetId, BypassCheckResult | null>
   bypassChecking: Record<BypassTargetId, boolean>
@@ -188,6 +190,14 @@ export const useUi = create<UiState>((set, get) => ({
         document.documentElement.classList.add('theme-anim')
         setTimeout(() => document.documentElement.classList.remove('theme-anim'), 350)
       }
+    }
+  },
+
+  refreshSettings: async () => {
+    const settings = await call('settings', () => window.zapret.getSettings(), set, get)
+    if (settings) {
+      set({ settings, locale: settings.locale, theme: settings.theme })
+      syncThemeClass(settings.theme)
     }
   }
 }))

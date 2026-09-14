@@ -15,6 +15,7 @@ import type {
   LogLine,
   StatusSnapshot,
   Strategy,
+  TrayPage,
   UpdateInfo,
   UserListMeta
 } from '../shared/types'
@@ -80,15 +81,15 @@ const api = {
     ipcRenderer.on(IPC.onDownloadProgress, fn)
     return () => ipcRenderer.removeListener(IPC.onDownloadProgress, fn)
   },
-  onTrayStart: (cb: () => void): (() => void) => {
-    const fn = (): void => cb()
-    ipcRenderer.on('zapret:tray-start', fn)
-    return () => ipcRenderer.removeListener('zapret:tray-start', fn)
+  onNavigate: (cb: (page: TrayPage) => void): (() => void) => {
+    const fn = (_e: unknown, page: TrayPage): void => cb(page)
+    ipcRenderer.on(IPC.navigate, fn)
+    return () => ipcRenderer.removeListener(IPC.navigate, fn)
   },
-  onTrayStop: (cb: () => void): (() => void) => {
+  onStatusChanged: (cb: () => void): (() => void) => {
     const fn = (): void => cb()
-    ipcRenderer.on('zapret:tray-stop', fn)
-    return () => ipcRenderer.removeListener('zapret:tray-stop', fn)
+    ipcRenderer.on(IPC.statusChanged, fn)
+    return () => ipcRenderer.removeListener(IPC.statusChanged, fn)
   },
   onAppUpdateAvailable: (cb: (version: string) => void): (() => void) => {
     const fn = (_e: unknown, version: string): void => cb(version)
