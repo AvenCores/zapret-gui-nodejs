@@ -1153,7 +1153,7 @@ function Flag(props: { code: Locale }): React.JSX.Element {
 }
 
 function AdminBanner(): React.JSX.Element | null {
-  const { status, t } = useUi()
+  const { status, t, platform } = useUi()
   const [dismissed, setDismissed] = useState(false)
   const [pending, setPending] = useState(false)
   if (!status || status.isAdmin || dismissed) return null
@@ -1210,7 +1210,7 @@ function AdminBanner(): React.JSX.Element | null {
               <path d="m9 12 2 2 4-4" />
             </StrokeIcon>
           )}
-          {t('dashboard.relaunchAdmin')}
+          {t((platform ?? status?.platform) === 'linux' ? 'dashboard.relaunchRoot' : 'dashboard.relaunchAdmin')}
         </button>
         <button
           type="button"

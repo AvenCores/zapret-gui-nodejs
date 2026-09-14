@@ -290,6 +290,10 @@ async function checkVpn(): Promise<DiagnosticCheck> {
 
 /** Run the full diagnostics suite. */
 export async function runDiagnostics(installDir: string, appData: string): Promise<DiagnosticCheck[]> {
+  if (process.platform === 'linux') {
+    const { runLinuxDiagnostics } = await import('./diagnostics-linux')
+    return runLinuxDiagnostics(installDir)
+  }
   const ctx: Ctx = { installDir, appData }
   void os.platform
   const results: DiagnosticCheck[] = []

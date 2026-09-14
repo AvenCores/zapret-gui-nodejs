@@ -6,7 +6,7 @@ import UpdatesSection from './Updates'
 import LogsSection from './Logs'
 
 export default function Settings(): React.JSX.Element {
-  const { t, settings, applySettings, setError } = useUi()
+  const { t, settings, applySettings, setError, platform, status } = useUi()
   const [autoCheck, setAutoCheck] = useState<boolean>(true)
   const [loading, setLoading] = useState<boolean>(true)
 
@@ -50,7 +50,7 @@ export default function Settings(): React.JSX.Element {
             setAutoCheck(v)
           })} />
         </Row>
-        <Row label={t('settings.autoLaunch')}>
+        <Row label={t((platform ?? status?.platform) === 'linux' ? 'settings.autoLaunchLinux' : 'settings.autoLaunch')}>
           <Toggle value={settings?.autoLaunch ?? false} onChange={(v) => void applySettings({ autoLaunch: v })} />
         </Row>
       </Card>

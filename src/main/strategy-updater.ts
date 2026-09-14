@@ -209,6 +209,7 @@ export async function checkHosts(): Promise<HostsCheck> {
 
 /** Absolute path of the Windows system hosts file. */
 export function getSystemHostsPath(): string {
+  if (process.platform === 'linux') return '/etc/hosts'
   return path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'drivers', 'etc', 'hosts')
 }
 
@@ -236,11 +237,12 @@ function isAccessError(e: unknown): boolean {
 
 function hostsWriteError(what: string, hostsPath: string, e: unknown): Error {
   const detail = e instanceof Error ? e.message : String(e)
-  return new Error(
-    `Cannot ${what} the system hosts file (${hostsPath}): ${detail}. ` +
-      'Run the app as administrator and allow hosts-file changes in your antivirus ' +
-      '(Defender "Controlled folder access" / hosts protection), then retry.'
-  )
+  const priv =
+    process.platform === 'linux'
+      ? 'Run the app as root (or configure passwordless sudo) and retry.'
+      : 'Run the app as administrator and allow hosts-file changes in your antivirus ' +
+        '(Defender "Controlled folder access" / hosts protection), then retry.'
+  return new Error(`Cannot ${what} the system hosts file (${hostsPath}): ${detail}. ${priv}`)
 }
 
 /**
@@ -449,6 +451,7 @@ async function copyRecursive(src: string, dest: string): Promise<void> {
 }
 
 function expandArchive(zipPath: string, dest: string): Promise<void> {
+  if (process.platform === 'linux') return expandArchiveLinux(zipPath, dest)
   return new Promise((resolve, reject) => {
     // Paths come from %APPDATA% and may contain `'` (e.g. `O'Brien`).
     // PowerShell single-quoted strings escape `'` by doubling it (`''`).
@@ -462,6 +465,27 @@ function expandArchive(zipPath: string, dest: string): Promise<void> {
         else resolve()
       }
     )
+  })
+}
+
+function expandArchiveLinux(zipPath: string, dest: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // Prefer `unzip` (present on most distros); fall back to python3 zipfile.
+    execFile('unzip', ['-q', zipPath, '-d', dest], { timeout: 120000 }, (err, _stdout, stderr) => {
+      if (!err) {
+        resolve()
+        return
+      }
+      execFile(
+        'python3',
+        ['-c', 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', zipPath, dest],
+        { timeout: 120000 },
+        (err2, _o2, stderr2) => {
+          if (err2) reject(new Error(`unzip failed: ${String(stderr || err.message).slice(0, 300)}; python fallback: ${String(stderr2 || err2.message).slice(0, 300)}`))
+          else resolve()
+        }
+      )
+    })
   })
 }
 

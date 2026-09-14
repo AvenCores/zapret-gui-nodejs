@@ -9,3 +9,4 @@ Thumbs.db
 # Keep bundled binaries in git (required for offline installer),
 # but ignore upstream checkout leftovers if ever re-extracted.
 zapret-discord-youtube-main/
+zapret-discord-youtube-linux-master/

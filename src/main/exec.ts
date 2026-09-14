@@ -56,8 +56,28 @@ export function runPowershell(script: string, timeoutMs = 30000): Promise<ExecRe
   return run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `${utf8}${script}`], { timeoutMs })
 }
 
-/** True when the current process runs elevated (admin). */
+/** True when the current process runs elevated (admin / root). */
 export async function isAdmin(): Promise<boolean> {
+  if (process.platform === 'linux') {
+    try {
+      if (typeof process.geteuid === 'function' && process.geteuid() === 0) return true
+    } catch {
+      /* fall through */
+    }
+    // Passwordless sudo also counts as "can manage the service".
+    try {
+      const { isRoot, detectElevateCmd } = await import('./linux/elevate')
+      if (isRoot()) return true
+      const cmd = detectElevateCmd()
+      if (cmd === 'sudo') {
+        const r = await run('sudo', ['-n', 'true'], { timeoutMs: 8000 })
+        return r.code === 0
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
   // `net session` succeeds only for admins.
   const r = await runCmd('net session >nul 2>&1')
   return r.code === 0
@@ -77,6 +97,43 @@ export async function runElevated(command: string, args: string[], cwd?: string)
 
 /** Relaunch the whole Electron app elevated (used by the dashboard button). */
 export async function relaunchAppAsAdmin(appPath: string, appArgs: string[]): Promise<boolean> {
+  if (process.platform === 'linux') {
+    try {
+      const { detectElevateCmd, isRoot } = await import('./linux/elevate')
+      if (isRoot()) return true
+      const cmd = detectElevateCmd()
+      if (cmd === '') return true
+      // GUI apps need a graphical prompt: prefer pkexec, fall back to a
+      // terminal-wrapped sudo (best-effort across desktop environments).
+      if (cmd === 'pkexec') {
+        const r = await run('pkexec', [appPath, ...appArgs], { timeoutMs: 60000 })
+        return r.code === 0
+      }
+      const terminal =
+        process.env.TERMINAL ??
+        (await hasLinuxBinary('x-terminal-emulator')
+          ? 'x-terminal-emulator'
+          : (await hasLinuxBinary('gnome-terminal'))
+            ? 'gnome-terminal'
+            : (await hasLinuxBinary('konsole'))
+              ? 'konsole'
+              : null)
+      if (terminal) {
+        const quoted: string = [appPath, ...appArgs].map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ')
+        const r =
+          terminal === 'gnome-terminal'
+            ? await run(terminal, ['--', 'sudo', appPath, ...appArgs], { timeoutMs: 60000 })
+            : terminal === 'konsole'
+              ? await run(terminal, ['-e', `sudo ${quoted}`], { timeoutMs: 60000 })
+              : await run(terminal, ['-e', `sudo ${quoted}`], { timeoutMs: 60000 })
+        return r.code === 0
+      }
+      const r = await run('sudo', [appPath, ...appArgs], { timeoutMs: 60000 })
+      return r.code === 0
+    } catch {
+      return false
+    }
+  }
   const ps =
     `Start-Process -FilePath '${appPath.replace(/'/g, "''")}'` +
     (appArgs.length > 0 ? ` -ArgumentList '${appArgs.map((a) => a.replace(/'/g, "''")).join("','")}'` : '') +
@@ -85,7 +142,15 @@ export async function relaunchAppAsAdmin(appPath: string, appArgs: string[]): Pr
   return r.code === 0
 }
 
-/** Spawn a long-lived child (foreground winws test / test script). */
+async function hasLinuxBinary(name: string): Promise<boolean> {
+  const r = await run('sh', ['-c', `command -v ${name} >/dev/null 2>&1`], { timeoutMs: 5000 })
+  return r.code === 0
+}
+
+/** Spawn a long-lived child (foreground winws/nfqws test / test script). */
 export function spawnLong(file: string, args: string[], cwd?: string) {
+  if (process.platform === 'linux') {
+    return spawn(file, args, { cwd })
+  }
   return spawn(file, args, { windowsHide: false, cwd })
 }

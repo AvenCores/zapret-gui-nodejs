@@ -12,9 +12,13 @@ import type {
   ConfigTestMode,
   DiagnosticCheck,
   DownloadProgress,
+  EngineDepsResult,
+  FirewallBackend,
   GameFilterMode,
   HostsCheckResult,
+  InitSystem,
   IPSetMode,
+  LinuxPermissionsStatus,
   LogLine,
   StatusSnapshot,
   Strategy,
@@ -30,6 +34,7 @@ export interface TestOutput {
 
 const api = {
   getStatus: (): Promise<StatusSnapshot> => ipcRenderer.invoke(IPC.getStatus),
+  getPlatform: (): Promise<string> => ipcRenderer.invoke(IPC.getPlatform),
   listStrategies: (): Promise<Strategy[]> => ipcRenderer.invoke(IPC.listStrategies),
   installStrategy: (id: string): Promise<boolean> => ipcRenderer.invoke(IPC.installStrategy, id),
   removeServices: (): Promise<boolean> => ipcRenderer.invoke(IPC.removeServices),
@@ -72,6 +77,19 @@ const api = {
     ipcRenderer.invoke(IPC.saveUserList, name, content),
   relaunchAsAdmin: (): Promise<boolean> => ipcRenderer.invoke(IPC.relaunchAsAdmin),
   exportLogs: (): Promise<string | null> => ipcRenderer.invoke(IPC.exportLogs),
+  // Linux
+  listInterfaces: (): Promise<string[]> => ipcRenderer.invoke(IPC.listInterfaces),
+  setInterface: (iface: string): Promise<string> => ipcRenderer.invoke(IPC.setInterface, iface),
+  getFirewallBackend: (): Promise<FirewallBackend> => ipcRenderer.invoke(IPC.getFirewallBackend),
+  setFirewallBackend: (backend: FirewallBackend): Promise<string> =>
+    ipcRenderer.invoke(IPC.setFirewallBackend, backend),
+  listFirewallBackends: (): Promise<string[]> => ipcRenderer.invoke(IPC.listFirewallBackends),
+  getInitSystem: (): Promise<InitSystem> => ipcRenderer.invoke(IPC.getInitSystem),
+  getPermissionsStatus: (): Promise<LinuxPermissionsStatus> => ipcRenderer.invoke(IPC.getPermissionsStatus),
+  setupPermissions: (): Promise<boolean> => ipcRenderer.invoke(IPC.setupPermissions),
+  downloadEngineDeps: (version?: string): Promise<EngineDepsResult> =>
+    ipcRenderer.invoke(IPC.downloadEngineDeps, version),
+  listZapretVersions: (): Promise<string[]> => ipcRenderer.invoke(IPC.listZapretVersions),
   onLog: (cb: (line: LogLine) => void): (() => void) => {
     const fn = (_e: unknown, line: LogLine): void => cb(line)
     ipcRenderer.on(IPC.onLog, fn)

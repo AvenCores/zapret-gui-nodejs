@@ -58,6 +58,15 @@ export type ServiceOwnership =
   | 'none'
   | 'unknown'
 
+/** Firewall backend for Linux (mirrors `FIREWALL_BACKEND` in conf.env). */
+export type FirewallBackend = 'auto' | 'nftables' | 'iptables'
+
+/** Init system hosting the Linux service (mirrors `src/init-backends/*`). */
+export type InitSystem = 'systemd' | 'openrc' | 'runit' | 's6' | 'dinit' | 'unknown'
+
+/** App runtime platform. */
+export type AppPlatform = 'win32' | 'linux' | string
+
 /** Dashboard snapshot. */
 export interface StatusSnapshot {
   zapret: ServiceState
@@ -72,6 +81,34 @@ export interface StatusSnapshot {
   /** Whether the installed `zapret` service points into our own data/bin dir. */
   ownership: ServiceOwnership
   isAdmin: boolean
+  /** Runtime platform (`win32` on Windows, `linux` on Linux). */
+  platform?: AppPlatform
+  /** Init system on Linux (null/undefined on Windows). */
+  initSystem?: InitSystem | null
+  /** Requested firewall backend from conf.env (Linux only). */
+  firewallBackend?: FirewallBackend | null
+  /** Resolved firewall backend (Linux only, null when none installed). */
+  firewallResolved?: FirewallBackend | null
+  /** Network interface from conf.env (Linux only, `any` = no restriction). */
+  linuxInterface?: string | null
+  /** Absolute nfqws path on Linux (null when not downloaded). */
+  linuxNfqws?: string | null
+}
+
+/** Linux permissions (NOPASSWD) status. */
+export interface LinuxPermissionsStatus {
+  sudoers: boolean
+  doas: boolean
+  elevateCmd: string
+  nopass: boolean
+}
+
+/** Result of downloading/updating the DPI engine binary (both platforms). */
+export interface EngineDepsResult {
+  /** Absolute path of the installed engine (`nfqws` / `winws.exe`). */
+  enginePath: string | null
+  engineVersion: string
+  platformDir: string
 }
 
 /** Single diagnostics check result. */
@@ -197,6 +234,7 @@ export type ConfigTesterEvent =
 /** IPC channel names (kept in one place to avoid typos). */
 export const IPC = {
   getStatus: 'zapret:get-status',
+  getPlatform: 'zapret:get-platform',
   installStrategy: 'zapret:install-strategy',
   removeServices: 'zapret:remove-services',
   startService: 'zapret:start-service',
@@ -234,6 +272,17 @@ export const IPC = {
   saveUserList: 'zapret:save-user-list',
   relaunchAsAdmin: 'zapret:relaunch-as-admin',
   exportLogs: 'zapret:export-logs',
+  // Linux (zapret-discord-youtube-linux-master parity)
+  listInterfaces: 'zapret:list-interfaces',
+  setInterface: 'zapret:set-interface',
+  getFirewallBackend: 'zapret:get-firewall-backend',
+  setFirewallBackend: 'zapret:set-firewall-backend',
+  listFirewallBackends: 'zapret:list-firewall-backends',
+  getInitSystem: 'zapret:get-init-system',
+  getPermissionsStatus: 'zapret:get-permissions-status',
+  setupPermissions: 'zapret:setup-permissions',
+  downloadEngineDeps: 'zapret:download-engine-deps',
+  listZapretVersions: 'zapret:list-zapret-versions',
   onLog: 'zapret:on-log',
   onTestOutput: 'zapret:on-test-output',
   onConfigTesterEvent: 'zapret:on-config-tester-event',

@@ -120,7 +120,12 @@ async function refreshTray(): Promise<void> {
     }
     // Labels follow the app language (also refreshed by the 15s timer,
     // so a language switch applies to the tray shortly after).
-    setupTray(zs, getTrayLabels(settings.locale, zs), ctx, trayCallbacks())
+    const labels = getTrayLabels(settings.locale, zs)
+    if (process.platform === 'linux') {
+      labels.relaunchAdmin = translate(settings.locale, 'dashboard.relaunchRoot')
+      labels.autoLaunch = translate(settings.locale, 'settings.autoLaunchLinux')
+    }
+    setupTray(zs, labels, ctx, trayCallbacks())
   } catch {
     /* tray refresh is best-effort */
   } finally {
@@ -331,6 +336,16 @@ function trayCallbacks() {
 
 function createWindow(): void {
   const settings = loadSettings()
+  const bundledDir = getBundledAssetsDir()
+  let appIcon = path.join(bundledDir, 'icon.ico')
+  if (process.platform === 'linux') {
+    const png = path.join(bundledDir, 'icon.png')
+    try {
+      if (fs.existsSync(png)) appIcon = png
+    } catch {
+      /* keep .ico fallback */
+    }
+  }
   mainWindow = new BrowserWindow({
     width: 1625,
     height: 935,
@@ -339,7 +354,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'Zapret GUI',
-    icon: path.join(getBundledAssetsDir(), 'icon.ico'),
+    icon: appIcon,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -508,6 +523,11 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on('window-all-closed', () => {
-  // Keep running in tray on Windows.
-  if (process.platform !== 'win32') app.quit()
+  // Keep running in tray while the tray icon is enabled (all platforms).
+  try {
+    if (loadSettings().showTrayIcon) return
+  } catch {
+    /* fall through to platform default */
+  }
+  if (process.platform !== 'darwin') app.quit()
 })

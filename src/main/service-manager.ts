@@ -9,7 +9,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { runCmd, runPowershell } from './exec'
-import { getBinDir, getListsDir } from './paths'
+import { getBinDir, getDataDir, getListsDir } from './paths'
 import { materializeArgs, quoteArg } from './strategy-parser'
 import { SERVICE_NAME, WINDIVERT_SERVICE, WINWS_EXE, CONFLICTING_SERVICES } from '../shared/constants'
 import type { GameFilterMode, IPSetMode, ServiceOwnership, ServiceState, StatusSnapshot, Strategy } from '../shared/types'
@@ -183,7 +183,12 @@ async function enableTcpTimestamps(): Promise<void> {
 
 /** Full dashboard snapshot. */
 export async function getStatus(isAdmin: boolean): Promise<StatusSnapshot> {
-  const [zapret, windivert, winwsRunning, reg, winwsPath] = await Promise.all([
+  if (process.platform === 'linux') {
+    const { getLinuxStatus } = await import('./linux/service')
+    const { snapshot } = await getLinuxStatus(getDataDir())
+    // Caller already resolved admin via exec.isAdmin (root-aware); keep it.
+    return { ...snapshot, isAdmin }
+  }  const [zapret, windivert, winwsRunning, reg, winwsPath] = await Promise.all([
     scQuery(SERVICE_NAME),
     scQuery(WINDIVERT_SERVICE),
     isProcessRunning(WINWS_EXE),
@@ -288,7 +293,11 @@ export async function installStrategy(
   dataDir: string,
   onLog?: (text: string) => void
 ): Promise<void> {
-  const binDir = getBinDir()
+  if (process.platform === 'linux') {
+    const { installLinuxStrategy } = await import('./linux/service')
+    await installLinuxStrategy(strategy, dataDir, {}, onLog)
+    return
+  }  const binDir = getBinDir()
   const listsDir = getListsDir()
   const { tcp, udp } = resolveGameFilterPorts(dataDir)
   const args = materializeArgs(strategy.args, { binDir, listsDir, gameTcp: tcp, gameUdp: udp }).map(quoteArg)
@@ -326,7 +335,11 @@ export async function installStrategy(
 
 /** Stop + delete `zapret`, kill stray winws.exe, remove WinDivert services. */
 export async function removeServices(onLog?: (text: string) => void): Promise<void> {
-  const say = (t: string): void => {
+  if (process.platform === 'linux') {
+    const { removeLinuxServices } = await import('./linux/service')
+    await removeLinuxServices(getDataDir(), onLog)
+    return
+  }  const say = (t: string): void => {
     onLog?.(t)
   }
   const zapret = await scQuery(SERVICE_NAME)
@@ -351,12 +364,21 @@ export async function removeServices(onLog?: (text: string) => void): Promise<vo
 }
 
 export async function startService(): Promise<void> {
+  if (process.platform === 'linux') {
+    const { startLinuxService } = await import('./linux/service')
+    await startLinuxService(getDataDir())
+    return
+  }
   const r = await runCmd(`sc start ${SERVICE_NAME}`)
   if (r.code !== 0) throw new Error(friendlyServiceError('start', r.stdout + r.stderr))
 }
 
 export async function stopService(): Promise<void> {
-  const r = await runCmd(`net stop ${SERVICE_NAME}`)
+  if (process.platform === 'linux') {
+    const { stopLinuxService } = await import('./linux/service')
+    await stopLinuxService(getDataDir())
+    return
+  }  const r = await runCmd(`net stop ${SERVICE_NAME}`)
   if (r.code !== 0) throw new Error(friendlyServiceError('stop', r.stdout + r.stderr))
 }
 

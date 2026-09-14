@@ -1,17 +1,36 @@
-/** Updates section (embedded in Settings): version check, ipset/strategies refresh. */
-import React, { useState } from 'react'
+/** Updates section (embedded in Settings): version check, ipset/strategies/engine refresh. */
+import React, { useEffect, useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, ProgressBar, Row, Spinner } from '../components/ui'
 import type { DownloadProgress, UpdateInfo } from '../../shared/types'
 
 export default function UpdatesSection(): React.JSX.Element {
-  const { t, setError, status } = useUi()
+  const { t, setError, status, platform, refreshStatus } = useUi()
   const [info, setInfo] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState<boolean>(false)
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
   const [result, setResult] = useState<string | null>(null)
   const [backupDir, setBackupDir] = useState<string | null>(null)
+  // DPI engine (`nfqws` on Linux, `winws.exe` on Windows): bundled offline,
+  // downloadable here for updates.
+  const isLinux = (platform ?? status?.platform) === 'linux'
+  const engineName = isLinux ? 'nfqws' : 'winws.exe'
+  const [versions, setVersions] = useState<string[]>([])
+  const [version, setVersion] = useState<string>('')
+  const [engineProgress, setEngineProgress] = useState<DownloadProgress | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const list = await window.zapret.listZapretVersions()
+        setVersions(list)
+        setVersion(list[0] ?? '')
+      } catch {
+        /* offline — engine update simply stays unavailable */
+      }
+    })()
+  }, [])
 
   async function wrap(key: string, fn: () => Promise<void>): Promise<void> {
     setBusyKey(key)
@@ -22,6 +41,25 @@ export default function UpdatesSection(): React.JSX.Element {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
+      setBusyKey(null)
+    }
+  }
+
+  async function downloadEngine(): Promise<void> {
+    if (busyKey !== null) return
+    setBusyKey('engine')
+    setResult(null)
+    setEngineProgress({ percent: 0, transferred: 0, total: null })
+    const off = window.zapret.onDownloadProgress(setEngineProgress)
+    try {
+      const r = await window.zapret.downloadEngineDeps(version || undefined)
+      setResult(t('linux.depsDone').replace('{path}', r.enginePath ?? ''))
+      await refreshStatus()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      off()
+      setEngineProgress(null)
       setBusyKey(null)
     }
   }
@@ -83,8 +121,7 @@ export default function UpdatesSection(): React.JSX.Element {
             })}
           >
             {spin('ipset')} {t('updates.updateIpSet')}
-          </Btn>
-          <Btn
+          </Btn>          <Btn
             variant="secondary"
             disabled={disabled || busyKey !== null}
             onClick={() => {
@@ -127,6 +164,45 @@ export default function UpdatesSection(): React.JSX.Element {
               </svg>
               {t('updates.openBackup')}
             </button>
+          </div>
+        ) : null}
+
+        <div className="mx-1 my-3 h-px bg-slate-200/80 dark:bg-slate-700/60" />
+
+        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          {t('engine.title').replace('{engine}', engineName)}
+        </div>
+        <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+          {t('engine.hint').replace('{engine}', engineName)}
+        </p>
+        {isLinux && !status?.linuxNfqws ? (
+          <p className="mb-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+            ⚠ {t('engine.missing').replace('{engine}', engineName)}
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-slate-500 dark:text-slate-400">
+            {t('engine.version')}{' '}
+            <select
+              value={version}
+              onChange={(e) => setVersion(e.target.value)}
+              disabled={busyKey !== null || versions.length === 0}
+              className="rounded-md bg-slate-200 px-2 py-1 text-xs dark:bg-slate-700"
+            >
+              {versions.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Btn variant="secondary" disabled={disabled || busyKey !== null} onClick={() => void downloadEngine()}>
+            {spin('engine')} {t('engine.download')}
+          </Btn>
+        </div>
+        {engineProgress ? (
+          <div className="mt-3">
+            <ProgressBar percent={engineProgress.percent} />
           </div>
         ) : null}
       </Card>
