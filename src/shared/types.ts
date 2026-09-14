@@ -126,6 +126,21 @@ export interface AppSettings {
   gameFake: string | null
 }
 
+/** Bypass-test target id shown on the dashboard. */
+export type BypassTargetId = 'youtube' | 'cloudflare' | 'discord'
+
+/** Result of a single bypass connectivity check (main process). */
+export interface BypassCheckResult {
+  id: BypassTargetId
+  ok: boolean
+  /** Time until response headers, ms. */
+  latencyMs: number
+  /** HTTP status code (null on network error). */
+  httpStatus: number | null
+  /** Short error text (null on success). */
+  error: string | null
+  checkedAt: string
+}
 /** IPC channel names (kept in one place to avoid typos). */
 export const IPC = {
   getStatus: 'zapret:get-status',
@@ -152,6 +167,7 @@ export const IPC = {
   applyHosts: 'zapret:apply-hosts',
   updateStrategies: 'zapret:update-strategies',
   runDiagnostics: 'zapret:run-diagnostics',
+  checkBypass: 'zapret:check-bypass',
   clearDiscordCache: 'zapret:clear-discord-cache',
   removeConflicts: 'zapret:remove-conflicts',
   runTests: 'zapret:run-tests',

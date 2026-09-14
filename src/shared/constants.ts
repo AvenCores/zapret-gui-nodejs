@@ -34,6 +34,32 @@ export const URLS = {
 
 export const GAME_FILTER_FLAG = 'game_filter.enabled'
 export const CHECK_UPDATES_FLAG = 'check_updates.enabled'
+export const BYPASS_CHECK_TIMEOUT_MS = 10000
+
+/** Targets for the dashboard bypass test (lightweight endpoints). */
+export const BYPASS_TARGETS = [
+  {
+    id: 'youtube',
+    name: 'YouTube',
+    host: 'www.youtube.com',
+    url: 'https://www.youtube.com/favicon.ico',
+    openUrl: 'https://www.youtube.com/'
+  },
+  {
+    id: 'cloudflare',
+    name: 'Cloudflare',
+    host: 'www.cloudflare.com',
+    url: 'https://www.cloudflare.com/cdn-cgi/trace',
+    openUrl: 'https://www.cloudflare.com/'
+  },
+  {
+    id: 'discord',
+    name: 'Discord',
+    host: 'discord.com',
+    url: 'https://discord.com/api/v10/gateway',
+    openUrl: 'https://discord.com/'
+  }
+] as const
 export const IPSET_ALL = 'ipset-all.txt'
 export const IPSET_BACKUP = 'ipset-all.txt.backup'
 export const IPSET_NONE_SENTINEL = '203.0.113.113/32'

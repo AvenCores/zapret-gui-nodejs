@@ -39,6 +39,8 @@ import {
   replaceActiveFake
 } from './strategy-updater'
 import { getDataDir, getBinDir, getListsDir, getStrategiesDir, getUtilsDir, getBundledAssetsDir } from './paths'
+import { checkBypassTarget } from './bypass-check'
+import type { BypassTargetId } from '../shared/types'
 import { loadSettings, saveSettings } from './settings'
 import { translate } from '../shared/i18n'
 import { getBufferedLogs, info, warn, err } from './logger'
@@ -238,6 +240,8 @@ export function registerIpcHandlers(): void {
     sendLog('diag', fails > 0 ? 'warn' : 'info', `Diagnostics done: ${fails} fail, ${warns} warn, ${checks.length} total.`)
     return checks
   })
+
+  ipcMain.handle(IPC.checkBypass, async (_e, id: BypassTargetId) => checkBypassTarget(id))
 
   ipcMain.handle(IPC.clearDiscordCache, async () => {
     const lines = await clearDiscordCache(process.env.APPDATA ?? '', (t) => sendLog('app', 'info', t))

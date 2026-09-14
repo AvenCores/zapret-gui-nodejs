@@ -6,6 +6,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
 import type {
   AppSettings,
+  BypassCheckResult,
+  BypassTargetId,
   DiagnosticCheck,
   DownloadProgress,
   GameFilterMode,
@@ -50,6 +52,7 @@ const api = {
   updateStrategies: (): Promise<{ tag: string; filesUpdated: string[]; backupDir: string }> =>
     ipcRenderer.invoke(IPC.updateStrategies),
   runDiagnostics: (): Promise<DiagnosticCheck[]> => ipcRenderer.invoke(IPC.runDiagnostics),
+  checkBypass: (id: BypassTargetId): Promise<BypassCheckResult> => ipcRenderer.invoke(IPC.checkBypass, id),
   clearDiscordCache: (): Promise<string[]> => ipcRenderer.invoke(IPC.clearDiscordCache),
   removeConflicts: (): Promise<string[]> => ipcRenderer.invoke(IPC.removeConflicts),
   runTests: (): Promise<boolean> => ipcRenderer.invoke(IPC.runTests),

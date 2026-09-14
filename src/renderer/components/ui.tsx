@@ -22,7 +22,7 @@ const toneClass: Record<Tone, string> = {
 
 export function Badge(props: { tone: Tone; children: React.ReactNode }): React.JSX.Element {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${toneClass[props.tone]}`}>
+    <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium ${toneClass[props.tone]}`}>
       {props.children}
     </span>
   )
