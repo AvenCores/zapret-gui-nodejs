@@ -304,7 +304,7 @@ function HostsBlock(): React.JSX.Element {
 }
 
 export default function Dashboard(): React.JSX.Element {
-  const { t, status, refreshStatus, busy, setError, settings, setPage } = useUi()
+  const { t, status, refreshStatus, busy, setError, settings, setPage, strategies } = useUi()
   const [foreignExpanded, setForeignExpanded] = useState(false)
   const [acting, setActing] = useState<null | 'start' | 'stop' | 'restart' | 'remove'>(null)
 
@@ -320,6 +320,21 @@ export default function Dashboard(): React.JSX.Element {
       const foreign = status?.ownership === 'foreign'
       if ((kind === 'start' || kind === 'stop' || kind === 'restart') && foreign) {
         setError(t('dashboard.foreignHint'))
+        return
+      }
+      if ((kind === 'start' || kind === 'restart') && status?.zapret === 'NOT_INSTALLED') {
+        // No service yet: install the selected strategy (which also starts
+        // it) instead of failing with sc 1060.
+        const target =
+          strategies.find((s) => s.id === settings?.activeStrategyId) ??
+          strategies.find((s) => s.name === status?.activeStrategy) ??
+          strategies[0]
+        if (!target) {
+          setError('No strategies available — import one on the Strategies tab')
+          return
+        }
+        await window.zapret.installStrategy(target.id)
+        await refreshStatus()
         return
       }
       if (kind === 'start') await window.zapret.startService()
@@ -450,7 +465,7 @@ export default function Dashboard(): React.JSX.Element {
               <Btn onClick={() => void doAction('stop')} disabled={busy['status'] || acting !== null || !running || !status.isAdmin} variant="secondary">
                 {t('action.stop')}
               </Btn>
-              <Btn onClick={() => void doAction('restart')} disabled={busy['status'] || acting !== null || !status.isAdmin || !zapretInstalled} variant="secondary">
+              <Btn onClick={() => void doAction('restart')} disabled={busy['status'] || acting !== null || !status.isAdmin} variant="secondary">
                 {acting ? <Spinner /> : t('action.restart')}
               </Btn>
             </>

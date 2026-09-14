@@ -351,12 +351,25 @@ export async function removeServices(onLog?: (text: string) => void): Promise<vo
 
 export async function startService(): Promise<void> {
   const r = await runCmd(`sc start ${SERVICE_NAME}`)
-  if (r.code !== 0) throw new Error((r.stdout + r.stderr).trim().slice(0, 500) || 'sc start failed')
+  if (r.code !== 0) throw new Error(friendlyServiceError('start', r.stdout + r.stderr))
 }
 
 export async function stopService(): Promise<void> {
   const r = await runCmd(`net stop ${SERVICE_NAME}`)
-  if (r.code !== 0) throw new Error((r.stdout + r.stderr).trim().slice(0, 500) || 'net stop failed')
+  if (r.code !== 0) throw new Error(friendlyServiceError('stop', r.stdout + r.stderr))
+}
+
+/**
+ * Map raw `sc`/`net` failure output to an actionable error.
+ * 1060 (service does not exist) otherwise surfaces as raw localized `sc`
+ * text — unreadable when OEM-decoded and telling the user nothing to do.
+ * Pure — covered by unit tests.
+ */
+export function friendlyServiceError(action: 'start' | 'stop', output: string): string {
+  if (/\b1060\b/.test(output)) {
+    return `Service '${SERVICE_NAME}' is not installed — apply a strategy on the Strategies tab to install it`
+  }
+  return output.trim().slice(0, 500) || `Service ${action} failed`
 }
 
 /** Remove conflicting bypass services (GoodbyeDPI etc.) + WinDivert leftovers. */

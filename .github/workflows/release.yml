@@ -26,8 +26,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Cache Electron toolchain
+        # See build.yml: warm cache + retries survive transient 5xx while
+        # electron-builder fetches its NSIS/winCodeSign toolchain.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-tools-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            electron-tools-${{ runner.os }}-
+
       - name: Build
-        run: npm run build:win
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 25
+          max_attempts: 3
+          retry_on: error
+          command: npm run build:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -40,12 +40,20 @@ export function run(file: string, args: string[], opts: { cwd?: string; timeoutM
 
 /** `cmd.exe /c <command>` wrapper (needed for sc/net/tasklist pipelines). */
 export function runCmd(command: string, timeoutMs = 30000): Promise<ExecResult> {
-  return run('cmd.exe', ['/d', '/s', '/c', command], { timeoutMs })
+  // cmd.exe emits text in the OEM codepage (CP866 on Russian Windows) while
+  // Node decodes it as UTF-8 → Cyrillic turns into mojibake in surfaced
+  // errors. Switching this (per-process) session to UTF-8 fixes decoding;
+  // parsing only relies on ASCII keywords/digits, so nothing else changes.
+  return run('cmd.exe', ['/d', '/s', '/c', `chcp 65001 >nul & ${command}`], { timeoutMs })
 }
 
 /** PowerShell `-NoProfile -Command ...` wrapper. */
 export function runPowershell(script: string, timeoutMs = 30000): Promise<ExecResult> {
-  return run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeoutMs })
+  // Same OEM-decoding problem as cmd (e.g. Cyrillic paths from
+  // Get-Process/registry): force UTF-8 console output for this session.
+  // `new($false)` = no BOM preamble, and every caller trims anyway.
+  const utf8 = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); '
+  return run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `${utf8}${script}`], { timeoutMs })
 }
 
 /** True when the current process runs elevated (admin). */

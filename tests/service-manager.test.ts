@@ -13,7 +13,7 @@ vi.mock('node:child_process', async (importOriginal) => {
 })
 
 import { execFile } from 'node:child_process'
-import { parseScState, mapServiceStatus, queryServiceState, getIPSetMode, setIPSetMode, getGameFilterMode, setGameFilterMode, expandEnvVars, normalizeWindowsPath, extractExePathFromImagePath, detectServiceOwnership } from '../src/main/service-manager'
+import { parseScState, mapServiceStatus, queryServiceState, getIPSetMode, setIPSetMode, getGameFilterMode, setGameFilterMode, expandEnvVars, normalizeWindowsPath, extractExePathFromImagePath, detectServiceOwnership, friendlyServiceError } from '../src/main/service-manager'
 import { compareVersions } from '../src/main/strategy-updater'
 
 const execFileMock = execFile as unknown as ReturnType<typeof vi.fn>
@@ -89,6 +89,18 @@ describe('queryServiceState', () => {
     queueProcResults([{ stdout: 'Running\r\n' }])
     await expect(queryServiceState('zapret')).resolves.toBe('RUNNING')
     expect(execFileMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('friendlyServiceError', () => {
+  it('maps 1060 to an actionable message', () => {
+    const msg = friendlyServiceError('start', '[SC] StartService: OpenService FAILED 1060:\nThe specified service does not exist.')
+    expect(msg).toContain('not installed')
+    expect(msg).toContain('Strategies')
+  })
+  it('passes other failures through trimmed', () => {
+    expect(friendlyServiceError('stop', '  some other failure  ')).toBe('some other failure')
+    expect(friendlyServiceError('start', '')).toBe('Service start failed')
   })
 })
 
