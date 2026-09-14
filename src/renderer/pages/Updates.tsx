@@ -126,7 +126,7 @@ export default function Updates(): React.JSX.Element {
       </Card>
 
       {hosts ? (
-        <Card title={t('updates.hostsTitle')}>
+        <Card title={t('updates.hostsTitle')} onClose={() => setHosts(null)} closeLabel={t('action.close')}>
           <p className="mb-2 text-sm text-slate-600 dark:text-slate-300">
             {hosts.needsUpdate ? `⚠ ${t('updates.hostsDiffers')}` : `✓ ${t('updates.hostsUpToDate')}`}
           </p>
@@ -137,6 +137,7 @@ export default function Updates(): React.JSX.Element {
                 disabled={disabled}
                 onClick={() => void wrap('apply-hosts', async () => {
                   await window.zapret.applyHosts(hosts.remoteContent)
+                  setHosts(null)
                   setResult(t('updates.hostsApplied'))
                 })}
               >

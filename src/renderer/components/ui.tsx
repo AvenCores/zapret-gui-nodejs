@@ -1,10 +1,25 @@
 /** Tiny presentational primitives (no external component library). */
 import React from 'react'
 
-export function Card(props: { title?: string; children: React.ReactNode; className?: string }): React.JSX.Element {
+export function Card(props: { title?: string; children: React.ReactNode; className?: string; onClose?: () => void; closeLabel?: string }): React.JSX.Element {
   return (
     <section className={`rounded-xl border border-slate-200 bg-white p-4 shadow dark:border-slate-700/60 dark:bg-slate-800/60 ${props.className ?? ''}`}>
-      {props.title ? <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">{props.title}</h2> : null}
+      {props.title || props.onClose ? (
+        <div className="mb-3 flex items-center justify-between gap-2">
+          {props.title ? <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">{props.title}</h2> : <span />}
+          {props.onClose ? (
+            <button
+              type="button"
+              onClick={props.onClose}
+              title={props.closeLabel ?? '×'}
+              aria-label={props.closeLabel ?? 'Close'}
+              className="rounded-md px-2 py-0.5 text-sm leading-none text-slate-400 transition hover:bg-slate-200 hover:text-slate-600 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-200"
+            >
+              ✕
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {props.children}
     </section>
   )

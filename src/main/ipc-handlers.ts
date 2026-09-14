@@ -249,8 +249,11 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.updateHosts, async () => checkHosts())
   ipcMain.handle(IPC.applyHosts, async (_e, remoteContent: string) => {
+    if (!(await isAdmin())) {
+      throw new Error('Administrator rights are required to update the system hosts file. Click "Restart as administrator" and retry.')
+    }
     await applyHosts(remoteContent)
-    sendLog('app', 'info', 'System hosts updated (backup: hosts.zapret-gui.bak).')
+    sendLog('app', 'info', 'System Hosts updated (backup: hosts.zapret-gui.bak).')
     return true
   })
 

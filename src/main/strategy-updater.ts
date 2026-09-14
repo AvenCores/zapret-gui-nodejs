@@ -4,6 +4,7 @@
  * @module main/strategy-updater
  */
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import https from 'node:https'
 import { execFile } from 'node:child_process'
@@ -194,7 +195,7 @@ export async function checkHosts(): Promise<HostsCheck> {
   const remoteLines = remote.split(/\r?\n/).filter((l) => l.length > 0)
   const firstLine = remoteLines[0] ?? ''
   const lastLine = remoteLines[remoteLines.length - 1] ?? ''
-  const hostsPath = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'drivers', 'etc', 'hosts')
+  const hostsPath = getSystemHostsPath()
   let current = ''
   try {
     current = fs.readFileSync(hostsPath, 'utf8')
@@ -206,24 +207,76 @@ export async function checkHosts(): Promise<HostsCheck> {
   return { needsUpdate: !currentHasFirst || !currentHasLast, firstLine, lastLine, remoteContent: remote, currentHasFirst, currentHasLast }
 }
 
+/** Absolute path of the Windows system hosts file. */
+export function getSystemHostsPath(): string {
+  return path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'drivers', 'etc', 'hosts')
+}
+
+function isReadonlyFile(p: string): boolean {
+  try {
+    return (fs.statSync(p).mode & 0o200) === 0
+  } catch {
+    return false
+  }
+}
+
+/** Best-effort removal of the read-only flag (hosts is often read-only). */
+function clearReadonlyFlag(p: string): void {
+  try {
+    fs.chmodSync(p, 0o666)
+  } catch {
+    /* ignore — the write below will surface a proper error */
+  }
+}
+
+function isAccessError(e: unknown): boolean {
+  const code = (e as NodeJS.ErrnoException)?.code
+  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || code === 'EROFS'
+}
+
+function hostsWriteError(what: string, hostsPath: string, e: unknown): Error {
+  const detail = e instanceof Error ? e.message : String(e)
+  return new Error(
+    `Cannot ${what} the system hosts file (${hostsPath}): ${detail}. ` +
+      'Run the app as administrator and allow hosts-file changes in your antivirus ' +
+      '(Defender "Controlled folder access" / hosts protection), then retry.'
+  )
+}
+
 /**
  * Apply upstream hosts content into the system hosts file.
  * Existing zapret block (between first/last marker lines) is replaced;
  * otherwise the block is appended. A `.zapret-gui.bak` backup is kept.
+ *
+ * NOTE: a plain `rename(tmp, hosts)` fails with EPERM on Windows when
+ * `hosts` is read-only or briefly locked by an antivirus/DNS client, so we
+ * clear the read-only flag first and fall back to copy-overwrite when the
+ * atomic rename is rejected. The staging tmp lives in the OS temp dir —
+ * creating extra `*.tmp` files inside `drivers/etc` trips hosts protection
+ * in some antiviruses.
  */
-export async function applyHosts(remoteContent: string): Promise<void> {
+export async function applyHosts(remoteContent: string, opts?: { hostsPath?: string }): Promise<void> {
   if (typeof remoteContent !== 'string' || remoteContent.length === 0 || remoteContent.length > 1024 * 1024) {
     throw new Error('Invalid hosts content')
   }
-  const hostsPath = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'drivers', 'etc', 'hosts')
-  const current = fs.readFileSync(hostsPath, 'utf8')
+  const hostsPath = opts?.hostsPath ?? getSystemHostsPath()
+  let current: string
+  try {
+    current = fs.readFileSync(hostsPath, 'utf8')
+  } catch (e) {
+    throw hostsWriteError('read', hostsPath, e)
+  }
   const remoteLines = remoteContent.split(/\r?\n/).filter((l) => l.length > 0)
   const first = remoteLines[0] ?? ''
   const last = remoteLines[remoteLines.length - 1] ?? ''
   // Keep the very first backup forever: overwriting it on every apply would
   // destroy the original hosts after the first run.
   const backupPath = `${hostsPath}.zapret-gui.bak`
-  if (!fs.existsSync(backupPath)) fs.copyFileSync(hostsPath, backupPath)
+  try {
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(hostsPath, backupPath)
+  } catch (e) {
+    throw hostsWriteError('back up', hostsPath, e)
+  }
   let next: string
   if (first && last && current.includes(first) && current.includes(last)) {
     const start = current.indexOf(first)
@@ -232,10 +285,45 @@ export async function applyHosts(remoteContent: string): Promise<void> {
   } else {
     next = `${current.replace(/\s+$/, '')}\n\n${remoteContent}\n`
   }
-  // Atomic write to avoid a half-written system file on crash/power loss.
-  const tmp = `${hostsPath}.zapret-gui.tmp`
-  fs.writeFileSync(tmp, next, 'utf8')
-  fs.renameSync(tmp, hostsPath)
+  const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-hosts-')), 'hosts')
+  try {
+    fs.writeFileSync(tmp, next, 'utf8')
+  } catch (e) {
+    throw hostsWriteError('stage', hostsPath, e)
+  }
+  const wasReadonly = isReadonlyFile(hostsPath)
+  try {
+    clearReadonlyFlag(hostsPath)
+    try {
+      // Atomic when the OS allows it (POSIX / unlocked Windows file).
+      fs.renameSync(tmp, hostsPath)
+    } catch (renameErr) {
+      if (!isAccessError(renameErr)) throw renameErr
+      // Windows fallback: rename into drivers/etc is rejected with EPERM
+      // for read-only/locked hosts — overwrite the content in place instead.
+      try {
+        fs.copyFileSync(tmp, hostsPath)
+      } catch (copyErr) {
+        throw hostsWriteError('write', hostsPath, copyErr)
+      }
+    }
+    // Restore the original read-only flag so we don't silently change the
+    // file's semantics (next apply clears it again as needed).
+    if (wasReadonly) {
+      try {
+        fs.chmodSync(hostsPath, 0o444)
+      } catch {
+        /* best-effort */
+      }
+    }
+  } finally {
+    try {
+      fs.rmSync(tmp, { force: true })
+      fs.rmdirSync(path.dirname(tmp))
+    } catch {
+      /* best-effort cleanup */
+    }
+  }
 }
 
 interface GithubRelease {
