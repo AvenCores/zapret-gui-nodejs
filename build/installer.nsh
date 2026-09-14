@@ -3,13 +3,14 @@
  *
  * 1. Options page after the install-directory page: program language + theme.
  *    The choice is kept in NSIS vars and written to
- *    `$INSTDIR\install-defaults.json` by `customInstall`. The app consumes
- *    that file once on first run (see `src/main/settings.ts`), then deletes it.
- * 2. Silent/unattended defaults (`customInit`): follow the OS — empty locale
- *    means "system language auto-detect", theme `auto`.
- * 3. The page is skipped on re-install/update when
- *    `%APPDATA%\zapret-gui\settings.json` already exists, so an update never
- *    resets the user's language/theme.
+ *    `$INSTDIR\install-defaults.json` by `customInstall`. The app applies an
+ *    explicit choice over stored settings on next launch, then deletes the
+ *    file (see `src/main/settings.ts`).
+ * 2. Sentinel defaults (`customInit`): empty locale/theme mean "no choice".
+ *    They survive only in silent installs (custom pages never show there),
+ *    so a silent update never touches the user's language/theme. When the
+ *    page IS shown, `ZguiOptionsCreate` replaces the sentinels with the
+ *    visible defaults (system language + auto theme).
  *
  * UTF-8 encoded — compiled by electron-builder with the Unicode NSIS build.
  */
@@ -20,7 +21,7 @@
 
 !macro customInit
   StrCpy $ZguiLang ""
-  StrCpy $ZguiTheme "auto"
+  StrCpy $ZguiTheme ""
 !macroend
 
 ; The options page exists only in the installer. Without this guard the
@@ -38,9 +39,10 @@ Var ZguiThemeCombo
 !macroend
 
 Function ZguiOptionsCreate
-  ; Existing user settings win: skip the page on update / re-install.
-  IfFileExists "$APPDATA\zapret-gui\settings.json" 0 +2
-    Abort
+  ; The page is actually shown: replace the "no choice" sentinels from
+  ; customInit with the visible defaults (system language + auto theme).
+  StrCpy $ZguiLang ""
+  StrCpy $ZguiTheme "auto"
 
   nsDialogs::Create 1018
   Pop $0

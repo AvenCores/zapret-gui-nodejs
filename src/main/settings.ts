@@ -43,8 +43,10 @@ export const INSTALLER_DEFAULTS_FILE = 'install-defaults.json'
 
 /**
  * Read the language/theme choice made on the installer options page.
- * Returns `{}` when the file is missing or invalid. The file is deleted
- * after a successful read so it never overrides real user settings.
+ * Only explicit choices are returned: an empty locale means "system
+ * language", an empty theme means "no choice" (silent install — the custom
+ * page never shows there). The file is deleted after a successful read so a
+ * stale choice can never resurface later.
  */
 export function readInstallerDefaults(): Partial<Pick<AppSettings, 'locale' | 'theme'>> {
   try {
@@ -89,6 +91,11 @@ function persistSettings(next: AppSettings): void {
 }
 
 export function loadSettings(): AppSettings {
+  // One-shot installer choice (deleted on read). An explicit pick on the
+  // installer options page wins over stored settings; a silent install
+  // leaves no choice and changes nothing.
+  const installer = readInstallerDefaults()
+  const hasInstallerChoice = installer.locale !== undefined || installer.theme !== undefined
   try {
     const raw = fs.readFileSync(getSettingsPath(), 'utf8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
@@ -97,11 +104,16 @@ export function loadSettings(): AppSettings {
     // supported code. Unknown/corrupted values fall back to English.
     merged.locale = normalizeLocale((parsed as Record<string, unknown>).locale ?? merged.locale)
     merged.theme = normalizeTheme((parsed as Record<string, unknown>).theme ?? merged.theme)
+    if (hasInstallerChoice) {
+      if (installer.locale !== undefined) merged.locale = installer.locale
+      if (installer.theme !== undefined) merged.theme = installer.theme
+      persistSettings(merged)
+    }
     return merged
   } catch {
     // No settings yet: installer choice wins over OS detection, then persist
     // so the choice survives (the installer file is one-shot).
-    const first: AppSettings = { ...BASE_DEFAULTS, ...systemDefaults(), ...readInstallerDefaults() }
+    const first: AppSettings = { ...BASE_DEFAULTS, ...systemDefaults(), ...installer }
     first.locale = normalizeLocale(first.locale)
     first.theme = normalizeTheme(first.theme)
     persistSettings(first)
