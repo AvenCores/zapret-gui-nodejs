@@ -84,7 +84,10 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
       <aside
         aria-label="Sidebar"
         className={`flex shrink-0 select-none flex-col border-r border-slate-200 bg-white transition-[width] duration-200 ease-out dark:border-slate-700/60 dark:bg-slate-800/80 ${
-          collapsed ? 'w-[68px]' : 'w-60'
+          // Expanded: clip fixed-width content instead of reflowing it every
+          // animation frame. Collapsed: keep visible so icon-only dropdowns
+          // (positioned left-full) are not cut off.
+          collapsed ? 'w-[68px]' : 'w-60 overflow-hidden'
         }`}
       >
         {/* ── Header: logo (→ dashboard) + collapse toggle ─────────── */}
@@ -121,7 +124,9 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-1 px-3 pb-1 pt-3">
+          <div className="flex w-60 items-center gap-1 px-3 pb-1 pt-3">
+            {/* Fixed w-60: the panel clips this block during the expand
+                animation instead of reflowing buttons/text every frame. */}
             <button
               type="button"
               onClick={() => setPage('dashboard')}
@@ -161,7 +166,12 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
         )}
 
         {/* ── Main navigation ──────────────────────────────────────── */}
-        <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+        <nav
+          aria-label="Main"
+          className={`flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto p-2 ${
+            collapsed ? '' : 'w-60'
+          }`}
+        >
           {MAIN_NAV.map((n) => (
             <NavButton
               key={n.id}
@@ -188,7 +198,8 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
 
         {/* ── Footer: language / theme / about ─────────────────────── */}
         {collapsed ? (
-          <div className="flex flex-col items-center gap-1 border-t border-slate-200 p-2 dark:border-slate-700/60">
+          <div key="sidebar-footer-collapsed" className="flex flex-col items-center gap-1 border-t border-slate-200 p-2 dark:border-slate-700/60">
+            {/* Distinct key: an open dropdown must not survive the toggle. */}
             <Picker<Locale>
               label={t('settings.language')}
               value={locale}
@@ -224,7 +235,7 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
             </button>
           </div>
         ) : (
-          <div className="space-y-1.5 border-t border-slate-200 p-2.5 dark:border-slate-700/60">
+          <div key="sidebar-footer-expanded" className="w-60 space-y-1.5 border-t border-slate-200 p-2.5 dark:border-slate-700/60">
             <Picker<Locale>
               label={t('settings.language')}
               value={locale}
