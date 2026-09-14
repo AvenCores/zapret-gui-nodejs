@@ -32,7 +32,7 @@
 | Стратегии | Все 22 стратегии из upstream, установка службой Windows, тестовый запуск в foreground-режиме с живым выводом, поиск, бейджи desync-методов, импорт своих `.bat`, удаление импортированных |
 | Настройки | Game Filter, режим IPSet, флаг автопроверки обновлений, автозапуск, трей, старт свёрнутым, активные `.bin`-фейки Discord/Game |
 | Обновления | Проверка версии zapret-данных, обновление IPSet-списка, diff и применение hosts (с бэкапом `.zapret-gui.bak`), обновление стратегий из release-ZIP с GitHub (с бэкапом `data/_backup/<timestamp>`), автообновление самого приложения |
-| Диагностика | 17 проверок + инструменты: очистка кэша Discord, удаление конфликтующих сервисов, запуск PowerShell-тестов |
+| Диагностика | 17 проверок + инструменты: очистка кэша Discord, удаление конфликтующих сервисов, встроенные тесты стратегий |
 | Логи | Живой поток `app` / `winws` / `updater` / `diag` (ринг-буфер 2000 строк + `app.log`), фильтр, экспорт в файл |
 | Прочее | 28 языков с автоопределением языка ОС и fallback на английский, тёмная/светлая/авто тема, иконка трея с цветом статуса, мастер первого запуска, флаги языков в сайдбаре, выбор языка и темы на странице установщика |
 
@@ -110,7 +110,7 @@
 
 * Очистка кэша Discord — варианты `discord` / `discordptb` / `discordcanary` / `discorddevelopment` (`Cache`, `Code Cache`, `GPUCache`), с завершением процессов `Discord*.exe`
 * Удаление конфликтующих сервисов + остатков `WinDivert` / `WinDivert14`
-* Запуск `utils/test zapret.ps1` в отдельном видимом окне PowerShell (`cmd /c start "" powershell …`, как в `service.bat`)
+* Встроенные тесты стратегий (`src/main/config-tester.ts`): поочерёдный запуск каждой стратегии через `winws.exe`, проверки HTTP/TLS1.2/TLS1.3 + ping по `utils/targets.txt` (standard) или POST 64KB с `Range` для детекта TCP 16–20 freeze по suite hyperion-cs (dpi), аналитика + выбор лучшей + файл `utils/test results/test_results_*.txt` — всё внутри окна программы, без внешнего PowerShell
 
 ## 📝 Логи
 
@@ -140,7 +140,7 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
 * Рабочие данные (при первом запуске копируются из `resources/bundled-assets` установщика, пользовательские файлы не перезаписываются): `%APPDATA%\zapret-gui\data\{bin,lists,utils,strategies}`
   * `bin/` — `winws.exe`, `WinDivert64.sys`, `WinDivert.dll`, `cygwin1.dll`, `tls_clienthello_*.bin` / `quic_initial_*.bin` / `stun*.bin` / `ACTIVE_*.bin`
   * `lists/` — `ipset-all.txt`, `list-general.txt`, `list-google.txt`, `list-exclude.txt`, `ipset-exclude.txt` + создаваемые `*-user.txt` заглушки
-  * `utils/` — `test zapret.ps1`, `targets.txt`, флаги `check_updates.enabled` / `game_filter.enabled`
+  * `utils/` — `targets.txt`, результаты `test results/`, флаги `check_updates.enabled` / `game_filter.enabled`
   * `strategies/` — 22 × `*.json`
 * Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`)
 * Лог: `%APPDATA%\zapret-gui\app.log`

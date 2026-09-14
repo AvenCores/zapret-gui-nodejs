@@ -1117,19 +1117,9 @@ goto menu
 chcp 437 >nul
 cls
 
-:: Require PowerShell 3.0+
-powershell -NoProfile -Command "if ($PSVersionTable -and $PSVersionTable.PSVersion -and $PSVersionTable.PSVersion.Major -ge 3) { exit 0 } else { exit 1 }" >nul 2>&1
-if %errorLevel% neq 0 (
-    echo PowerShell 3.0 or newer is required.
-    echo Please upgrade PowerShell and rerun this script.
-    echo.
-    pause
-    goto menu
-)
-
-echo Starting configuration tests in PowerShell window...
+echo Configuration tests moved into the GUI app (Diagnostics - Strategy tests).
+echo The legacy "test zapret.ps1" was removed; use Zapret GUI instead.
 echo.
-start "" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0utils\test zapret.ps1"
 pause
 goto menu
 

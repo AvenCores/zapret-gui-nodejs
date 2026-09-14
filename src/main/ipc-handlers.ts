@@ -47,8 +47,11 @@ import { translate } from '../shared/i18n'
 import { getBufferedLogs, info, warn, err } from './logger'
 import { isAdmin, relaunchAppAsAdmin, spawnLong } from './exec'
 import { WINWS_EXE } from '../shared/constants'
+import { abortActiveChild, runConfigTests } from './config-tester'
+import type { ConfigTestMode } from '../shared/types'
 
 let testProc: ChildProcess | null = null
+let configTesterAbort: AbortController | null = null
 
 function win(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null
@@ -287,28 +290,61 @@ export function registerIpcHandlers(): void {
     return removed
   })
 
-  ipcMain.handle(IPC.runTests, async () => {
-    const script = path.join(getUtilsDir(), 'test zapret.ps1')
-    if (!fs.existsSync(script)) throw new Error('Test script not found (utils/test zapret.ps1)')
-    // Mirror service.bat: `start "" powershell ... -File "test zapret.ps1"`.
-    // NOTE: spawning powershell.exe directly does NOT work here — Node's
-    // `detached: true` maps to DETACHED_PROCESS (no console at all), and
-    // `stdio: 'ignore'` would swallow the output even if a window existed.
-    // `cmd /c start` allocates a real visible console with wired stdio;
-    // the hidden cmd launcher itself exits immediately.
-    // The empty-string title MUST stay quote-free here: Node quotes argv
-    // itself, so it reaches cmd as `start "" ...` exactly like service.bat
-    // (a bare word would be mistaken for the program name, pre-quoted text
-    // gets double-quoted and breaks parsing).
-    const { spawn } = await import('node:child_process')
-    const launcher = spawn(
-      'cmd.exe',
-      ['/d', '/s', '/c', 'start', '', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script],
-      { cwd: getDataDir(), detached: true, stdio: 'ignore', windowsHide: true }
-    )
-    launcher.on('error', (e) => sendLog('app', 'error', `Failed to launch tests: ${String(e).slice(0, 200)}`))
-    launcher.unref()
-    sendLog('app', 'info', 'Test script launched in a separate PowerShell window.')
+  ipcMain.handle(IPC.configTesterStart, async (_e, strategyIds: string[], mode: ConfigTestMode) => {
+    if (configTesterAbort) throw new Error('Config tester is already running — stop it first')
+    stopTestInternal()
+    const all = listStrategies()
+    const picked = Array.isArray(strategyIds) && strategyIds.length > 0
+      ? all.filter((s) => strategyIds.includes(s.id))
+      : all
+    if (picked.length === 0) throw new Error('No strategies selected for testing')
+    if (mode !== 'standard' && mode !== 'dpi') throw new Error(`Invalid test mode: ${String(mode).slice(0, 20)}`)
+    const abort = new AbortController()
+    configTesterAbort = abort
+    sendLog('app', 'info', `Starting native config tests (${mode}, ${picked.length} configs)...`)
+    // Run in background: progress streams via onConfigTesterEvent + onLog.
+    void runConfigTests({
+      strategies: picked,
+      mode,
+      binDir: getBinDir(),
+      listsDir: getListsDir(),
+      utilsDir: getUtilsDir(),
+      dataDir: getDataDir(),
+      signal: abort.signal,
+      emit: (ev) => {
+        safeSend(IPC.onConfigTesterEvent, ev)
+        if (ev.kind === 'log') sendLog('app', ev.level, ev.text)
+        else if (ev.kind === 'config-start') sendLog('app', 'info', `[${ev.index}/${ev.total}] ${ev.configName}`)
+        else if (ev.kind === 'done') {
+          sendLog('app', ev.cancelled ? 'warn' : 'info', ev.cancelled ? 'Config tests stopped.' : `Config tests done. Best: ${ev.best ?? 'n/a'}`)
+          if (ev.filePath) sendLog('app', 'info', `Results saved to ${ev.filePath}`)
+          configTesterAbort = null
+        }
+      }
+    }).catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e)
+      sendLog('app', 'error', `Config tests failed: ${msg.slice(0, 500)}`)
+      safeSend(IPC.onConfigTesterEvent, { kind: 'done', cancelled: false, best: null, filePath: null, rows: [] })
+      configTesterAbort = null
+    })
+    return true
+  })
+
+  ipcMain.handle(IPC.configTesterStop, async () => {
+    try {
+      configTesterAbort?.abort()
+    } catch {
+      /* ignore */
+    }
+    configTesterAbort = null
+    abortActiveChild()
+    try {
+      const { runCmd } = await import('./exec')
+      await runCmd('taskkill /IM winws.exe /F >nul 2>&1', 8000)
+    } catch {
+      /* best-effort */
+    }
+    sendLog('app', 'warn', 'Config tests stop requested.')
     return true
   })
 

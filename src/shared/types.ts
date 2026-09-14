@@ -163,6 +163,27 @@ export interface UserListMeta {
 /** A top-level UI page that the tray menu can navigate to. */
 export type TrayPage = 'dashboard' | 'strategies' | 'settings' | 'lists' | 'updates' | 'diagnostics' | 'logs'
 
+/** Native config-tester (replaces `utils/test zapret.ps1`). */
+export type ConfigTestMode = 'standard' | 'dpi'
+
+export interface ConfigTesterAnalyticsRow {
+  configId: string
+  configName: string
+  ok: number
+  err: number
+  unsup: number
+  pingOk: number
+  pingFail: number
+  blocked: number
+}
+
+export type ConfigTesterEvent =
+  | { kind: 'log'; level: 'info' | 'warn' | 'error'; text: string }
+  | { kind: 'config-start'; index: number; total: number; configName: string; mode: ConfigTestMode }
+  | { kind: 'config-done'; index: number; total: number; configName: string }
+  | { kind: 'done'; cancelled: boolean; best: string | null; filePath: string | null; rows: ConfigTesterAnalyticsRow[] }
+  | { kind: 'progress'; completed: number; total: number; current: string }
+
 /** IPC channel names (kept in one place to avoid typos). */
 export const IPC = {
   getStatus: 'zapret:get-status',
@@ -192,7 +213,8 @@ export const IPC = {
   checkBypass: 'zapret:check-bypass',
   clearDiscordCache: 'zapret:clear-discord-cache',
   removeConflicts: 'zapret:remove-conflicts',
-  runTests: 'zapret:run-tests',
+  configTesterStart: 'zapret:config-tester-start',
+  configTesterStop: 'zapret:config-tester-stop',
   getSettings: 'zapret:get-settings',
   saveSettings: 'zapret:save-settings',
   listUserLists: 'zapret:list-user-lists',
@@ -202,6 +224,7 @@ export const IPC = {
   exportLogs: 'zapret:export-logs',
   onLog: 'zapret:on-log',
   onTestOutput: 'zapret:on-test-output',
+  onConfigTesterEvent: 'zapret:on-config-tester-event',
   onDownloadProgress: 'zapret:on-download-progress',
   onAppUpdateAvailable: 'zapret:app-update-available',
   navigate: 'zapret:navigate',

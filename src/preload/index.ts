@@ -8,6 +8,8 @@ import type {
   AppSettings,
   BypassCheckResult,
   BypassTargetId,
+  ConfigTesterEvent,
+  ConfigTestMode,
   DiagnosticCheck,
   DownloadProgress,
   GameFilterMode,
@@ -57,7 +59,9 @@ const api = {
   checkBypass: (id: BypassTargetId): Promise<BypassCheckResult> => ipcRenderer.invoke(IPC.checkBypass, id),
   clearDiscordCache: (): Promise<string[]> => ipcRenderer.invoke(IPC.clearDiscordCache),
   removeConflicts: (): Promise<string[]> => ipcRenderer.invoke(IPC.removeConflicts),
-  runTests: (): Promise<boolean> => ipcRenderer.invoke(IPC.runTests),
+  startConfigTester: (strategyIds: string[], mode: ConfigTestMode): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.configTesterStart, strategyIds, mode),
+  stopConfigTester: (): Promise<boolean> => ipcRenderer.invoke(IPC.configTesterStop),
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.getSettings),
   saveSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke(IPC.saveSettings, patch),
   listUserLists: (): Promise<UserListMeta[]> => ipcRenderer.invoke(IPC.listUserLists),
@@ -75,6 +79,11 @@ const api = {
     const fn = (_e: unknown, out: TestOutput): void => cb(out)
     ipcRenderer.on(IPC.onTestOutput, fn)
     return () => ipcRenderer.removeListener(IPC.onTestOutput, fn)
+  },
+  onConfigTesterEvent: (cb: (e: ConfigTesterEvent) => void): (() => void) => {
+    const fn = (_e: unknown, e: ConfigTesterEvent): void => cb(e)
+    ipcRenderer.on(IPC.onConfigTesterEvent, fn)
+    return () => ipcRenderer.removeListener(IPC.onConfigTesterEvent, fn)
   },
   onDownloadProgress: (cb: (p: DownloadProgress) => void): (() => void) => {
     const fn = (_e: unknown, p: DownloadProgress): void => cb(p)
