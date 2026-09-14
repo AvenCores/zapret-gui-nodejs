@@ -61,7 +61,8 @@ export function Btn(props: {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
   type?: 'button' | 'submit'
 }): React.JSX.Element {
-  const base = 'rounded-lg px-3.5 py-1.5 text-sm font-medium transition active:scale-[0.97] disabled:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40'
+  const base =
+    'inline-flex min-h-[32px] items-center justify-center gap-2 rounded-lg px-3.5 py-1.5 align-middle text-sm font-medium leading-5 transition active:scale-[0.97] disabled:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40'
   const v =
     props.variant === 'danger'
       ? 'bg-red-600 hover:bg-red-500 text-white'
@@ -87,7 +88,7 @@ export function Row(props: { label: string; children: React.ReactNode }): React.
 }
 
 export function Spinner(): React.JSX.Element {
-  return <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-500 border-t-sky-400" />
+  return <span aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent opacity-90" />
 }
 
 export function ProgressBar(props: { percent: number }): React.JSX.Element {
