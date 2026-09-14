@@ -206,6 +206,7 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
               onChange={(v) => void applySettings({ locale: v })}
               iconOnly
               placement="right"
+              searchPlaceholder={t('logs.filter')}
               options={SUPPORTED_LOCALES.map((l) => ({
                 value: l.code,
                 label: l.nativeName,
@@ -242,6 +243,7 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
               onChange={(v) => void applySettings({ locale: v })}
               fullWidth
               placement="up"
+              searchPlaceholder={t('logs.filter')}
               options={SUPPORTED_LOCALES.map((l) => ({
                 value: l.code,
                 label: l.nativeName,
@@ -529,9 +531,17 @@ function Picker<T extends string>(props: {
   fullWidth?: boolean
   iconOnly?: boolean
   placement?: 'up' | 'right'
+  /** When set, the dropdown gets a filter field with this placeholder. */
+  searchPlaceholder?: string
 }): React.JSX.Element {
+  const { t } = useUi()
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+
+  const searchable = props.searchPlaceholder != null
 
   useEffect(() => {
     if (!open) return
@@ -549,8 +559,99 @@ function Picker<T extends string>(props: {
     }
   }, [open])
 
+  // Fresh filter on every open; focus it and reveal the current option.
+  useEffect(() => {
+    if (!open) return
+    setQuery('')
+    const id = window.requestAnimationFrame(() => {
+      if (searchable) searchRef.current?.focus()
+      listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [open, searchable])
+
   const current = props.options.find((o) => o.value === props.value)
   const placement = props.placement ?? 'up'
+
+  const q = query.trim().toLowerCase()
+  const visible =
+    !searchable || q === ''
+      ? props.options
+      : props.options.filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().startsWith(q))
+
+  // Arrow/Home/End across visible options (bubbles up from input + buttons).
+  function onMenuKeyDown(e: React.KeyboardEvent): void {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return
+    const buttons = Array.from(listRef.current?.querySelectorAll('button') ?? [])
+    if (buttons.length === 0) return
+    e.preventDefault()
+    const idx = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    let next: number
+    if (e.key === 'ArrowDown') next = idx < 0 ? 0 : (idx + 1) % buttons.length
+    else if (e.key === 'ArrowUp') next = idx < 0 ? buttons.length - 1 : (idx - 1 + buttons.length) % buttons.length
+    else if (e.key === 'Home') next = 0
+    else next = buttons.length - 1
+    const btn = buttons[next]
+    if (btn) btn.focus()
+  }
+
+  // Plain function call (not <Menu />) so the filter input keeps focus
+  // across keystrokes instead of remounting on every render.
+  function renderMenu(containerClass: string): React.JSX.Element {
+    return (
+      <div onKeyDown={onMenuKeyDown} className={containerClass}>
+        {searchable ? (
+          <div className="border-b border-slate-200 p-1.5 dark:border-slate-600/60">
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={props.searchPlaceholder}
+              aria-label={props.searchPlaceholder}
+              autoComplete="off"
+              spellCheck={false}
+              className="w-full rounded-md bg-slate-100 px-2.5 py-1.5 text-xs text-slate-800 outline-none ring-sky-600 placeholder:text-slate-400 focus:ring-1 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
+            />
+          </div>
+        ) : null}
+        <ul ref={listRef} role="listbox" aria-label={props.label} className="strategy-scroll max-h-72 overflow-y-auto py-1">
+          {visible.map((o) => (
+            <li key={o.value} role="option" aria-selected={o.value === props.value}>
+              <button
+                type="button"
+                onClick={() => {
+                  props.onChange(o.value)
+                  setOpen(false)
+                }}
+                title={o.label}
+                className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70 hover:bg-slate-200 dark:hover:bg-slate-600 ${
+                  o.value === props.value ? 'bg-sky-500/10 font-medium text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-200'
+                }`}
+              >
+                <span className="shrink-0">{o.icon}</span>
+                <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                {o.value === props.value ? (
+                  <span aria-hidden className="shrink-0 text-sky-600 dark:text-sky-400">
+                    ✓
+                  </span>
+                ) : null}
+              </button>
+            </li>
+          ))}
+          {visible.length === 0 ? (
+            <li aria-hidden className="px-2.5 py-2 text-center text-xs text-slate-400 dark:text-slate-500">
+              {t('dashboard.none')}
+            </li>
+          ) : null}
+        </ul>
+      </div>
+    )
+  }
+
+  const rightMenuClass =
+    'absolute bottom-0 left-full z-20 ml-2 w-52 origin-bottom-left animate-menu-in rounded-lg border border-slate-300 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-700'
+  const upMenuClass =
+    'absolute bottom-full left-0 right-0 z-20 mb-1 origin-bottom animate-menu-in rounded-lg border border-slate-300 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-700'
 
   if (props.iconOnly) {
     return (
@@ -566,37 +667,7 @@ function Picker<T extends string>(props: {
         >
           <span className="block h-4 w-4 [&>svg]:h-4 [&>svg]:w-4">{current?.icon}</span>
         </button>
-        {open ? (
-          <ul
-            role="listbox"
-            aria-label={props.label}
-            className="absolute bottom-0 left-full z-20 ml-2 max-h-64 w-44 origin-bottom-left animate-menu-in overflow-y-auto rounded-lg border border-slate-300 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700"
-          >
-            {props.options.map((o) => (
-              <li key={o.value} role="option" aria-selected={o.value === props.value}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    props.onChange(o.value)
-                    setOpen(false)
-                  }}
-                  title={o.label}
-                  className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70 hover:bg-slate-200 dark:hover:bg-slate-600 ${
-                    o.value === props.value ? 'font-medium text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-200'
-                  }`}
-                >
-                  <span className="shrink-0">{o.icon}</span>
-                  <span className="min-w-0 flex-1 truncate">{o.label}</span>
-                  {o.value === props.value ? (
-                    <span aria-hidden className="shrink-0 text-sky-600 dark:text-sky-400">
-                      ✓
-                    </span>
-                  ) : null}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        {open ? renderMenu(rightMenuClass) : null}
       </div>
     )
   }
@@ -627,41 +698,7 @@ function Picker<T extends string>(props: {
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
-      {open ? (
-        <ul
-          role="listbox"
-          aria-label={props.label}
-          className={
-            placement === 'right'
-              ? 'absolute bottom-0 left-full z-20 ml-2 max-h-64 w-44 origin-bottom-left animate-menu-in overflow-y-auto rounded-lg border border-slate-300 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700'
-              : 'absolute bottom-full left-0 right-0 z-20 mb-1 max-h-64 origin-bottom animate-menu-in overflow-y-auto rounded-lg border border-slate-300 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700'
-          }
-        >
-          {props.options.map((o) => (
-            <li key={o.value} role="option" aria-selected={o.value === props.value}>
-              <button
-                type="button"
-                onClick={() => {
-                  props.onChange(o.value)
-                  setOpen(false)
-                }}
-                title={o.label}
-                className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70 hover:bg-slate-200 dark:hover:bg-slate-600 ${
-                  o.value === props.value ? 'bg-sky-500/10 font-medium text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-200'
-                }`}
-              >
-                <span className="shrink-0">{o.icon}</span>
-                <span className="min-w-0 flex-1 truncate">{o.label}</span>
-                {o.value === props.value ? (
-                  <span aria-hidden className="shrink-0 text-sky-600 dark:text-sky-400">
-                    ✓
-                  </span>
-                ) : null}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {open ? renderMenu(placement === 'right' ? rightMenuClass : upMenuClass) : null}
     </div>
   )
 }
