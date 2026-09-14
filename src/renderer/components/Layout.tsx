@@ -393,13 +393,27 @@ function AboutModal(props: { onClose: () => void }): React.JSX.Element {
           {t('about.links')}
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          <AboutLink href={URLS.appRepo}>{t('dashboard.repo')}</AboutLink>
-          <AboutLink href={URLS.appIssues}>{t('dashboard.issues')}</AboutLink>
-          <AboutLink href={URLS.appReleases}>{t('dashboard.releases')}</AboutLink>
-          <AboutLink href={URLS.youtube}>YouTube</AboutLink>
-          <AboutLink href={URLS.telegram}>Telegram</AboutLink>
-          <AboutLink href={URLS.vk}>VK</AboutLink>
-          <AboutLink href={URLS.dzen}>Dzen</AboutLink>
+          <AboutLink href={URLS.appRepo} icon={<GithubIcon />}>
+            {t('dashboard.repo')}
+          </AboutLink>
+          <AboutLink href={URLS.appIssues} icon={<IssueIcon />}>
+            {t('dashboard.issues')}
+          </AboutLink>
+          <AboutLink href={URLS.appReleases} icon={<TagIcon />}>
+            {t('dashboard.releases')}
+          </AboutLink>
+          <AboutLink href={URLS.youtube} icon={<YoutubeGlyph />}>
+            YouTube
+          </AboutLink>
+          <AboutLink href={URLS.telegram} icon={<TelegramGlyph />}>
+            Telegram
+          </AboutLink>
+          <AboutLink href={URLS.vk} icon={<VkChip />}>
+            VK
+          </AboutLink>
+          <AboutLink href={URLS.dzen} icon={<DzenChip />}>
+            Dzen
+          </AboutLink>
         </div>
 
         <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
@@ -443,18 +457,84 @@ function AboutModal(props: { onClose: () => void }): React.JSX.Element {
   )
 }
 
-function AboutLink(props: { href: string; children: React.ReactNode }): React.JSX.Element {
+function AboutLink(props: { href: string; icon: React.ReactNode; children: React.ReactNode }): React.JSX.Element {
   // setWindowOpenHandler in main opens these externally via shell.
   return (
     <a
       href={props.href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center gap-1 rounded-md bg-slate-200 px-2.5 py-1 text-xs hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600"
+      className="inline-flex items-center gap-1.5 rounded-md bg-slate-200 px-2.5 py-1 text-xs hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600"
     >
+      <span aria-hidden className="flex shrink-0 items-center">
+        {props.icon}
+      </span>
       <span>{props.children}</span>
-      <span aria-hidden className="opacity-60">↗</span>
     </a>
+  )
+}
+
+function GithubIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5 shrink-0 opacity-80">
+      <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+    </svg>
+  )
+}
+
+function IssueIcon(): React.JSX.Element {
+  return (
+    <StrokeIcon className="h-3.5 w-3.5 shrink-0 opacity-80">
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+    </StrokeIcon>
+  )
+}
+
+function TagIcon(): React.JSX.Element {
+  return (
+    <StrokeIcon className="h-3.5 w-3.5 shrink-0 opacity-80">
+      <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
+      <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
+    </StrokeIcon>
+  )
+}
+
+function YoutubeGlyph(): React.JSX.Element {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-[#FF0000]">
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+    </svg>
+  )
+}
+
+function TelegramGlyph(): React.JSX.Element {
+  return (
+    <StrokeIcon className="h-3.5 w-3.5 shrink-0 text-[#229ED9]">
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
+    </StrokeIcon>
+  )
+}
+
+function VkChip(): React.JSX.Element {
+  return (
+    <span
+      aria-hidden
+      className="flex h-3.5 min-w-5 shrink-0 items-center justify-center rounded bg-[#0077FF] px-1 text-[8px] font-black leading-none text-white"
+    >
+      VK
+    </span>
+  )
+}
+
+function DzenChip(): React.JSX.Element {
+  return (
+    <span aria-hidden className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded bg-slate-900 dark:bg-white">
+      <svg viewBox="0 0 24 24" fill="currentColor" className="h-2.5 w-2.5 text-white dark:text-slate-900">
+        <path d="M12 2c1 5.5 4.5 9 10 10-5.5 1-9 4.5-10 10-1-5.5-4.5-9-10-10 5.5-1 9-4.5 10-10Z" />
+      </svg>
+    </span>
   )
 }
 
