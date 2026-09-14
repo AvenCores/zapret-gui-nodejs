@@ -77,6 +77,7 @@ export function detectElevateCmd(): ElevateCmd {
 /** Reset the cached elevate command (tests / PATH changes). */
 export function resetElevateCache(): void {
   cachedCmd = null
+  nopassCache.clear()
 }
 
 /** Whether elevation is available (or already root). Never throws. */
@@ -97,19 +98,55 @@ export function checkElevateAvailable(): boolean {
 export async function canElevateWithoutPassword(timeoutMs = 8000): Promise<boolean> {
   try {
     if (isRoot()) return true
-    const cmd = detectElevateCmd()
-    if (cmd === 'sudo') {
-      const r = await runRaw('sudo', ['-n', 'true'], timeoutMs)
-      return r.code === 0
-    }
-    if (cmd === 'doas') {
-      const r = await runRaw('doas', ['-n', 'true'], timeoutMs)
-      return r.code === 0
-    }
-    return false
+    const cmd = sudoishCmd()
+    if (cmd === '') return false
+    return await isPasswordless(cmd, timeoutMs)
   } catch {
     return false
   }
+}
+
+/** `sudo`/`doas` part of the elevate command (`''` when root/pkexec-only/none). Never throws. */
+function sudoishCmd(): '' | 'sudo' | 'doas' {
+  try {
+    const cmd = detectElevateCmd()
+    return cmd === 'sudo' || cmd === 'doas' ? cmd : ''
+  } catch {
+    return ''
+  }
+}
+
+const nopassCache = new Map<string, { value: boolean; ts: number }>()
+const NOPASS_TTL_MS = 30000
+
+/**
+ * Probe passwordless operation (`sudo -n true`), cached briefly to avoid a
+ * failing probe (and its auth log line) on every single privileged call.
+ * Never throws.
+ */
+async function isPasswordless(sudoish: 'sudo' | 'doas', timeoutMs = 8000): Promise<boolean> {
+  const now = Date.now()
+  const hit = nopassCache.get(sudoish)
+  if (hit && now - hit.ts < NOPASS_TTL_MS) return hit.value
+  let value = false
+  try {
+    const r = await runRaw(sudoish, ['-n', 'true'], timeoutMs)
+    value = r.code === 0
+  } catch {
+    value = false
+  }
+  nopassCache.set(sudoish, { value, ts: now })
+  return value
+}
+
+/**
+ * Stable English output for privilege helpers: sudo/doas messages stay
+ * parseable on localized systems (e.g. ru Fedora prints
+ * `sudo: требуется указать пароль`), and wrapped-tool diagnostics
+ * (`systemctl is-active`, `sv status`, …) match the English parsers.
+ */
+function cLocaleEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, LC_ALL: 'C', LANG: 'C', LANGUAGE: 'C' }
 }
 
 function runRaw(
@@ -120,7 +157,7 @@ function runRaw(
 ): Promise<ExecResult> {
   if (opts.input !== undefined) return runWithInput(file, args, opts.input, timeoutMs)
   return new Promise((resolve) => {
-    execFile(file, args, { timeout: timeoutMs }, (error, stdout, stderr) => {
+    execFile(file, args, { timeout: timeoutMs, env: cLocaleEnv() }, (error, stdout, stderr) => {
       resolve({
         stdout: String(stdout ?? ''),
         stderr: String(stderr ?? ''),
@@ -142,7 +179,7 @@ function runWithInput(file: string, args: string[], input: string, timeoutMs: nu
     }
     let child: ChildProcess
     try {
-      child = spawn(file, args, { stdio: ['pipe', 'pipe', 'pipe'] })
+      child = spawn(file, args, { stdio: ['pipe', 'pipe', 'pipe'], env: cLocaleEnv() })
     } catch (e) {
       done({ stdout: '', stderr: String(e instanceof Error ? e.message : e), code: 1 })
       return
@@ -188,7 +225,13 @@ function runWithInput(file: string, args: string[], input: string, timeoutMs: nu
  * True when a `sudo -n` / `doas -n` failure is an *authentication* failure
  * (as opposed to the wrapped command itself failing). Only auth failures
  * should fall through to the interactive `pkexec` prompt — otherwise every
- * genuinely broken firewall rule would pop a password dialog. Pure.
+ * genuinely broken firewall rule would pop a password dialog.
+ *
+ * Matching is multilingual on purpose: even with `LC_ALL=C` some sudo
+ * builds still localize their own messages (seen on ru Fedora:
+ * `sudo: требуется указать пароль`). The classifier only ever sees output
+ * of the fixed `sudo -n <known-tool>` / `doas -n <known-tool>` wrappers, so
+ * the broad stems cannot misfire on user content. Pure.
  */
 export function isAuthFailure(output: string): boolean {
   const s = String(output ?? '').toLowerCase()
@@ -197,27 +240,39 @@ export function isAuthFailure(output: string): boolean {
     s.includes('no tty present') ||
     s.includes('a terminal is required') ||
     s.includes('no askpass program specified') ||
+    s.includes('askpass') ||
     s.includes('not in the sudoers') ||
+    s.includes('sudoers') ||
     s.includes('user is not allowed to execute') ||
     s.includes('operation not permitted') ||
-    (s.includes('permission denied') && s.includes('doas'))
+    (s.includes('permission denied') && s.includes('doas')) ||
+    // ru/uk/be sudo: `sudo: требуется указать пароль`, `... файл sudoers`,
+    // `... требуется терминал ...`
+    s.includes('требуется указать пароль') ||
+    s.includes('парол') ||
+    s.includes('терминал')
   )
 }
 
 /** Short guidance surfaced when no elevation path exists. Pure. */
 export function noAuthMessage(): string {
   return (
-    'Cannot get root privileges: no sudo/doas passwordless access and no pkexec. ' +
-    'Install polkit (pkexec) or run Strategies → "Set up passwordless operation" from a terminal login, then retry.'
+    'Cannot get root privileges: passwordless sudo/doas is not configured and no graphical prompt (pkexec/polkit) is available. ' +
+    'Open Strategies → "Set up passwordless operation" (a single password prompt) or install polkit, then retry.'
   )
+}
+
+function combinedOut(r: ExecResult): string {
+  return `${r.stdout ?? ''}\n${r.stderr ?? ''}`
 }
 
 /**
  * Run a command with elevation, prompting at most once via `pkexec`.
- * Order: direct (root) → `sudo -n`/`doas -n` (silent when NOPASSWD was
- * configured) → `pkexec` (one GUI prompt for this call). Never rejects —
- * always resolves with code/stdout/stderr, except when no elevation path
- * exists at all (throws).
+ * Order: direct (root) → `sudo -n`/`doas -n` when the probe shows
+ * passwordless operation (one-time NOPASSWD setup or cached credentials) →
+ * `pkexec` (one GUI prompt for this call). Never rejects — always resolves
+ * with code/stdout/stderr, except when sudo/doas needs a password but no
+ * graphical prompt exists (throws with actionable guidance).
  */
 export async function runPrivileged(
   file: string,
@@ -226,20 +281,19 @@ export async function runPrivileged(
   opts: { input?: string } = {}
 ): Promise<ExecResult> {
   if (isRoot()) return runRaw(file, args, timeoutMs, opts)
-  let sudoish: '' | 'sudo' | 'doas' = ''
-  try {
-    const cmd = detectElevateCmd()
-    if (cmd === 'sudo' || cmd === 'doas') sudoish = cmd
-  } catch {
-    sudoish = ''
-  }
-  if (sudoish !== '') {
-    // `-n`: fail fast instead of blocking on a password prompt that has no
-    // TTY in a GUI session.
+  const sudoish = sudoishCmd()
+  if (sudoish !== '' && (await isPasswordless(sudoish))) {
+    // Silent path — a failure here is the command's own error (returned
+    // as-is, no password dialog for broken firewall rules, ...).
     const r = await runRaw(sudoish, ['-n', file, ...args], timeoutMs, opts)
     if (r.code === 0) return r
-    if (!isAuthFailure(`${r.stdout}\n${r.stderr}`)) return r
-    // Authentication failed — fall through to the interactive prompt below.
+    // Rare timestamp race (expired between probe and run): fall through to
+    // the interactive prompt instead of failing outright.
+    if (!isAuthFailure(combinedOut(r)) || !hasBinary('pkexec')) return r
+  } else if (sudoish === '' && !hasBinary('pkexec')) {
+    // No sudo/doas at all (and no pkexec): best-effort direct attempt —
+    // some commands (e.g. `systemctl is-active`) do not need root.
+    return runRaw(file, args, timeoutMs, opts)
   }
   if (hasBinary('pkexec')) {
     if (opts.input !== undefined) {
@@ -247,12 +301,10 @@ export async function runPrivileged(
     }
     return runRaw('pkexec', [file, ...args], timeoutMs)
   }
-  if (sudoish === '') {
-    // No sudo/doas at all (and no pkexec): best-effort direct attempt —
-    // some commands (e.g. `systemctl is-active`) do not need root.
-    return runRaw(file, args, timeoutMs, opts)
-  }
-  throw new Error(noAuthMessage())
+  // sudo/doas exists but needs a password, and there is no GUI prompt to
+  // ask it: single attempt for an honest stderr, then guidance.
+  const r = await runRaw(sudoish, ['-n', file, ...args], timeoutMs, opts)
+  throw new Error(`${combinedOut(r).trim().slice(0, 300)}\n${noAuthMessage()}`)
 }
 
 /** `pkexec` with piped stdin (used for `tee` writes). */
@@ -261,26 +313,24 @@ function runPkexecWithInput(file: string, args: string[], input: string, timeout
 }
 
 /**
- * Run an arbitrary shell script text with elevation (used for heredoc
- * service-file installs, sysctl, hosts updates, etc.). Same
- * silent-first/interactive-fallback order as {@link runPrivileged}.
+ * Run an arbitrary shell script text with elevation (used for the one-time
+ * NOPASSWD bootstrap, sysctl, etc.). Same probe-first order as
+ * {@link runPrivileged}: silent passwordless path, else a single `pkexec`
+ * prompt for this call.
  */
 export async function runPrivilegedScript(script: string, timeoutMs = 30000): Promise<ExecResult> {
   if (isRoot()) return runRaw('bash', ['-c', script], timeoutMs)
-  let sudoish: '' | 'sudo' | 'doas' = ''
-  try {
-    const cmd = detectElevateCmd()
-    if (cmd === 'sudo' || cmd === 'doas') sudoish = cmd
-  } catch {
-    sudoish = ''
-  }
-  if (sudoish !== '') {
+  const sudoish = sudoishCmd()
+  if (sudoish !== '' && (await isPasswordless(sudoish))) {
     const r = await runRaw(sudoish, ['-n', 'bash', '-c', script], timeoutMs)
     if (r.code === 0) return r
-    if (!isAuthFailure(`${r.stdout}\n${r.stderr}`)) return r
+    if (!isAuthFailure(combinedOut(r)) || !hasBinary('pkexec')) return r
+  } else if (sudoish === '' && !hasBinary('pkexec')) {
+    throw new Error(noAuthMessage())
   }
   if (hasBinary('pkexec')) return runRaw('pkexec', ['bash', '-c', script], timeoutMs)
-  throw new Error(noAuthMessage())
+  const r = await runRaw(sudoish, ['-n', 'bash', '-c', script], timeoutMs)
+  throw new Error(`${combinedOut(r).trim().slice(0, 300)}\n${noAuthMessage()}`)
 }
 
 /**
@@ -317,16 +367,18 @@ export async function spawnElevated(
   args: string[],
   opts: SpawnOptions = {}
 ): Promise<ChildProcess> {
-  if (isRoot()) return spawn(file, args, opts)
+  // Stable English diagnostics; an explicit caller env still wins.
+  const withLocale: SpawnOptions = { ...opts, env: { ...cLocaleEnv(), ...((opts.env as Record<string, string> | undefined) ?? {}) } }
+  if (isRoot()) return spawn(file, args, withLocale)
   if (await canElevateWithoutPassword()) {
     try {
       const cmd = detectElevateCmd()
-      if (cmd === 'sudo' || cmd === 'doas') return spawn(cmd, ['-n', file, ...args], opts)
+      if (cmd === 'sudo' || cmd === 'doas') return spawn(cmd, ['-n', file, ...args], withLocale)
     } catch {
       /* fall through to pkexec */
     }
   }
-  if (hasBinary('pkexec')) return spawn('pkexec', [file, ...args], opts)
+  if (hasBinary('pkexec')) return spawn('pkexec', [file, ...args], withLocale)
   throw new Error(noAuthMessage())
 }
 

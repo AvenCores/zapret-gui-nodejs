@@ -248,7 +248,8 @@ function hostsWriteError(what: string, hostsPath: string, e: unknown): Error {
   const detail = e instanceof Error ? e.message : String(e)
   const priv =
     process.platform === 'linux'
-      ? 'Allow the privilege prompt when it appears (or configure passwordless operation via Strategies → Setup), then retry.'
+      ? 'Allow the privilege prompt when it appears (or configure passwordless operation via Strategies → Setup), then retry. ' +
+        'If it keeps failing, check for an immutable flag (lsattr /etc/hosts) or a read-only /etc.'
       : 'Run the app as administrator and allow hosts-file changes in your antivirus ' +
         '(Defender "Controlled folder access" / hosts protection), then retry.'
   return new Error(`Cannot ${what} the system hosts file (${hostsPath}): ${detail}. ${priv}`)
@@ -318,14 +319,6 @@ export async function applyHosts(remoteContent: string, opts?: { hostsPath?: str
   const remoteLines = remoteContent.split(/\r?\n/).filter((l) => l.length > 0)
   const first = remoteLines[0] ?? ''
   const last = remoteLines[remoteLines.length - 1] ?? ''
-  // Keep the very first backup forever: overwriting it on every apply would
-  // destroy the original hosts after the first run.
-  const backupPath = `${hostsPath}.zapret-gui.bak`
-  try {
-    if (!fs.existsSync(backupPath)) fs.copyFileSync(hostsPath, backupPath)
-  } catch (e) {
-    throw hostsWriteError('back up', hostsPath, e)
-  }
   let next: string
   if (first && last && current.includes(first) && current.includes(last)) {
     const start = current.indexOf(first)
@@ -335,10 +328,26 @@ export async function applyHosts(remoteContent: string, opts?: { hostsPath?: str
     next = `${current.replace(/\s+$/, '')}\n\n${remoteContent}\n`
   }
   // Linux as a regular user: only the file update elevates (single prompt
-  // at most) instead of requiring the whole app to run as root.
-  if (process.platform === 'linux' && !opts?.hostsPath && !canWriteHostsDirectly(hostsPath)) {
+  // at most) instead of requiring the whole app to run as root. Custom
+  // test paths always stay direct (unit tests must never prompt).
+  const elevatedFallback = process.platform === 'linux' && !opts?.hostsPath
+  if (elevatedFallback && !canWriteHostsDirectly(hostsPath)) {
     await applyHostsElevated(hostsPath, current, next)
     return
+  }
+  // Keep the very first backup forever: overwriting it on every apply would
+  // destroy the original hosts after the first run.
+  const backupPath = `${hostsPath}.zapret-gui.bak`
+  try {
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(hostsPath, backupPath)
+  } catch (e) {
+    // Writability probes can lie (ACLs, SELinux, cross-device ...): an
+    // access failure mid-flow still falls back to the elevated write.
+    if (elevatedFallback && isAccessError(e)) {
+      await applyHostsElevated(hostsPath, current, next)
+      return
+    }
+    throw hostsWriteError('back up', hostsPath, e)
   }
   const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-hosts-')), 'hosts')
   try {
@@ -356,9 +365,15 @@ export async function applyHosts(remoteContent: string, opts?: { hostsPath?: str
       if (!isAccessError(renameErr)) throw renameErr
       // Windows fallback: rename into drivers/etc is rejected with EPERM
       // for read-only/locked hosts — overwrite the content in place instead.
+      // On Linux EXDEV (/tmp → /etc across filesystems) always lands here;
+      // any access failure still falls back to the elevated write.
       try {
         fs.copyFileSync(tmp, hostsPath)
       } catch (copyErr) {
+        if (elevatedFallback && isAccessError(copyErr)) {
+          await applyHostsElevated(hostsPath, current, next)
+          return
+        }
         throw hostsWriteError('write', hostsPath, copyErr)
       }
     }

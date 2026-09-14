@@ -261,6 +261,11 @@ describe('per-call elevation helpers (pure parts)', () => {
     expect(isAuthFailure('sudo: a terminal is required to read the password')).toBe(true)
     expect(isAuthFailure('alice is not in the sudoers file. This incident will be reported')).toBe(true)
     expect(isAuthFailure('doas: operation not permitted')).toBe(true)
+    // Localized sudo (seen on ru Fedora: `sudo: требуется указать пароль`).
+    expect(isAuthFailure('sudo: требуется указать пароль')).toBe(true)
+    expect(isAuthFailure('sudo: нужно ввести пароль')).toBe(true)
+    expect(isAuthFailure('bob отсутствует в файле sudoers')).toBe(true)
+    expect(isAuthFailure('sudo: для чтения пароля требуется терминал')).toBe(true)
     // Genuine command failures must NOT trigger a password prompt.
     expect(isAuthFailure('nft: syntax error at line 1')).toBe(false)
     expect(isAuthFailure('')).toBe(false)

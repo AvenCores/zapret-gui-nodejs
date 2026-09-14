@@ -32,6 +32,7 @@ import {
   checkElevateAvailable,
   detectElevateCmd,
   isRoot,
+  resetElevateCache,
   runPrivileged,
   runPrivilegedScript,
   runQuery,
@@ -739,6 +740,7 @@ export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string)
     const b64 = Buffer.from(`\n${rules}`, 'utf8').toString('base64')
     const r = await runPrivilegedScript(`base64 -d >> /etc/doas.conf <<'ZAPRET_EOF'\n${b64}\nZAPRET_EOF`, 20000)
     if (r.code !== 0) throw new Error(`doas setup failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
+    resetElevateCache()
     say('doas rules installed.')
     return
   }
@@ -774,6 +776,8 @@ export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string)
     await runPrivileged('rm', ['-f', SUDOERS_FILE], 10000).catch(() => undefined)
     throw new Error('sudoers syntax check failed — file removed')
   }
+  // Fresh NOPASSWD must apply immediately, not after the probe-cache TTL.
+  resetElevateCache()
   say('NOPASSWD configured (visudo OK).')
 }
 
