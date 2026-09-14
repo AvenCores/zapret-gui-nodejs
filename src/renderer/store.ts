@@ -9,6 +9,7 @@ import type {
   AppTheme,
   BypassCheckResult,
   BypassTargetId,
+  HostsCheckResult,
   LogLine,
   StatusSnapshot,
   Strategy
@@ -82,6 +83,10 @@ interface UiState {
   bypassCheckingAll: boolean
   /** Strategy key the cached `bypass` results were measured for. */
   bypassStrategyKey: string | null
+  /** Cached hosts check — survives Dashboard unmount on tab switches. */
+  hostsCheck: HostsCheckResult | null
+  hostsCheckedAt: string | null
+  setHostsCheck: (r: HostsCheckResult | null, checkedAt: string | null) => void
   checkBypassOne: (id: BypassTargetId) => Promise<void>
   checkBypassAll: (strategyKey: string) => Promise<void>
 }
@@ -116,6 +121,9 @@ export const useUi = create<UiState>((set, get) => ({
   bypassChecking: { youtube: false, cloudflare: false, discord: false },
   bypassCheckingAll: false,
   bypassStrategyKey: null,
+  hostsCheck: null,
+  hostsCheckedAt: null,
+  setHostsCheck: (hostsCheck, hostsCheckedAt) => set({ hostsCheck, hostsCheckedAt }),
 
   checkBypassOne: async (id) => {
     if (get().bypassChecking[id] || get().bypassCheckingAll) return

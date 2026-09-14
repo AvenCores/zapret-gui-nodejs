@@ -160,27 +160,17 @@ function BypassIcon(props: { id: BypassTargetId }): React.JSX.Element {
 
 /** Full-featured hosts block: check upstream, inspect markers, apply, verify. */
 function HostsBlock(): React.JSX.Element {
-  const { t, setError, status } = useUi()
-  const [hosts, setHosts] = useState<{
-    needsUpdate: boolean
-    firstLine: string
-    lastLine: string
-    remoteContent: string
-    currentHasFirst: boolean
-    currentHasLast: boolean
-  } | null>(null)
+  const { t, setError, status, hostsCheck: hosts, hostsCheckedAt: checkedAt, setHostsCheck } = useUi()
   const [busy, setBusy] = useState<null | 'check' | 'apply'>(null)
   const [applied, setApplied] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const [checkedAt, setCheckedAt] = useState<string | null>(null)
 
   async function check(): Promise<void> {
     if (busy) return
     setBusy('check')
     setApplied(false)
     try {
-      setHosts(await window.zapret.updateHosts())
-      setCheckedAt(new Date().toLocaleString())
+      setHostsCheck(await window.zapret.updateHosts(), new Date().toLocaleString())
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -195,8 +185,7 @@ function HostsBlock(): React.JSX.Element {
       await window.zapret.applyHosts(hosts.remoteContent)
       // Re-check to verify the install actually landed.
       const re = await window.zapret.updateHosts()
-      setHosts(re)
-      setCheckedAt(new Date().toLocaleString())
+      setHostsCheck(re, new Date().toLocaleString())
       setApplied(!re.needsUpdate)
       if (re.needsUpdate) setError(t('updates.hostsDiffers'))
     } catch (e) {
@@ -272,9 +261,22 @@ function HostsBlock(): React.JSX.Element {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+            aria-expanded={expanded}
+            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-sky-500/40 hover:bg-sky-500/10 hover:text-sky-700 active:scale-95 dark:border-slate-600/60 dark:bg-slate-700/50 dark:text-slate-300 dark:hover:border-sky-400/40 dark:hover:bg-sky-400/10 dark:hover:text-sky-300"
           >
             {expanded ? t('action.less') : t('action.more')}
+            <svg
+              aria-hidden
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`h-3 w-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+            >
+              <path d="m4 6 4 4 4-4" />
+            </svg>
           </button>
           {expanded ? (
             <div className="mt-2">

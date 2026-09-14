@@ -134,6 +134,16 @@ export interface AppSettings {
   gameFake: string | null
 }
 
+/** Result of comparing the system hosts file with upstream (main process). */
+export interface HostsCheckResult {
+  needsUpdate: boolean
+  firstLine: string
+  lastLine: string
+  remoteContent: string
+  currentHasFirst: boolean
+  currentHasLast: boolean
+}
+
 /** Bypass-test target id shown on the dashboard. */
 export type BypassTargetId = 'youtube' | 'cloudflare' | 'discord'
 
