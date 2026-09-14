@@ -117,6 +117,7 @@ export const en = {
   'updates.hostsNotChecked': 'Not checked',
   'updates.hostsCheckedAt': 'Checked: {time}',
   'updates.hostsStats': '{lines} lines, {bytes} bytes',
+  'updates.openBackup': 'Open backup folder',
   'updates.hostsDiffers': 'Hosts differs from upstream',
   'updates.hostsUpToDate': 'Hosts is up to date',
   'updates.ipsetResult': 'IPSet: {lines} lines, {bytes} bytes',

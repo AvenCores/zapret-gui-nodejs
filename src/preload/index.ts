@@ -63,6 +63,7 @@ const api = {
     ipcRenderer.invoke(IPC.configTesterStart, strategyIds, mode),
   stopConfigTester: (): Promise<boolean> => ipcRenderer.invoke(IPC.configTesterStop),
   openTestResult: (filePath: string): Promise<boolean> => ipcRenderer.invoke(IPC.configTesterOpenFile, filePath),
+  openBackupFolder: (backupDir: string): Promise<boolean> => ipcRenderer.invoke(IPC.openBackupFolder, backupDir),
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.getSettings),
   saveSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke(IPC.saveSettings, patch),
   listUserLists: (): Promise<UserListMeta[]> => ipcRenderer.invoke(IPC.listUserLists),

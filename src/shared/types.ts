@@ -226,6 +226,7 @@ export const IPC = {
   configTesterStart: 'zapret:config-tester-start',
   configTesterStop: 'zapret:config-tester-stop',
   configTesterOpenFile: 'zapret:config-tester-open-file',
+  openBackupFolder: 'zapret:open-backup-folder',
   getSettings: 'zapret:get-settings',
   saveSettings: 'zapret:save-settings',
   listUserLists: 'zapret:list-user-lists',

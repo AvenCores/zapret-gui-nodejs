@@ -11,10 +11,12 @@ export default function UpdatesSection(): React.JSX.Element {
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
   const [result, setResult] = useState<string | null>(null)
+  const [backupDir, setBackupDir] = useState<string | null>(null)
 
   async function wrap(key: string, fn: () => Promise<void>): Promise<void> {
     setBusyKey(key)
     setResult(null)
+    setBackupDir(null)
     try {
       await fn()
     } catch (e) {
@@ -90,6 +92,7 @@ export default function UpdatesSection(): React.JSX.Element {
               const off = window.zapret.onDownloadProgress(setProgress)
               void wrap('strategies', async () => {
                 const r = await window.zapret.updateStrategies()
+                setBackupDir(r.backupDir)
                 setResult(
                   t('updates.strategiesResult')
                     .replace('{count}', String(r.filesUpdated.length))
@@ -111,6 +114,21 @@ export default function UpdatesSection(): React.JSX.Element {
           </div>
         ) : null}
         {result ? <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">✓ {result}</p> : null}
+        {backupDir ? (
+          <div className="mt-2">
+            <button
+              onClick={() => void window.zapret.openBackupFolder(backupDir).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))}
+              title={backupDir}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-300/80 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-sky-500/40 hover:text-sky-700 active:scale-95 dark:border-slate-600/60 dark:bg-slate-700/60 dark:text-slate-200 dark:hover:border-sky-400/40 dark:hover:text-sky-300"
+            >
+              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.8]" aria-hidden="true">
+                <path d="M2.5 6.5a2 2 0 0 1 2-2h4l2 2.5h5a2 2 0 0 1 2 2v5.5a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-8Z" strokeLinejoin="round" />
+                <path d="M10 10.5v4m0-4-1.5 1.5M10 10.5l1.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              {t('updates.openBackup')}
+            </button>
+          </div>
+        ) : null}
       </Card>
     </div>
   )

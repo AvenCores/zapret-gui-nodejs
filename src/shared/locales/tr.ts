@@ -235,4 +235,5 @@ export const tr = {
   'updates.hostsCheckedAt': 'Checked: {time}',
   'updates.hostsStats': '{lines} lines, {bytes} bytes',
   'updates.hostsNotChecked': 'Not checked',
+  'updates.openBackup': 'Open backup folder',
 } as const

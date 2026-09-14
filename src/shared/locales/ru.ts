@@ -117,6 +117,7 @@ export const ru = {
   'updates.hostsNotChecked': 'Не проверено',
   'updates.hostsCheckedAt': 'Проверено: {time}',
   'updates.hostsStats': '{lines} строк, {bytes} байт',
+  'updates.openBackup': 'Открыть папку бэкапа',
   'updates.hostsDiffers': 'Hosts отличается от upstream',
   'updates.hostsUpToDate': 'Hosts актуален',
   'updates.ipsetResult': 'IPSet: {lines} строк, {bytes} байт',

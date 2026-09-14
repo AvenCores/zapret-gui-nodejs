@@ -366,6 +366,21 @@ export function registerIpcHandlers(): void {
     return true
   })
 
+  ipcMain.handle(IPC.openBackupFolder, async (_e, backupDir: string) => {
+    // Open a strategies-update backup in Explorer. Restricted to our own
+    // `data/_backup` dir so a compromised renderer cannot pop arbitrary paths.
+    const raw = String(backupDir ?? '').slice(0, 1024)
+    if (!raw) throw new Error('Empty backup path')
+    const root = path.resolve(path.join(getDataDir(), '_backup'))
+    const resolved = path.resolve(root, path.basename(raw))
+    if (path.dirname(resolved).toLowerCase() !== root.toLowerCase()) {
+      throw new Error('Folder is outside the backups directory')
+    }
+    if (!fs.existsSync(resolved)) throw new Error('Backup folder not found (it may have been deleted)')
+    await shell.openPath(resolved)
+    return true
+  })
+
   ipcMain.handle(IPC.getSettings, async () => loadSettings())
   ipcMain.handle(IPC.saveSettings, async (_e, patch: Partial<AppSettings>) => saveSettings(patch))
 
