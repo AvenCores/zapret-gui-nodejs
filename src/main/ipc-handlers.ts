@@ -39,6 +39,7 @@ import {
   replaceActiveFake
 } from './strategy-updater'
 import { getDataDir, getBinDir, getListsDir, getStrategiesDir, getUtilsDir, getBundledAssetsDir } from './paths'
+import { listUserLists, readUserList, writeUserList } from './user-lists'
 import { checkBypassTarget } from './bypass-check'
 import type { BypassTargetId } from '../shared/types'
 import { loadSettings, saveSettings } from './settings'
@@ -280,6 +281,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.getSettings, async () => loadSettings())
   ipcMain.handle(IPC.saveSettings, async (_e, patch: Partial<AppSettings>) => saveSettings(patch))
+
+  ipcMain.handle(IPC.listUserLists, async () => listUserLists(getListsDir()))
+  ipcMain.handle(IPC.readUserList, async (_e, name: string) => readUserList(getListsDir(), name))
+  ipcMain.handle(IPC.saveUserList, async (_e, name: string, content: string) => {
+    const meta = writeUserList(getListsDir(), name, content)
+    sendLog('app', 'info', `User list ${name} saved (${meta.lines} entries). Restart zapret to apply.`)
+    return meta
+  })
 
   ipcMain.handle(IPC.relaunchAsAdmin, async () => {
     const exe = process.execPath

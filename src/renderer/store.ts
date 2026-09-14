@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import type { AppSettings, AppTheme, LogLine, StatusSnapshot, Strategy } from '../shared/types'
 import { translate, type I18nKey, type Locale } from '../shared/i18n'
 
-export type Page = 'dashboard' | 'strategies' | 'settings' | 'updates' | 'diagnostics' | 'logs'
+export type Page = 'dashboard' | 'strategies' | 'settings' | 'lists' | 'updates' | 'diagnostics' | 'logs'
 
 /** Resolve a theme setting to a concrete dark flag (auto = OS color scheme). */
 export function isDarkTheme(theme: AppTheme): boolean {

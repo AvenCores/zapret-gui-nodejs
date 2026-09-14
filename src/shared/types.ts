@@ -144,6 +144,17 @@ export interface BypassCheckResult {
   error: string | null
   checkedAt: string
 }
+/** One user-editable `*-user.txt` list in the data `lists/` dir. */
+export interface UserListMeta {
+  /** File name, e.g. `list-exclude-user.txt` */
+  name: string
+  /** `ipset-*` files hold IPs/CIDRs, the rest hold domains. */
+  kind: 'domains' | 'ipset'
+  /** Meaningful entries (non-empty, non-comment lines). */
+  lines: number
+  bytes: number
+  exists: boolean
+}
 /** IPC channel names (kept in one place to avoid typos). */
 export const IPC = {
   getStatus: 'zapret:get-status',
@@ -176,6 +187,9 @@ export const IPC = {
   runTests: 'zapret:run-tests',
   getSettings: 'zapret:get-settings',
   saveSettings: 'zapret:save-settings',
+  listUserLists: 'zapret:list-user-lists',
+  readUserList: 'zapret:read-user-list',
+  saveUserList: 'zapret:save-user-list',
   relaunchAsAdmin: 'zapret:relaunch-as-admin',
   exportLogs: 'zapret:export-logs',
   onLog: 'zapret:on-log',

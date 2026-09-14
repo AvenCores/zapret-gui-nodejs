@@ -15,7 +15,8 @@ import type {
   LogLine,
   StatusSnapshot,
   Strategy,
-  UpdateInfo
+  UpdateInfo,
+  UserListMeta
 } from '../shared/types'
 
 export interface TestOutput {
@@ -58,6 +59,10 @@ const api = {
   runTests: (): Promise<boolean> => ipcRenderer.invoke(IPC.runTests),
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.getSettings),
   saveSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke(IPC.saveSettings, patch),
+  listUserLists: (): Promise<UserListMeta[]> => ipcRenderer.invoke(IPC.listUserLists),
+  readUserList: (name: string): Promise<string> => ipcRenderer.invoke(IPC.readUserList, name),
+  saveUserList: (name: string, content: string): Promise<UserListMeta> =>
+    ipcRenderer.invoke(IPC.saveUserList, name, content),
   relaunchAsAdmin: (): Promise<boolean> => ipcRenderer.invoke(IPC.relaunchAsAdmin),
   exportLogs: (): Promise<string | null> => ipcRenderer.invoke(IPC.exportLogs),
   onLog: (cb: (line: LogLine) => void): (() => void) => {

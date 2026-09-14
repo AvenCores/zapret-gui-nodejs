@@ -11,6 +11,7 @@ const NAV: Array<{ id: Page }> = [
   { id: 'dashboard' },
   { id: 'strategies' },
   { id: 'settings' },
+  { id: 'lists' },
   { id: 'updates' },
   { id: 'diagnostics' },
   { id: 'logs' }
@@ -333,6 +334,17 @@ function NavIcon({ id }: { id: Page }): React.JSX.Element {
           <path d="M10 9H8" />
           <path d="M16 13H8" />
           <path d="M16 17H8" />
+        </StrokeIcon>
+      )
+    case 'lists':
+      return (
+        <StrokeIcon className={cls}>
+          <path d="M8 6h13" />
+          <path d="M8 12h13" />
+          <path d="M8 18h13" />
+          <path d="M3 6h.01" />
+          <path d="M3 12h.01" />
+          <path d="M3 18h.01" />
         </StrokeIcon>
       )
   }
