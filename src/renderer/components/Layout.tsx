@@ -1,103 +1,264 @@
 /** App shell: sidebar navigation, header, global banners. */
 import React, { useEffect, useRef, useState } from 'react'
 import { useUi, type Page } from '../store'
-import { Btn } from './ui'
+import { Btn, Dot, Spinner } from './ui'
 import { SUPPORTED_LOCALES, type Locale } from '../../shared/i18n'
 import { URLS } from '../../shared/constants'
 import appIconUrl from '../assets/app-icon.png'
 
-const NAV: Array<{ id: Page }> = [
-  { id: 'dashboard' },
-  { id: 'strategies' },
-  { id: 'lists' },
-  { id: 'diagnostics' }
+const SIDEBAR_KEY = 'zapret:sidebar-collapsed'
+
+const MAIN_NAV: Array<{ id: Page; shortcut: string }> = [
+  { id: 'dashboard', shortcut: 'Alt+1' },
+  { id: 'strategies', shortcut: 'Alt+2' },
+  { id: 'lists', shortcut: 'Alt+3' },
+  { id: 'diagnostics', shortcut: 'Alt+4' }
 ]
+const SETTINGS_NAV: { id: Page; shortcut: string } = { id: 'settings', shortcut: 'Alt+5' }
+
+function initialCollapsed(): boolean {
+  try {
+    const stored = localStorage.getItem(SIDEBAR_KEY)
+    if (stored === '1') return true
+    if (stored === '0') return false
+  } catch {
+    // private mode / no storage — fall through to auto default
+  }
+  // Narrow windows (like on the bug screenshot) start icon-only so the
+  // content area stays usable. The user choice wins once stored.
+  if (typeof window !== 'undefined' && window.innerWidth < 820) return true
+  return false
+}
+
+type ServiceDot = 'green' | 'red' | 'yellow' | 'gray'
+
+function serviceDot(state: string | undefined): ServiceDot {
+  if (state === 'RUNNING') return 'green'
+  if (state === 'START_PENDING' || state === 'STOP_PENDING') return 'yellow'
+  if (state === 'STOPPED' || state === 'NOT_INSTALLED') return 'red'
+  return 'gray'
+}
 
 export default function Layout(props: { children: React.ReactNode }): React.JSX.Element {
   const { page, setPage, t, status, settings, applySettings, locale } = useUi()
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0')
+    } catch {
+      // ignore storage errors
+    }
+  }, [collapsed])
+
+  // Ctrl/Cmd+B — свернуть/развернуть, Alt+1..5 — навигация. Игнорируем ввод в полях.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const el = e.target as HTMLElement | null
+      const typing =
+        !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
+      if (typing) return
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        setCollapsed((v) => !v)
+        return
+      }
+      if (e.altKey && !e.ctrlKey && !e.metaKey && ['1', '2', '3', '4', '5'].includes(e.key)) {
+        e.preventDefault()
+        const order: Page[] = ['dashboard', 'strategies', 'lists', 'diagnostics', 'settings']
+        setPage(order[Number(e.key) - 1] as Page)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const toggleLabel = collapsed ? t('action.more') : t('action.less')
+  const running = status?.zapret === 'RUNNING'
+  const dotTone = serviceDot(status?.zapret)
 
   return (
     <div className="flex h-screen bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
-      <aside className="flex w-52 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-700/60 dark:bg-slate-800/80">
-        <div className="flex items-center gap-2.5 px-4 pb-2 pt-4">
-          <img src={appIconUrl} alt="Zapret GUI logo" className="h-9 w-9 shrink-0 rounded-lg bg-slate-900 p-0.5 dark:bg-transparent dark:p-0" />
-          <div className="min-w-0">
-            <div className="text-lg font-bold leading-tight tracking-tight">Zapret GUI</div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">{t('app.tagline')}</div>
-            <div className="text-[11px] text-slate-400 dark:text-slate-500">by avencores</div>
-          </div>
-        </div>
-        <nav className="flex flex-1 flex-col gap-1 p-2">
-          {NAV.map((n) => (
+      <aside
+        aria-label="Sidebar"
+        className={`flex shrink-0 select-none flex-col border-r border-slate-200 bg-white transition-[width] duration-200 ease-out dark:border-slate-700/60 dark:bg-slate-800/80 ${
+          collapsed ? 'w-[68px]' : 'w-60'
+        }`}
+      >
+        {/* ── Header: logo (→ dashboard) + collapse toggle ─────────── */}
+        {collapsed ? (
+          <div className="flex flex-col items-center gap-1 px-2 pb-1 pt-3">
             <button
-              key={n.id}
-              onClick={() => setPage(n.id)}
-              className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition active:scale-[0.98] ${
-                page === n.id ? 'bg-sky-600/90 font-medium text-white' : 'text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700/60'
-              }`}
+              type="button"
+              onClick={() => setPage('dashboard')}
+              title={`Zapret GUI — ${t('nav.dashboard')}`}
+              aria-label="Zapret GUI"
+              aria-current={page === 'dashboard' ? 'page' : undefined}
+              className="relative rounded-xl transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70"
             >
-              <span className="opacity-80">
-                <NavIcon id={n.id} />
+              <img
+                src={appIconUrl}
+                alt="Zapret GUI logo"
+                className="h-9 w-9 rounded-xl bg-slate-900 p-0.5 dark:bg-transparent dark:p-0"
+              />
+              <span className="absolute -bottom-0.5 -right-0.5 rounded-full ring-2 ring-white dark:ring-slate-800">
+                <Dot tone={dotTone} pulse={running} />
               </span>
-              {t(`nav.${n.id}` as never)}
             </button>
+            <button
+              type="button"
+              onClick={() => setCollapsed(false)}
+              title={`Ctrl+B · ${toggleLabel}`}
+              aria-label={toggleLabel}
+              aria-expanded={false}
+              className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-95 dark:text-slate-500 dark:hover:bg-slate-700/60 dark:hover:text-slate-200"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="h-4 w-4">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 px-3 pb-1 pt-3">
+            <button
+              type="button"
+              onClick={() => setPage('dashboard')}
+              title={`Zapret GUI — ${t('nav.dashboard')}`}
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1 py-1 text-left transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70"
+            >
+              <span className="relative shrink-0">
+                <img
+                  src={appIconUrl}
+                  alt="Zapret GUI logo"
+                  className="h-9 w-9 rounded-xl bg-slate-900 p-0.5 dark:bg-transparent dark:p-0"
+                />
+                <span className="absolute -bottom-0.5 -right-0.5 rounded-full ring-2 ring-white dark:ring-slate-800">
+                  <Dot tone={dotTone} pulse={running} />
+                </span>
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[17px] font-bold leading-tight tracking-tight">Zapret GUI</span>
+                <span className="block truncate text-[11px] leading-tight text-slate-500 dark:text-slate-400">
+                  {t('app.tagline')}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              title={`Ctrl+B · ${toggleLabel}`}
+              aria-label={toggleLabel}
+              aria-expanded={true}
+              className="shrink-0 rounded-md p-1.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-95 dark:text-slate-500 dark:hover:bg-slate-700/60 dark:hover:text-slate-200"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="h-4 w-4">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* ── Main navigation ──────────────────────────────────────── */}
+        <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+          {MAIN_NAV.map((n) => (
+            <NavButton
+              key={n.id}
+              id={n.id}
+              label={t(`nav.${n.id}` as never)}
+              shortcut={n.shortcut}
+              active={page === n.id}
+              collapsed={collapsed}
+              onClick={() => setPage(n.id)}
+            />
           ))}
+
+          <div role="separator" aria-hidden className={`my-1.5 h-px shrink-0 bg-slate-200 dark:bg-slate-700/60 ${collapsed ? 'mx-2' : 'mx-1'}`} />
+
+          <NavButton
+            id={SETTINGS_NAV.id}
+            label={t('nav.settings')}
+            shortcut={SETTINGS_NAV.shortcut}
+            active={page === 'settings'}
+            collapsed={collapsed}
+            onClick={() => setPage('settings')}
+          />
         </nav>
-        <div className="space-y-2 border-t border-slate-200 p-3 text-xs dark:border-slate-700/60">
-          <div className="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
-            <span className="inline-flex items-center gap-1.5">
-              <GlobeIcon />
-              {t('settings.language')}
-            </span>
+
+        {/* ── Footer: language / theme / about ─────────────────────── */}
+        {collapsed ? (
+          <div className="flex flex-col items-center gap-1 border-t border-slate-200 p-2 dark:border-slate-700/60">
             <Picker<Locale>
               label={t('settings.language')}
               value={locale}
               onChange={(v) => void applySettings({ locale: v })}
+              iconOnly
+              placement="right"
               options={SUPPORTED_LOCALES.map((l) => ({
                 value: l.code,
                 label: l.nativeName,
                 icon: <Flag code={l.code} />
               }))}
             />
-          </div>
-          <div className="flex items-center justify-between gap-2 text-slate-600 dark:text-slate-300">
-            <span className="inline-flex items-center gap-1.5">
-              <ContrastIcon />
-              {t('settings.theme')}
-            </span>
             <Picker
               label={t('settings.theme')}
               value={settings?.theme ?? 'dark'}
               onChange={(v) => void applySettings({ theme: v })}
+              iconOnly
+              placement="right"
               options={[
                 { value: 'auto', label: t('settings.themeAuto'), icon: <ContrastIcon /> },
                 { value: 'dark', label: t('settings.themeDark'), icon: <MoonIcon /> },
                 { value: 'light', label: t('settings.themeLight'), icon: <SunIcon /> }
               ]}
             />
+            <button
+              type="button"
+              onClick={() => setAboutOpen(true)}
+              title={t('about.title')}
+              aria-label={t('about.title')}
+              className="rounded-lg p-2.5 text-slate-500 transition hover:bg-slate-200 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-95 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
+            >
+              <InfoIcon />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setPage('settings')}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition active:scale-[0.98] ${
-              page === 'settings'
-                ? 'border-sky-500/50 bg-sky-600/90 font-medium text-white'
-                : 'border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-800 dark:border-slate-700/60 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-100'
-            }`}
-          >
-            <NavIcon id="settings" />
-            {t('nav.settings')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setAboutOpen(true)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-500 transition hover:bg-slate-200 hover:text-slate-800 active:scale-[0.98] dark:border-slate-700/60 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
-          >
-            <InfoIcon />
-            {t('about.title')}
-          </button>
-        </div>
+        ) : (
+          <div className="space-y-1.5 border-t border-slate-200 p-2.5 dark:border-slate-700/60">
+            <Picker<Locale>
+              label={t('settings.language')}
+              value={locale}
+              onChange={(v) => void applySettings({ locale: v })}
+              fullWidth
+              placement="up"
+              options={SUPPORTED_LOCALES.map((l) => ({
+                value: l.code,
+                label: l.nativeName,
+                icon: <Flag code={l.code} />
+              }))}
+            />
+            <Picker
+              label={t('settings.theme')}
+              value={settings?.theme ?? 'dark'}
+              onChange={(v) => void applySettings({ theme: v })}
+              fullWidth
+              placement="up"
+              options={[
+                { value: 'auto', label: t('settings.themeAuto'), icon: <ContrastIcon /> },
+                { value: 'dark', label: t('settings.themeDark'), icon: <MoonIcon /> },
+                { value: 'light', label: t('settings.themeLight'), icon: <SunIcon /> }
+              ]}
+            />
+            <button
+              type="button"
+              onClick={() => setAboutOpen(true)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-slate-500 transition hover:bg-slate-200 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-[0.98] dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
+            >
+              <InfoIcon />
+              {t('about.title')}
+            </button>
+          </div>
+        )}
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -107,6 +268,42 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
       </div>
       {aboutOpen ? <AboutModal onClose={() => setAboutOpen(false)} /> : null}
     </div>
+  )
+}
+
+function NavButton(props: {
+  id: Page
+  label: string
+  shortcut: string
+  active: boolean
+  collapsed: boolean
+  onClick: () => void
+}): React.JSX.Element {
+  const { id, label, shortcut, active, collapsed, onClick } = props
+  const title = collapsed ? `${label} · ${shortcut}` : `${label} (${shortcut})`
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      aria-current={active ? 'page' : undefined}
+      className={`group relative flex items-center gap-2.5 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-[0.98] ${
+        collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2 text-left'
+      } ${
+        active
+          ? 'bg-sky-600 font-medium text-white shadow-sm shadow-sky-950/30'
+          : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700/60 dark:hover:text-white'
+      }`}
+    >
+      {active && !collapsed ? (
+        <span aria-hidden className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-white/90" />
+      ) : null}
+      <span className={`shrink-0 ${active ? '' : 'opacity-80 group-hover:opacity-100'}`}>
+        <NavIcon id={id} />
+      </span>
+      {collapsed ? null : <span className="min-w-0 flex-1 truncate">{label}</span>}
+    </button>
   )
 }
 
@@ -318,6 +515,9 @@ function Picker<T extends string>(props: {
   value: T
   options: ReadonlyArray<{ value: T; label: string; icon: React.ReactNode }>
   onChange: (v: T) => void
+  fullWidth?: boolean
+  iconOnly?: boolean
+  placement?: 'up' | 'right'
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -339,20 +539,70 @@ function Picker<T extends string>(props: {
   }, [open])
 
   const current = props.options.find((o) => o.value === props.value)
+  const placement = props.placement ?? 'up'
+
+  if (props.iconOnly) {
+    return (
+      <div ref={ref} className="relative shrink-0">
+        <button
+          type="button"
+          aria-label={props.label}
+          title={current ? `${props.label} — ${current.label}` : props.label}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="rounded-lg p-2.5 text-slate-500 transition hover:bg-slate-200 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-95 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
+        >
+          <span className="block h-4 w-4 [&>svg]:h-4 [&>svg]:w-4">{current?.icon}</span>
+        </button>
+        {open ? (
+          <ul
+            role="listbox"
+            aria-label={props.label}
+            className="absolute bottom-0 left-full z-20 ml-2 max-h-64 w-44 origin-bottom-left animate-menu-in overflow-y-auto rounded-lg border border-slate-300 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700"
+          >
+            {props.options.map((o) => (
+              <li key={o.value} role="option" aria-selected={o.value === props.value}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    props.onChange(o.value)
+                    setOpen(false)
+                  }}
+                  title={o.label}
+                  className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70 hover:bg-slate-200 dark:hover:bg-slate-600 ${
+                    o.value === props.value ? 'font-medium text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-200'
+                  }`}
+                >
+                  <span className="shrink-0">{o.icon}</span>
+                  <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                  {o.value === props.value ? (
+                    <span aria-hidden className="shrink-0 text-sky-600 dark:text-sky-400">
+                      ✓
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    )
+  }
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div ref={ref} className={`relative shrink-0 ${props.fullWidth ? 'w-full' : ''}`}>
       <button
         type="button"
         aria-label={props.label}
+        title={props.label}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        title={current?.label}
-        className="flex w-28 items-center justify-between gap-1.5 rounded-md bg-slate-200 px-2 py-1 text-xs text-slate-800 transition hover:bg-slate-300 active:scale-[0.98] dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+        className="flex w-full items-center gap-2 rounded-lg bg-slate-200/70 px-2.5 py-1.5 text-xs text-slate-700 transition hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-[0.99] dark:bg-slate-700/70 dark:text-slate-100 dark:hover:bg-slate-700"
       >
-        {current?.icon}
-        <span className="min-w-0 flex-1 truncate text-left">{current?.label}</span>
+        <span className="shrink-0 opacity-80">{current?.icon}</span>
+        <span className="min-w-0 flex-1 truncate text-left font-medium">{current?.label}</span>
         <svg
           aria-hidden
           viewBox="0 0 24 24"
@@ -361,7 +611,7 @@ function Picker<T extends string>(props: {
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={`h-3 w-3 shrink-0 opacity-70 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform ${open ? 'rotate-180' : ''}`}
         >
           <path d="m6 9 6 6 6-6" />
         </svg>
@@ -370,7 +620,11 @@ function Picker<T extends string>(props: {
         <ul
           role="listbox"
           aria-label={props.label}
-          className="absolute bottom-full right-0 z-20 mb-1 max-h-64 w-max min-w-full origin-bottom-right animate-menu-in overflow-y-auto rounded-md border border-slate-300 bg-white py-0.5 shadow-lg dark:border-slate-600 dark:bg-slate-700"
+          className={
+            placement === 'right'
+              ? 'absolute bottom-0 left-full z-20 ml-2 max-h-64 w-44 origin-bottom-left animate-menu-in overflow-y-auto rounded-lg border border-slate-300 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700'
+              : 'absolute bottom-full left-0 right-0 z-20 mb-1 max-h-64 origin-bottom animate-menu-in overflow-y-auto rounded-lg border border-slate-300 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-700'
+          }
         >
           {props.options.map((o) => (
             <li key={o.value} role="option" aria-selected={o.value === props.value}>
@@ -380,14 +634,15 @@ function Picker<T extends string>(props: {
                   props.onChange(o.value)
                   setOpen(false)
                 }}
-                className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs hover:bg-slate-200 dark:hover:bg-slate-600 ${
-                  o.value === props.value ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-200'
+                title={o.label}
+                className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70 hover:bg-slate-200 dark:hover:bg-slate-600 ${
+                  o.value === props.value ? 'bg-sky-500/10 font-medium text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-200'
                 }`}
               >
-                {o.icon}
-                <span className="flex-1">{o.label}</span>
+                <span className="shrink-0">{o.icon}</span>
+                <span className="min-w-0 flex-1 truncate">{o.label}</span>
                 {o.value === props.value ? (
-                  <span aria-hidden className="text-sky-600 dark:text-sky-400">
+                  <span aria-hidden className="shrink-0 text-sky-600 dark:text-sky-400">
                     ✓
                   </span>
                 ) : null}
@@ -751,18 +1006,75 @@ function Flag(props: { code: Locale }): React.JSX.Element {
 }
 
 function AdminBanner(): React.JSX.Element | null {
-  const { status, t, busy } = useUi()
-  if (!status || status.isAdmin) return null
+  const { status, t } = useUi()
+  const [dismissed, setDismissed] = useState(false)
+  const [pending, setPending] = useState(false)
+  if (!status || status.isAdmin || dismissed) return null
+
+  async function relaunch(): Promise<void> {
+    if (pending) return
+    setPending(true)
+    try {
+      await window.zapret.relaunchAsAdmin()
+    } catch {
+      // Success quits the app; a failure just re-enables the button.
+      setPending(false)
+    }
+  }
+
   return (
-    <div className="flex animate-slide-down items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-5 py-2 text-sm text-amber-800 dark:text-amber-200">
-      <span>⚠ {t('dashboard.adminMissing')}</span>
-      <Btn
-        variant="danger"
-        disabled={busy['admin']}
-        onClick={() => void window.zapret.relaunchAsAdmin().catch(() => undefined)}
+    <div
+      role="alert"
+      className="flex animate-slide-down flex-wrap items-center gap-x-3 gap-y-2 border-b border-amber-500/30 bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent px-4 py-2.5 text-sm"
+    >
+      <span
+        aria-hidden
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400"
       >
-        {t('dashboard.relaunchAdmin')}
-      </Btn>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-4 w-4"
+        >
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+          <path d="M12 9v4" />
+          <path d="M12 17h.01" />
+        </svg>
+      </span>
+      <span className="min-w-0 flex-1 basis-48 font-medium text-amber-900 dark:text-amber-100">
+        {t('dashboard.adminMissing')}
+      </span>
+      <span className="flex shrink-0 items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => void relaunch()}
+          disabled={pending}
+          className="inline-flex min-h-[32px] items-center gap-2 rounded-lg bg-amber-500 px-3.5 py-1.5 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {pending ? (
+            <Spinner />
+          ) : (
+            <StrokeIcon className="h-4 w-4 shrink-0">
+              <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+              <path d="m9 12 2 2 4-4" />
+            </StrokeIcon>
+          )}
+          {t('dashboard.relaunchAdmin')}
+        </button>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          title={t('action.close')}
+          aria-label={t('action.close')}
+          className="rounded-lg p-2 text-amber-700/70 transition hover:bg-amber-500/20 hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 active:scale-95 dark:text-amber-300/70 dark:hover:bg-amber-500/10 dark:hover:text-amber-100"
+        >
+          ✕
+        </button>
+      </span>
     </div>
   )
 }

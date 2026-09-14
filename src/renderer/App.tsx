@@ -45,14 +45,18 @@ export default function App(): React.JSX.Element {
     )
   }
 
+  // 'updates'/'logs' are legacy tray pages now embedded in Settings —
+  // never render a blank screen if an old event still requests them.
+  const effectivePage = page === 'updates' || page === 'logs' ? 'settings' : page
+
   return (
     <Layout>
-      <div key={page} className="animate-page-in">
-        {page === 'dashboard' && <Dashboard />}
-        {page === 'strategies' && <Strategies />}
-        {page === 'settings' && <Settings />}
-        {page === 'lists' && <Lists />}
-        {page === 'diagnostics' && <Diagnostics />}
+      <div key={effectivePage} className="animate-page-in">
+        {effectivePage === 'dashboard' && <Dashboard />}
+        {effectivePage === 'strategies' && <Strategies />}
+        {effectivePage === 'settings' && <Settings />}
+        {effectivePage === 'lists' && <Lists />}
+        {effectivePage === 'diagnostics' && <Diagnostics />}
       </div>
     </Layout>
   )
