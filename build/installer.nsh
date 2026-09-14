@@ -18,21 +18,21 @@
 !include "LogicLib.nsh"
 !include "WinMessages.nsh"
 
-Var ZguiLang
-Var ZguiTheme
-Var ZguiLangCombo
-Var ZguiThemeCombo
-
 !macro customInit
   StrCpy $ZguiLang ""
   StrCpy $ZguiTheme "auto"
 !macroend
 
 ; The options page exists only in the installer. Without this guard the
-; uninstaller build (BUILD_UNINSTALLER) compiles the functions but never
-; references them, failing the build on makensis warning 6010
+; uninstaller build (BUILD_UNINSTALLER) compiles the vars/functions but never
+; references them, failing the build on makensis warnings 6001/6010
 ; (electron-builder treats warnings as errors).
 !ifndef BUILD_UNINSTALLER
+Var ZguiLang
+Var ZguiTheme
+Var ZguiLangCombo
+Var ZguiThemeCombo
+
 !macro customPageAfterChangeDir
   Page custom ZguiOptionsCreate ZguiOptionsLeave
 !macroend
