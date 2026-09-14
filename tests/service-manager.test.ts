@@ -1,10 +1,45 @@
 /** Unit tests for service-manager pure helpers + updater version compare. */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+
+// Mock the process layer: the old version of the test below shelled out to
+// the real service database (powershell + sc, 30s timeout each) and flaked
+// with "Test timed out in 30000ms" whenever PowerShell was slow to start.
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  return { ...actual, execFile: vi.fn() }
+})
+
+import { execFile } from 'node:child_process'
 import { parseScState, mapServiceStatus, queryServiceState, getIPSetMode, setIPSetMode, getGameFilterMode, setGameFilterMode, expandEnvVars, normalizeWindowsPath, extractExePathFromImagePath, detectServiceOwnership } from '../src/main/service-manager'
 import { compareVersions } from '../src/main/strategy-updater'
+
+const execFileMock = execFile as unknown as ReturnType<typeof vi.fn>
+
+interface FakeProcResult {
+  stdout?: string
+  stderr?: string
+  /** Non-zero exit code → callback receives an Error carrying it. */
+  code?: number
+}
+
+/** Feed canned `execFile` results (in call order) to code under test. */
+function queueProcResults(results: FakeProcResult[]): void {
+  const queue = [...results]
+  execFileMock.mockImplementation(
+    (_file: unknown, _args: unknown, _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
+      const next = queue.shift() ?? {}
+      if ((next.code ?? 0) === 0) {
+        cb(null, next.stdout ?? '', next.stderr ?? '')
+      } else {
+        cb(Object.assign(new Error(`mock exit ${next.code}`), { code: next.code }), next.stdout ?? '', next.stderr ?? '')
+      }
+      return null
+    }
+  )
+}
 
 describe('parseScState', () => {
   it('parses RUNNING', () => {
@@ -31,11 +66,30 @@ describe('mapServiceStatus (Get-Service output, locale-independent)', () => {
   })
 })
 
-// Touches the real service database (read-only); Windows-only.
-describe.runIf(process.platform === 'win32')('queryServiceState', () => {
+// Hermetic (mocked execFile): covers queryServiceState orchestration without
+// touching the real service database. Runs on any platform, in milliseconds.
+describe('queryServiceState', () => {
+  beforeEach(() => {
+    execFileMock.mockReset()
+  })
+
   it('reports a missing service as NOT_INSTALLED', async () => {
+    queueProcResults([
+      { stdout: '' }, // Get-Service prints no Status for a missing service
+      {
+        stdout: '[SC] OpenService FAILED 1060:\r\nThe specified service does not exist as an installed service.',
+        code: 1060
+      }
+    ])
     await expect(queryServiceState('zapret-gui-definitely-missing-12345')).resolves.toBe('NOT_INSTALLED')
-  }, 30000)
+    expect(execFileMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns Get-Service status without falling back to sc', async () => {
+    queueProcResults([{ stdout: 'Running\r\n' }])
+    await expect(queryServiceState('zapret')).resolves.toBe('RUNNING')
+    expect(execFileMock).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('compareVersions', () => {

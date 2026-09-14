@@ -60,10 +60,13 @@ export function mapServiceStatus(raw: string): ServiceState {
  */
 export async function queryServiceState(name: string): Promise<ServiceState> {
   const safe = name.replace(/['"]/g, '')
-  const r = await runPowershell(`(Get-Service -Name '${safe}' -ErrorAction SilentlyContinue).Status`)
+  // Bounded timeouts: two sequential default-30s calls could stall getStatus
+  // for a full minute when PowerShell is slow (cold start / AV scan) and
+  // bust the caller's own timeout budget.
+  const r = await runPowershell(`(Get-Service -Name '${safe}' -ErrorAction SilentlyContinue).Status`, 12000)
   const mapped = mapServiceStatus(r.stdout)
   if (mapped !== 'UNKNOWN') return mapped
-  const sc = await runCmd(`sc query "${safe}"`)
+  const sc = await runCmd(`sc query "${safe}"`, 8000)
   const combined = sc.stdout + '\n' + sc.stderr
   // 1060 = service does not exist. Match digits only: the message text is
   // localized (and OEM-decoded), but the numeric code survives any encoding.
