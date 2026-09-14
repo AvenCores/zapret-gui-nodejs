@@ -8,6 +8,7 @@ import {
   extractWinwsArgs,
   detectDesyncMethods,
   materializeArgs,
+  materializeArgsForSpawn,
   parseBatContent,
   quoteArg
 } from '../src/main/strategy-parser'
@@ -71,6 +72,19 @@ describe('materializeArgs', () => {
       gameUdp: '12'
     })
     expect(out).toEqual(['"C:\\d\\bin/a.bin"', '"C:\\d\\lists/l.txt"', '1024-65535', '12'])
+  })
+})
+
+describe('materializeArgsForSpawn', () => {
+  it('strips .bat-era quotes so spawn argv has bare paths', () => {
+    const out = materializeArgsForSpawn(['--ipset-exclude="<LISTS>/ipset-exclude.txt"', '--dpi-desync-fake-quic="<BIN>/quic.bin"', '--new'], {
+      binDir: 'C:\\d\\bin',
+      listsDir: 'C:\\d\\lists',
+      gameTcp: '12',
+      gameUdp: '12'
+    })
+    expect(out).toEqual(['--ipset-exclude=C:\\d\\lists/ipset-exclude.txt', '--dpi-desync-fake-quic=C:\\d\\bin/quic.bin', '--new'])
+    expect(out.some((a) => a.includes('"'))).toBe(false)
   })
 })
 

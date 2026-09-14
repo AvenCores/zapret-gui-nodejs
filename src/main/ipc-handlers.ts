@@ -26,7 +26,7 @@ import {
   clearDiscordCache,
   deleteImportedStrategy
 } from './service-manager'
-import { parseBatContent, materializeArgs, quoteArg } from './strategy-parser'
+import { parseBatContent, materializeArgsForSpawn, quoteArg } from './strategy-parser'
 import { resolveGameFilterPorts } from './service-manager'
 import { runDiagnostics } from './diagnostics'
 import {
@@ -175,7 +175,9 @@ export function registerIpcHandlers(): void {
     const s = findStrategy(strategyId)
     if (!s) throw new Error(`Strategy not found: ${strategyId}`)
     const { tcp, udp } = resolveGameFilterPorts(getDataDir())
-    const args = materializeArgs(s.args, { binDir: getBinDir(), listsDir: getListsDir(), gameTcp: tcp, gameUdp: udp })
+    // Direct spawn (no shell): strip the .bat-era quotes, otherwise winws
+    // receives literal `"` inside argv and fails to open list/bin files.
+    const args = materializeArgsForSpawn(s.args, { binDir: getBinDir(), listsDir: getListsDir(), gameTcp: tcp, gameUdp: udp })
     const exe = path.join(getBinDir(), WINWS_EXE)
     if (!fs.existsSync(exe)) throw new Error(`winws.exe not found in ${getBinDir()}`)
     sendLog('winws', 'info', `Starting foreground test: winws.exe ${args.map(quoteArg).join(' ')}`)

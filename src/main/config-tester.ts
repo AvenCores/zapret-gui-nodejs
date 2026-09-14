@@ -22,7 +22,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import type { Strategy, ConfigTestMode, ConfigTesterAnalyticsRow, ConfigTesterEvent } from '../shared/types'
 import { run, runCmd, runPowershell, isAdmin } from './exec'
 import { queryServiceState, isProcessRunning, resolveGameFilterPorts } from './service-manager'
-import { materializeArgs } from './strategy-parser'
+import { materializeArgsForSpawn } from './strategy-parser'
 import { WINWS_EXE } from '../shared/constants'
 
 export type { ConfigTestMode } from '../shared/types'
@@ -569,20 +569,51 @@ async function killWinws(): Promise<void> {
   await runCmd('taskkill /IM winws.exe /F >nul 2>&1', 8000)
 }
 
-async function waitWinwsReady(timeoutMs = 5000): Promise<boolean> {
+async function waitWinwsReady(
+  child: ChildProcess,
+  getErrTail: () => string,
+  timeoutMs = 6000
+): Promise<{ ok: true } | { ok: false; detail: string }> {
   const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    try {
-      if (await isProcessRunning(WINWS_EXE)) {
-        await new Promise((r) => setTimeout(r, 300))
-        return true
-      }
-    } catch {
-      /* retry */
-    }
-    await new Promise((r) => setTimeout(r, 200))
+  const state: { spawnError: string | null; exit: { code: number | null; signal: string | null } | null } = {
+    spawnError: null,
+    exit: null
   }
-  return false
+  child.on('error', (e: Error) => {
+    state.spawnError = e.message
+  })
+  child.on('exit', (code, signal) => {
+    state.exit = { code, signal: String(signal ?? '') || null }
+  })
+  // Give the process a grace period to fail fast (bad args, driver load
+  // error) before trusting tasklist output.
+  while (Date.now() - start < timeoutMs) {
+    if (state.spawnError) return { ok: false, detail: `spawn error: ${state.spawnError.slice(0, 300)}` }
+    if (state.exit || child.exitCode !== null || child.signalCode !== null) {
+      const code = state.exit?.code ?? child.exitCode
+      const sig = state.exit?.signal ?? child.signalCode
+      const tail = getErrTail().trim().slice(-500)
+      const tailPart = tail ? ` — ${tail}` : ''
+      return { ok: false, detail: `winws exited immediately (code=${code ?? '?'}, signal=${sig ?? '?'})${tailPart}` }
+    }
+    const elapsed = Date.now() - start
+    if (elapsed >= 1200) {
+      try {
+        if (await isProcessRunning(WINWS_EXE)) {
+          await new Promise((r) => setTimeout(r, 300))
+          return { ok: true }
+        }
+      } catch {
+        /* retry */
+      }
+      // Spawn handle is authoritative: tasklist can lag or fail, but our
+      // child being alive for 3s+ means the strategy is up.
+      if (elapsed >= 3000) return { ok: true }
+    }
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  const tail = getErrTail().trim().slice(-500)
+  return { ok: false, detail: tail ? `winws not detected within timeout — ${tail}` : 'winws process not found within timeout' }
 }
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>, signal: AbortSignal): Promise<R[]> {
@@ -705,20 +736,29 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
       emit({ kind: 'progress', completed, total: strategies.length, current: s.name })
       await killWinws()
 
-      const args = materializeArgs(s.args, { binDir, listsDir, gameTcp: tcp, gameUdp: udp })
+      const args = materializeArgsForSpawn(s.args, { binDir, listsDir, gameTcp: tcp, gameUdp: udp })
+      let child: ChildProcess | null = null
+      let errTail = ''
+      const getErrTail = (): string => errTail
       try {
-        const child = spawn(exe, args, { cwd: binDir, windowsHide: true, stdio: 'ignore', detached: false })
+        // Pipe (not ignore) stderr: if winws dies on startup (driver load,
+        // bad args) the tail explains WHY instead of a generic "not found".
+        // Streams are drained so a chatty winws can never block on a full pipe.
+        child = spawn(exe, args, { cwd: binDir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
         activeChild = child
-        child.on('error', () => {
-          /* readiness is determined by polling, not spawn errors */
+        child.stdout?.resume()
+        child.stderr?.on('data', (d: Buffer) => {
+          errTail = (errTail + String(d)).slice(-2000)
         })
+        child.stderr?.resume()
       } catch (e) {
         emit({ kind: 'log', level: 'error', text: `Failed to start ${s.name}: ${e instanceof Error ? e.message : String(e)}` })
         continue
       }
 
-      if (!(await waitWinwsReady())) {
-        emit({ kind: 'log', level: 'error', text: `Strategy failed to start (winws process not found): ${s.name}. Skipping...` })
+      const ready = await waitWinwsReady(child, getErrTail)
+      if (!ready.ok) {
+        emit({ kind: 'log', level: 'error', text: `Strategy failed to start: ${s.name} (${ready.detail}). Skipping...` })
         await killWinws()
         continue
       }

@@ -220,3 +220,20 @@ export function quoteArg(arg: string): string {
   if (/[\s&|<>()^%!`']/.test(clean) || clean !== arg) return `"${clean}"`
   return clean
 }
+
+/**
+ * Materialize placeholders for a DIRECT `spawn(exe, args)` call (no shell).
+ * Stored args keep their `.bat`/`cmd` double quotes
+ * (e.g. `--ipset-exclude="<LISTS>/ipset-exclude.txt"`); passing them to
+ * spawn verbatim would deliver literal `"` chars inside argv and winws
+ * would fail with `cannot access ipset file '"C:\...'"`. Stripping them is
+ * safe here because each array element is already exactly one argv entry —
+ * no shell tokenizing to protect against.
+ * Pure — covered by unit tests.
+ */
+export function materializeArgsForSpawn(
+  args: string[],
+  opts: { binDir: string; listsDir: string; gameTcp: string; gameUdp: string }
+): string[] {
+  return materializeArgs(args, opts).map((a) => a.replace(/"/g, ''))
+}
