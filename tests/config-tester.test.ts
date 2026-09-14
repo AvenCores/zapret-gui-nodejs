@@ -12,7 +12,8 @@ import {
   summarizeDpi,
   pickBestConfig,
   loadTargets,
-  writeResultsFile
+  writeResultsFile,
+  planWindivertRestore
 } from '../src/main/config-tester'
 
 describe('convertRawTarget', () => {
@@ -102,6 +103,25 @@ describe('summarizeStandard / summarizeDpi / pickBestConfig', () => {
     ]
     expect(pickBestConfig(rows)).toBe('b.bat')
     expect(pickBestConfig([])).toBeNull()
+  })
+})
+
+describe('planWindivertRestore', () => {
+  it('removes a driver service that tests pulled in', () => {
+    expect(planWindivertRestore('NOT_INSTALLED', 'RUNNING')).toBe('stop-delete')
+    expect(planWindivertRestore('NOT_INSTALLED', 'STOPPED')).toBe('stop-delete')
+  })
+  it('stops back a service that was stopped before', () => {
+    expect(planWindivertRestore('STOPPED', 'RUNNING')).toBe('stop')
+  })
+  it('leaves a previously running driver alone', () => {
+    expect(planWindivertRestore('RUNNING', 'RUNNING')).toBeNull()
+    expect(planWindivertRestore('RUNNING', 'STOPPED')).toBeNull()
+  })
+  it('does nothing when nothing changed or state unknown', () => {
+    expect(planWindivertRestore('NOT_INSTALLED', 'NOT_INSTALLED')).toBeNull()
+    expect(planWindivertRestore('UNKNOWN', 'RUNNING')).toBeNull()
+    expect(planWindivertRestore('STOPPED', 'STOPPED')).toBeNull()
   })
 })
 

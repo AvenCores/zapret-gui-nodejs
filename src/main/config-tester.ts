@@ -19,11 +19,11 @@ import https from 'node:https'
 import crypto from 'node:crypto'
 import os from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
-import type { Strategy, ConfigTestMode, ConfigTesterAnalyticsRow, ConfigTesterEvent } from '../shared/types'
+import type { Strategy, ConfigTestMode, ConfigTesterAnalyticsRow, ConfigTesterEvent, ServiceState } from '../shared/types'
 import { run, runCmd, runPowershell, isAdmin } from './exec'
 import { queryServiceState, isProcessRunning, resolveGameFilterPorts } from './service-manager'
 import { materializeArgsForSpawn } from './strategy-parser'
-import { WINWS_EXE } from '../shared/constants'
+import { WINWS_EXE, WINDIVERT_SERVICE } from '../shared/constants'
 
 export type { ConfigTestMode } from '../shared/types'
 export type AnalyticsRow = ConfigTesterAnalyticsRow
@@ -630,6 +630,75 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T,
   return results
 }
 
+/** WinDivert driver services touched by winws (current + legacy name). */
+const WINDIVERT_SERVICES = [WINDIVERT_SERVICE, 'WinDivert14'] as const
+
+/** States of the WinDivert services captured before a test run. */
+export type WindivertSnapshot = Record<string, ServiceState>
+
+async function queryWindivertState(svc: string): Promise<ServiceState> {
+  try {
+    return await queryServiceState(svc)
+  } catch {
+    return 'UNKNOWN'
+  }
+}
+
+/** Snapshot WinDivert presence before tests (best-effort, never throws). */
+export async function snapshotWindivert(): Promise<WindivertSnapshot> {
+  const snap: WindivertSnapshot = {}
+  for (const svc of WINDIVERT_SERVICES) {
+    snap[svc] = await queryWindivertState(svc)
+  }
+  return snap
+}
+
+function isRunningState(s: ServiceState): boolean {
+  return s === 'RUNNING' || s === 'START_PENDING'
+}
+
+/**
+ * Decide how to undo what the test run did to a WinDivert service.
+ * - absent before, present after → winws loaded it: stop + delete.
+ * - stopped before, running after → return it to stopped (keep installed).
+ * - anything else (was running, still absent, unknown) → leave alone.
+ * Pure — covered by unit tests.
+ */
+export function planWindivertRestore(before: ServiceState, after: ServiceState): 'stop-delete' | 'stop' | null {
+  if (before === 'NOT_INSTALLED' && after !== 'NOT_INSTALLED' && after !== 'UNKNOWN') return 'stop-delete'
+  if (!isRunningState(before) && before !== 'NOT_INSTALLED' && before !== 'UNKNOWN' && isRunningState(after)) return 'stop'
+  return null
+}
+
+/**
+ * Unload WinDivert driver leftovers after tests — but only what the tests
+ * pulled in: services that did not exist before are removed, services that
+ * were stopped are stopped again. A previously running WinDivert is kept.
+ */
+export async function restoreWindivert(
+  before: WindivertSnapshot,
+  emit: (e: ConfigTesterEvent) => void
+): Promise<void> {
+  for (const svc of WINDIVERT_SERVICES) {
+    const prev = before[svc] ?? 'UNKNOWN'
+    const after = await queryWindivertState(svc)
+    const plan = planWindivertRestore(prev, after)
+    if (!plan) continue
+    try {
+      if (plan === 'stop-delete') {
+        emit({ kind: 'log', level: 'info', text: `Unloading ${svc} (was not loaded before tests)...` })
+        await runCmd(`net stop "${svc}" >nul 2>&1`, 8000)
+        await runCmd(`sc delete "${svc}" >nul 2>&1`, 8000)
+      } else {
+        emit({ kind: 'log', level: 'info', text: `Stopping ${svc} (restoring pre-test state)...` })
+        await runCmd(`net stop "${svc}" >nul 2>&1`, 8000)
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
 /** Migrate leftover `ipset_switched.flag` from interrupted PS1 runs. */
 function healLeftoverFlag(dataDir: string, listsDir: string): string | null {
   try {
@@ -687,6 +756,7 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
   }
 
   const snapshot = await getWinwsSnapshot()
+  const windivertBefore = await snapshotWindivert()
   const listFile = path.join(listsDir, 'ipset-all.txt')
   const backupFile = path.join(listsDir, 'ipset-all.config-tester-backup.txt')
   let originalIpset: string | null = null
@@ -835,6 +905,7 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
     return { best, filePath, rows }
   } finally {
     await killWinws()
+    await restoreWindivert(windivertBefore, emit).catch(() => undefined)
     await restoreWinwsSnapshot(snapshot, emit).catch(() => undefined)
     if (ipsetSwitched) {
       try {
