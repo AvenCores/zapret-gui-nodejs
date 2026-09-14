@@ -283,12 +283,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.checkBypass, async (_e, id: BypassTargetId) => checkBypassTarget(id))
 
   ipcMain.handle(IPC.clearDiscordCache, async () => {
-    const lines = await clearDiscordCache(process.env.APPDATA ?? '', (t) => sendLog('app', 'info', t))
+    const lines = await clearDiscordCache(process.env.APPDATA ?? '', (t) => sendLog('app', 'info', t), loadSettings().locale)
     return lines
   })
 
   ipcMain.handle(IPC.removeConflicts, async () => {
-    const removed = await removeConflictingServices((t) => sendLog('app', 'info', t))
+    const removed = await removeConflictingServices((t) => sendLog('app', 'info', t), loadSettings().locale)
     return removed
   })
 

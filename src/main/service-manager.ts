@@ -13,6 +13,7 @@ import { getBinDir, getListsDir } from './paths'
 import { materializeArgs, quoteArg } from './strategy-parser'
 import { SERVICE_NAME, WINDIVERT_SERVICE, WINWS_EXE, CONFLICTING_SERVICES } from '../shared/constants'
 import type { GameFilterMode, IPSetMode, ServiceOwnership, ServiceState, StatusSnapshot, Strategy } from '../shared/types'
+import { translate, type Locale } from '../shared/i18n'
 
 // Re-exported so renderer-adjacent code can import from one place.
 export type { ServiceState, StatusSnapshot }
@@ -373,11 +374,11 @@ export function friendlyServiceError(action: 'start' | 'stop', output: string): 
 }
 
 /** Remove conflicting bypass services (GoodbyeDPI etc.) + WinDivert leftovers. */
-export async function removeConflictingServices(onLog?: (text: string) => void): Promise<string[]> {
+export async function removeConflictingServices(onLog?: (text: string) => void, locale: Locale = 'en'): Promise<string[]> {
   const removed: string[] = []
   for (const svc of [...CONFLICTING_SERVICES]) {
     if ((await scQuery(svc)) !== 'NOT_INSTALLED') {
-      onLog?.(`Removing conflicting service: ${svc}`)
+      onLog?.(translate(locale, 'tool.conflictRemoving').replace('{name}', svc))
       await runCmd(`net stop "${svc}" >nul 2>&1`)
       const r = await runCmd(`sc delete "${svc}"`)
       if (r.code === 0) removed.push(svc)
@@ -387,7 +388,7 @@ export async function removeConflictingServices(onLog?: (text: string) => void):
   // deleted, they may belong to another program.
   for (const svc of [WINDIVERT_SERVICE, 'WinDivert14'] as const) {
     if ((await scQuery(svc)) !== 'NOT_INSTALLED') {
-      onLog?.(`Removing ${svc}...`)
+      onLog?.(translate(locale, 'tool.conflictRemovingDriver').replace('{name}', svc))
       await runCmd(`net stop "${svc}" >nul 2>&1`)
       await runCmd(`sc delete "${svc}" >nul 2>&1`)
     }
@@ -396,10 +397,10 @@ export async function removeConflictingServices(onLog?: (text: string) => void):
 }
 
 /** Clear Discord caches (Stable/PTB/Canary/Development). Returns human log lines. */
-export async function clearDiscordCache(appData: string, onLog?: (text: string) => void): Promise<string[]> {
+export async function clearDiscordCache(appData: string, onLog?: (text: string) => void, locale: Locale = 'en'): Promise<string[]> {
   const lines: string[] = []
   if (!appData || !path.isAbsolute(appData)) {
-    const msg = 'Discord cache clear skipped: APPDATA is unavailable'
+    const msg = translate(locale, 'tool.cacheNoAppData')
     onLog?.(msg)
     return [msg]
   }
@@ -416,21 +417,26 @@ export async function clearDiscordCache(appData: string, onLog?: (text: string) 
     found = true
     if (await isProcessRunning(proc)) {
       await killProcess(proc)
-      lines.push(`${dir}: process closed`)
+      lines.push(translate(locale, 'tool.cacheClosed').replace('{dir}', dir))
     }
     for (const sub of ['Cache', 'Code Cache', 'GPUCache']) {
       const p = path.join(cacheDir, sub)
       if (fs.existsSync(p)) {
         try {
           fs.rmSync(p, { recursive: true, force: true })
-          lines.push(`${dir}/${sub}: cleared`)
+          lines.push(translate(locale, 'tool.cacheCleared').replace('{dir}', dir).replace('{sub}', sub))
         } catch (e) {
-          lines.push(`${dir}/${sub}: FAILED (${String(e).slice(0, 120)})`)
+          lines.push(
+            translate(locale, 'tool.cacheFailed')
+              .replace('{dir}', dir)
+              .replace('{sub}', sub)
+              .replace('{error}', String(e).slice(0, 120))
+          )
         }
       }
     }
   }
-  if (!found) lines.push('Discord installations were not found')
+  if (!found) lines.push(translate(locale, 'tool.cacheNotFound'))
   for (const l of lines) onLog?.(l)
   return lines
 }

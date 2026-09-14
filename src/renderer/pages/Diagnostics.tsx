@@ -34,7 +34,12 @@ export default function Diagnostics(): React.JSX.Element {
   async function tool(key: 'cache' | 'conflicts', fn: () => Promise<unknown>): Promise<void> {
     try {
       const r = await fn()
-      setToolOut(Array.isArray(r) ? r.join('\n') : String(r ?? t('level.ok')))
+      if (key === 'conflicts' && Array.isArray(r)) {
+        const names = (r as unknown[]).map(String)
+        setToolOut(names.length > 0 ? t('tool.conflictsRemoved').replace('{list}', names.join(', ')) : t('tool.conflictsNone'))
+      } else {
+        setToolOut(Array.isArray(r) ? (r as unknown[]).map(String).join('\n') : String(r ?? t('level.ok')))
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }

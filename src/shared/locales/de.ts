@@ -236,4 +236,13 @@ export const de = {
   'updates.hostsStats': '{lines} lines, {bytes} bytes',
   'updates.hostsNotChecked': 'Not checked',
   'updates.openBackup': 'Open backup folder',
+  'tool.cacheNoAppData': 'Discord cache clear skipped: APPDATA is unavailable',
+  'tool.cacheClosed': '{dir}: process closed',
+  'tool.cacheCleared': '{dir}/{sub}: cleared',
+  'tool.cacheFailed': '{dir}/{sub}: FAILED ({error})',
+  'tool.cacheNotFound': 'Discord installations were not found',
+  'tool.conflictRemoving': 'Removing conflicting service: {name}',
+  'tool.conflictRemovingDriver': 'Removing {name}…',
+  'tool.conflictsRemoved': 'Removed: {list}',
+  'tool.conflictsNone': 'No conflicting services found',
 } as const
