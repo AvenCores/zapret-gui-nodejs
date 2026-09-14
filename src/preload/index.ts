@@ -93,8 +93,8 @@ const api = {
   },
   onAppUpdateAvailable: (cb: (version: string) => void): (() => void) => {
     const fn = (_e: unknown, version: string): void => cb(version)
-    ipcRenderer.on('zapret:app-update-available', fn)
-    return () => ipcRenderer.removeListener('zapret:app-update-available', fn)
+    ipcRenderer.on(IPC.onAppUpdateAvailable, fn)
+    return () => ipcRenderer.removeListener(IPC.onAppUpdateAvailable, fn)
   }
 }
 

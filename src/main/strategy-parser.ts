@@ -211,8 +211,12 @@ export function materializeArgs(
   )
 }
 
-/** Quote an argument if it contains spaces and is not already quoted. */
+/** Quote an argument if it contains spaces/cmd-metachars and is not already quoted. */
 export function quoteArg(arg: string): string {
   if (/^".*"$/.test(arg)) return arg
-  return /[\s]/.test(arg) ? `"${arg}"` : arg
+  // Strip control chars/newlines first: they would break `cmd /c` parsing
+  // even inside quotes (command splitting / injection via imported .bat).
+  const clean = arg.replace(/[\r\n]+/g, ' ').replace(/["]/g, '')
+  if (/[\s&|<>()^%!`']/.test(clean) || clean !== arg) return `"${clean}"`
+  return clean
 }

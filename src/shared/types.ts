@@ -203,6 +203,7 @@ export const IPC = {
   onLog: 'zapret:on-log',
   onTestOutput: 'zapret:on-test-output',
   onDownloadProgress: 'zapret:on-download-progress',
+  onAppUpdateAvailable: 'zapret:app-update-available',
   navigate: 'zapret:navigate',
   statusChanged: 'zapret:status-changed'
 } as const

@@ -59,7 +59,9 @@ export function mapServiceStatus(raw: string): ServiceState {
  * `sc` text parsing remains as a fallback.
  */
 export async function queryServiceState(name: string): Promise<ServiceState> {
-  const safe = name.replace(/['"]/g, '')
+  // Service names are `[A-Za-z0-9_. -]`; strip everything else so the value
+  // can be safely interpolated into PowerShell/cmd one-liners.
+  const safe = String(name).replace(/[^A-Za-z0-9_. -]/g, '').slice(0, 64) || 'zapret'
   // Bounded timeouts: two sequential default-30s calls could stall getStatus
   // for a full minute when PowerShell is slow (cold start / AV scan) and
   // bust the caller's own timeout budget.
@@ -76,12 +78,14 @@ export async function queryServiceState(name: string): Promise<ServiceState> {
 
 /** `tasklist` check for a running image. */
 export async function isProcessRunning(image: string): Promise<boolean> {
-  const r = await runCmd(`tasklist /FI "IMAGENAME eq ${image}" /FO CSV /NH`)
-  return r.stdout.toLowerCase().includes(image.toLowerCase())
+  const safe = String(image).replace(/[^A-Za-z0-9_. -]/g, '').slice(0, 64) || 'winws.exe'
+  const r = await runCmd(`tasklist /FI "IMAGENAME eq ${safe}" /FO CSV /NH`)
+  return r.stdout.toLowerCase().includes(safe.toLowerCase())
 }
 
 async function killProcess(image: string): Promise<void> {
-  await runCmd(`taskkill /IM ${image} /F >nul 2>&1`)
+  const safe = String(image).replace(/[^A-Za-z0-9_. -]/g, '').slice(0, 64) || 'winws.exe'
+  await runCmd(`taskkill /IM ${safe} /F >nul 2>&1`)
 }
 
 async function readStrategyRegistry(): Promise<{ strategy: string | null; binPath: string | null }> {
@@ -299,7 +303,11 @@ export async function installStrategy(
 
   const binPath = `"${path.join(binDir, WINWS_EXE)}" ${args.join(' ')}`
   say(`Creating service: sc create ${SERVICE_NAME} ...`)
-  const created = await runCmd(`sc create ${SERVICE_NAME} binPath= "${binPath.replace(/"/g, '\\"')}" DisplayName= "zapret" start= auto`)
+  // NOTE: `runCmd` passes the string verbatim to `cmd /c` (no backslash
+  // escaping). Inner `"` must be stripped, not `\"`-escaped — cmd.exe does
+  // not understand `\"` and it would break out of quoting (injection).
+  const safeBinPath = binPath.replace(/[\r\n"]/g, '')
+  const created = await runCmd(`sc create ${SERVICE_NAME} binPath= "${safeBinPath}" DisplayName= "zapret" start= auto`)
   if (created.code !== 0 && !/FAILED 1072|already exists|marked for deletion/i.test(created.stdout + created.stderr)) {
     throw new Error(`sc create failed: ${(created.stdout + created.stderr).trim().slice(0, 500)}`)
   }
@@ -310,7 +318,7 @@ export async function installStrategy(
     throw new Error(`Service created but failed to start: ${out}`)
   }
   await runCmd(
-    `reg add "HKLM\\System\\CurrentControlSet\\Services\\${SERVICE_NAME}" /v zapret-discord-youtube /t REG_SZ /d "${strategy.name.replace(/"/g, '')}" /f`
+    `reg add "HKLM\\System\\CurrentControlSet\\Services\\${SERVICE_NAME}" /v zapret-discord-youtube /t REG_SZ /d "${strategy.name.replace(/[\r\n"]/g, '').slice(0, 200)}" /f`
   )
   say(`Strategy "${strategy.name}" installed and started.`)
 }
@@ -362,16 +370,26 @@ export async function removeConflictingServices(onLog?: (text: string) => void):
       if (r.code === 0) removed.push(svc)
     }
   }
-  await runCmd(`net stop "${WINDIVERT_SERVICE}" >nul 2>&1`)
-  await runCmd(`sc delete "${WINDIVERT_SERVICE}" >nul 2>&1`)
-  await runCmd(`net stop "WinDivert14" >nul 2>&1`)
-  await runCmd(`sc delete "WinDivert14" >nul 2>&1`)
+  // WinDivert leftovers are only touched when present — never blindly
+  // deleted, they may belong to another program.
+  for (const svc of [WINDIVERT_SERVICE, 'WinDivert14'] as const) {
+    if ((await scQuery(svc)) !== 'NOT_INSTALLED') {
+      onLog?.(`Removing ${svc}...`)
+      await runCmd(`net stop "${svc}" >nul 2>&1`)
+      await runCmd(`sc delete "${svc}" >nul 2>&1`)
+    }
+  }
   return removed
 }
 
 /** Clear Discord caches (Stable/PTB/Canary/Development). Returns human log lines. */
 export async function clearDiscordCache(appData: string, onLog?: (text: string) => void): Promise<string[]> {
   const lines: string[] = []
+  if (!appData || !path.isAbsolute(appData)) {
+    const msg = 'Discord cache clear skipped: APPDATA is unavailable'
+    onLog?.(msg)
+    return [msg]
+  }
   const variants: Array<[string, string]> = [
     ['Discord.exe', 'discord'],
     ['DiscordPTB.exe', 'discordptb'],

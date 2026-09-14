@@ -7,6 +7,7 @@
 import { Tray, Menu, nativeImage, app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
+import zlib from 'node:zlib'
 import { getBundledAssetsDir } from './paths'
 import type {
   GameFilterMode,
@@ -60,8 +61,7 @@ function renderCirclePng(hex: string): Buffer {
       raw.push(r, g, b, inside ? 255 : 0)
     }
   }
-  const zlib = require('node:zlib') as typeof import('node:zlib')
-  const data = zlib.deflateSync(Buffer.from(raw))
+  const zlibData = zlib.deflateSync(Buffer.from(raw))
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(S, 0)
   ihdr.writeUInt32BE(S, 4)
@@ -78,7 +78,7 @@ function renderCirclePng(hex: string): Buffer {
     return Buffer.concat([len, td, payload, cb])
   }
   png.push(chunk('IHDR', ihdr))
-  png.push(chunk('IDAT', data))
+  png.push(chunk('IDAT', zlibData))
   png.push(chunk('IEND', Buffer.alloc(0)))
   return Buffer.concat(png)
 }

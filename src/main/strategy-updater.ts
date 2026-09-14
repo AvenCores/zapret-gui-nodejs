@@ -15,7 +15,10 @@ import { parseBatContent } from './strategy-parser'
 
 export type ProgressCb = (p: DownloadProgress) => void
 
-function fetchText(url: string, timeoutMs = 15000): Promise<string> {
+const MAX_FETCH_BYTES = 8 * 1024 * 1024
+const MAX_REDIRECTS = 5
+
+function fetchText(url: string, timeoutMs = 15000, redirects = 0): Promise<string> {
   return new Promise((resolve, reject) => {
     const req = https.get(
       url,
@@ -23,7 +26,11 @@ function fetchText(url: string, timeoutMs = 15000): Promise<string> {
       (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume()
-          fetchText(res.headers.location, timeoutMs).then(resolve, reject)
+          if (redirects >= MAX_REDIRECTS) {
+            reject(new Error(`Too many redirects fetching ${url}`))
+            return
+          }
+          fetchText(res.headers.location, timeoutMs, redirects + 1).then(resolve, reject)
           return
         }
         if (res.statusCode !== 200) {
@@ -32,10 +39,17 @@ function fetchText(url: string, timeoutMs = 15000): Promise<string> {
           return
         }
         let data = ''
+        let bytes = 0
         res.setEncoding('utf8')
         res.on('data', (c) => {
+          bytes += Buffer.byteLength(c, 'utf8')
+          if (bytes > MAX_FETCH_BYTES) {
+            req.destroy(new Error(`Response too large fetching ${url}`))
+            return
+          }
           data += c
         })
+        res.on('error', reject)
         res.on('end', () => resolve(data))
       }
     )
@@ -65,6 +79,16 @@ export function downloadFile(url: string, dest: string, onProgress?: ProgressCb,
         let transferred = 0
         fs.mkdirSync(path.dirname(dest), { recursive: true })
         const out = fs.createWriteStream(dest)
+        const onError = (e: Error): void => {
+          try {
+            out.destroy()
+          } catch {
+            /* ignore */
+          }
+          req.destroy()
+          reject(e)
+        }
+        res.on('error', onError)
         res.on('data', (chunk: Buffer) => {
           transferred += chunk.length
           onProgress?.({
@@ -74,11 +98,10 @@ export function downloadFile(url: string, dest: string, onProgress?: ProgressCb,
           })
         })
         res.pipe(out)
-        out.on('finish', () => {
-          out.close()
-          resolve()
-        })
-        out.on('error', reject)
+        // `finish` fires before the fd is flushed — wait for `close` so a
+        // subsequent Expand-Archive never reads a partially-written ZIP.
+        out.on('close', () => resolve())
+        out.on('error', onError)
       })
       req.on('timeout', () => req.destroy(new Error('download timeout')))
       req.on('error', reject)
@@ -140,13 +163,20 @@ export async function checkZapretUpdates(): Promise<UpdateInfo> {
 /** Refresh `lists/ipset-all.txt` from upstream `.service/ipset-service.txt`. */
 export async function updateIPSetList(): Promise<{ lines: number; bytes: number }> {
   const text = await fetchText(URLS.ipsetTxt, 60000)
+  // Guard against an HTML error page served with HTTP 200: it would poison
+  // the ipset and silently break bypassing.
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
+  const looksLikeIpList = lines.length > 0 && lines.filter((l) => /^\s*[0-9a-fA-F.:/ ]/.test(l)).length >= lines.length / 2
+  if (!looksLikeIpList) throw new Error('Downloaded IPSet data does not look like an IP list — aborting')
   const dest = path.join(getListsDir(), 'ipset-all.txt')
   fs.mkdirSync(path.dirname(dest), { recursive: true })
-  fs.writeFileSync(dest, text, 'utf8')
+  // Atomic write: readers (getIPSetMode/winws) never see a half-written file.
+  const tmp = `${dest}.tmp-${process.pid}`
+  fs.writeFileSync(tmp, text, 'utf8')
+  fs.renameSync(tmp, dest)
   // Drop stale backup so "loaded" mode detection stays consistent.
   fs.rmSync(path.join(getListsDir(), 'ipset-all.txt.backup'), { force: true })
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0).length
-  return { lines, bytes: Buffer.byteLength(text, 'utf8') }
+  return { lines: lines.length, bytes: Buffer.byteLength(text, 'utf8') }
 }
 
 export interface HostsCheck {
@@ -182,21 +212,30 @@ export async function checkHosts(): Promise<HostsCheck> {
  * otherwise the block is appended. A `.zapret-gui.bak` backup is kept.
  */
 export async function applyHosts(remoteContent: string): Promise<void> {
+  if (typeof remoteContent !== 'string' || remoteContent.length === 0 || remoteContent.length > 1024 * 1024) {
+    throw new Error('Invalid hosts content')
+  }
   const hostsPath = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'drivers', 'etc', 'hosts')
   const current = fs.readFileSync(hostsPath, 'utf8')
   const remoteLines = remoteContent.split(/\r?\n/).filter((l) => l.length > 0)
   const first = remoteLines[0] ?? ''
   const last = remoteLines[remoteLines.length - 1] ?? ''
-  fs.copyFileSync(hostsPath, `${hostsPath}.zapret-gui.bak`)
+  // Keep the very first backup forever: overwriting it on every apply would
+  // destroy the original hosts after the first run.
+  const backupPath = `${hostsPath}.zapret-gui.bak`
+  if (!fs.existsSync(backupPath)) fs.copyFileSync(hostsPath, backupPath)
   let next: string
   if (first && last && current.includes(first) && current.includes(last)) {
     const start = current.indexOf(first)
-    const end = current.indexOf(last) + last.length
+    const end = current.indexOf(last, start) + last.length
     next = `${current.slice(0, start)}${remoteContent}\n${current.slice(end)}`
   } else {
     next = `${current.replace(/\s+$/, '')}\n\n${remoteContent}\n`
   }
-  fs.writeFileSync(hostsPath, next, 'utf8')
+  // Atomic write to avoid a half-written system file on crash/power loss.
+  const tmp = `${hostsPath}.zapret-gui.tmp`
+  fs.writeFileSync(tmp, next, 'utf8')
+  fs.renameSync(tmp, hostsPath)
 }
 
 interface GithubRelease {
@@ -316,9 +355,12 @@ async function copyRecursive(src: string, dest: string): Promise<void> {
 
 function expandArchive(zipPath: string, dest: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Paths come from %APPDATA% and may contain `'` (e.g. `O'Brien`).
+    // PowerShell single-quoted strings escape `'` by doubling it (`''`).
+    const q = (s: string): string => `'${s.replace(/'/g, "''")}'`
     execFile(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${dest}' -Force`],
+      ['-NoProfile', '-NonInteractive', '-Command', `Expand-Archive -LiteralPath ${q(zipPath)} -DestinationPath ${q(dest)} -Force`],
       { windowsHide: true, timeout: 120000 },
       (error, stdout, stderr) => {
         if (error) reject(new Error(`Expand-Archive failed: ${String(stderr || stdout).slice(0, 500)}`))
@@ -393,6 +435,10 @@ export function listAvailableFakes(): { discordActive: string | null; gameActive
 
 /** Replace an ACTIVE_*.bin with a copy of another .bin fake. */
 export function replaceActiveFake(kind: 'discord' | 'game', fakeBaseName: string): void {
+  // Strict whitelist: renderer input must not traverse (`../../x`) or inject
+  // extensions. Real fake names are `[A-Za-z0-9_-]+`.
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(fakeBaseName)) throw new Error(`Invalid fake name: ${fakeBaseName}`)
+  if (kind !== 'discord' && kind !== 'game') throw new Error(`Invalid fake kind: ${kind}`)
   const bin = getBinDir()
   const src = path.join(bin, `${fakeBaseName}.bin`)
   if (!fs.existsSync(src)) throw new Error(`Fake not found: ${fakeBaseName}.bin`)

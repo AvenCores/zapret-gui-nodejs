@@ -53,13 +53,16 @@ function BypassTest(): React.JSX.Element {
   // without losing them. Auto-check only on first ever visit or when the
   // active strategy changed since the last measurement.
   useEffect(() => {
+    // status/settings are null on first mount (init still loading): the key
+    // would be the dummy "::" and trigger a wasted batch for no strategy.
+    if (!status || !settings) return
     const hasAny = bypass.youtube !== null || bypass.cloudflare !== null || bypass.discord !== null
     if (!hasAny || bypassStrategyKey !== strategyKey) {
       void checkBypassAll(strategyKey)
     }
     // Intentionally not depending on `bypass`: results arriving must not retrigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [strategyKey])
+  }, [strategyKey, status !== null, settings !== null])
 
   return (
     <div>
@@ -158,6 +161,7 @@ function BypassIcon(props: { id: BypassTargetId }): React.JSX.Element {
 export default function Dashboard(): React.JSX.Element {
   const { t, status, refreshStatus, busy, setError, settings, setPage } = useUi()
   const [foreignExpanded, setForeignExpanded] = useState(false)
+  const [acting, setActing] = useState<null | 'start' | 'stop' | 'restart' | 'remove'>(null)
 
   const foreignPathKey = status?.serviceBinPath ?? status?.winwsPath ?? '—'
   useEffect(() => {
@@ -165,6 +169,8 @@ export default function Dashboard(): React.JSX.Element {
   }, [foreignPathKey])
 
   async function doAction(kind: 'start' | 'stop' | 'restart' | 'refresh' | 'remove'): Promise<void> {
+    if (acting) return
+    setActing(kind === 'refresh' ? null : kind)
     try {
       const foreign = status?.ownership === 'foreign'
       if ((kind === 'start' || kind === 'stop' || kind === 'restart') && foreign) {
@@ -190,6 +196,8 @@ export default function Dashboard(): React.JSX.Element {
       await refreshStatus()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setActing(null)
     }
   }
 
@@ -287,23 +295,23 @@ export default function Dashboard(): React.JSX.Element {
             </Btn>
           ) : (
             <>
-              <Btn onClick={() => void doAction('start')} disabled={busy['status'] || running || !status.isAdmin}>
+              <Btn onClick={() => void doAction('start')} disabled={busy['status'] || acting !== null || running || !status.isAdmin}>
                 {t('action.start')}
               </Btn>
-              <Btn onClick={() => void doAction('stop')} disabled={busy['status'] || !running || !status.isAdmin} variant="secondary">
+              <Btn onClick={() => void doAction('stop')} disabled={busy['status'] || acting !== null || !running || !status.isAdmin} variant="secondary">
                 {t('action.stop')}
               </Btn>
-              <Btn onClick={() => void doAction('restart')} disabled={busy['status'] || !status.isAdmin} variant="secondary">
-                {t('action.restart')}
+              <Btn onClick={() => void doAction('restart')} disabled={busy['status'] || acting !== null || !status.isAdmin} variant="secondary">
+                {acting ? <Spinner /> : t('action.restart')}
               </Btn>
             </>
           )}
-          <Btn onClick={() => void doAction('refresh')} disabled={busy['status']} variant="ghost">
+          <Btn onClick={() => void doAction('refresh')} disabled={busy['status'] || acting !== null} variant="ghost">
             {busy['status'] ? <Spinner /> : t('action.refresh')}
           </Btn>
           <span className="flex-1" />
-          <Btn onClick={() => void doAction('remove')} disabled={!status.isAdmin} variant="danger">
-            {foreign ? t('action.removeForeign') : t('action.remove')}
+          <Btn onClick={() => void doAction('remove')} disabled={!status.isAdmin || acting !== null} variant="danger">
+            {acting === 'remove' ? <Spinner /> : foreign ? t('action.removeForeign') : t('action.remove')}
           </Btn>
         </div>
       </Card>

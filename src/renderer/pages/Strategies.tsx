@@ -110,7 +110,7 @@ export default function Strategies(): React.JSX.Element {
         onClick={() => setSelected(s.id)}
         onDoubleClick={() => {
           setSelected(s.id)
-          void apply()
+          void apply(s.id)
         }}
         onMouseEnter={() => setHighlightedId(s.id)}
         onFocus={() => setHighlightedId(s.id)}
@@ -182,17 +182,18 @@ export default function Strategies(): React.JSX.Element {
     )
   }
 
-  async function apply(): Promise<void> {
-    if (!current) return
+  async function apply(id?: string): Promise<void> {
+    const target = strategies.find((s) => s.id === (id ?? selected)) ?? current
+    if (!target) return
     if (status?.ownership === 'foreign') {
       const binPath = status?.serviceBinPath ?? '—'
       const msg = t('dashboard.takeoverConfirm').replace('{path}', binPath)
-      if (!window.confirm(`${t('action.apply')} "${current.name}"?\n${msg}`)) return
-    } else if (!window.confirm(`${t('action.apply')} "${current.name}"?\n${t('strategies.applyHint')}`)) {
+      if (!window.confirm(`${t('action.apply')} "${target.name}"?\n${msg}`)) return
+    } else if (!window.confirm(`${t('action.apply')} "${target.name}"?\n${t('strategies.applyHint')}`)) {
       return
     }
     try {
-      await window.zapret.installStrategy(current.id)
+      await window.zapret.installStrategy(target.id)
       await refreshStatus()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -202,8 +203,10 @@ export default function Strategies(): React.JSX.Element {
   async function toggleTest(): Promise<void> {
     try {
       if (testing) {
+        // Don't clear `testing` here: the main process emits an 'exit' event
+        // when the child actually dies. Clearing early lets the user start a
+        // new test whose indicator would then be killed by the stale exit.
         await window.zapret.stopTest()
-        setTesting(null)
       } else if (current) {
         setTestOut('')
         await window.zapret.testStrategy(current.id)
@@ -232,7 +235,6 @@ export default function Strategies(): React.JSX.Element {
     try {
       if (testing === current.id) {
         await window.zapret.stopTest()
-        setTesting(null)
       }
       await window.zapret.deleteStrategy(current.id)
       await refreshStrategies()
@@ -529,7 +531,8 @@ function TuningCards(): React.JSX.Element {
             disabled={disabled || !discordFake}
             onClick={() => void wrap(async () => {
               await window.zapret.replaceFake('discord', discordFake)
-              setFakes({ ...fakes, discordActive: discordFake })
+              const v = discordFake
+              setFakes((prev) => ({ ...prev, discordActive: v }))
             })}
           >
             {t('action.apply')}
@@ -548,7 +551,8 @@ function TuningCards(): React.JSX.Element {
             disabled={disabled || !gameFake}
             onClick={() => void wrap(async () => {
               await window.zapret.replaceFake('game', gameFake)
-              setFakes({ ...fakes, gameActive: gameFake })
+              const v = gameFake
+              setFakes((prev) => ({ ...prev, gameActive: v }))
             })}
           >
             {t('action.apply')}

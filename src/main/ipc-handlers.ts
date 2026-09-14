@@ -54,10 +54,21 @@ function win(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null
 }
 
+function safeSend(channel: string, ...args: unknown[]): void {
+  try {
+    const w = win()
+    if (!w || w.webContents.isDestroyed()) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    w.webContents.send(channel, ...(args as any[]))
+  } catch {
+    /* renderer gone — best effort */
+  }
+}
+
 function sendLog(source: 'app' | 'winws' | 'updater' | 'diag', level: 'info' | 'warn' | 'error', text: string): void {
   const line =
     level === 'error' ? err(source, text) : level === 'warn' ? warn(source, text) : info(source, text)
-  win()?.webContents.send(IPC.onLog, line)
+  safeSend(IPC.onLog, line)
 }
 
 /** Read strategies from data dir (seeded from bundled assets on first run). */
@@ -132,6 +143,8 @@ export function registerIpcHandlers(): void {
     })
     if (res.canceled || res.filePaths.length === 0) return null
     const file = res.filePaths[0]
+    const stat = fs.statSync(file)
+    if (stat.size > 1024 * 1024) throw new Error('Selected .bat is too large (max 1 MB)')
     const content = fs.readFileSync(file, 'utf8')
     const { strategy, warnings } = parseBatContent(content, path.basename(file))
     for (const warnText of warnings) sendLog('app', 'warn', `Import warnings: ${warnText}`)
@@ -163,13 +176,23 @@ export function registerIpcHandlers(): void {
     const exe = path.join(getBinDir(), WINWS_EXE)
     if (!fs.existsSync(exe)) throw new Error(`winws.exe not found in ${getBinDir()}`)
     sendLog('winws', 'info', `Starting foreground test: winws.exe ${args.map(quoteArg).join(' ')}`)
-    testProc = spawnLong(exe, args, getBinDir())
-    testProc.stdout?.on('data', (d: Buffer) => win()?.webContents.send(IPC.onTestOutput, { stream: 'stdout', text: String(d) }))
-    testProc.stderr?.on('data', (d: Buffer) => win()?.webContents.send(IPC.onTestOutput, { stream: 'stderr', text: String(d) }))
-    testProc.on('exit', (code) => {
+    const proc = spawnLong(exe, args, getBinDir())
+    testProc = proc
+    proc.stdout?.on('data', (d: Buffer) => safeSend(IPC.onTestOutput, { stream: 'stdout', text: String(d) }))
+    proc.stderr?.on('data', (d: Buffer) => safeSend(IPC.onTestOutput, { stream: 'stderr', text: String(d) }))
+    proc.on('error', (e) => {
+      // ENOENT (missing winws.exe / AV quarantine) otherwise throws an
+      // unhandled 'error' event and crashes the main process.
+      sendLog('winws', 'error', `Test process failed to start: ${String(e).slice(0, 300)}`)
+      if (testProc === proc) testProc = null
+      safeSend(IPC.onTestOutput, { stream: 'exit', text: '1' })
+    })
+    proc.on('exit', (code) => {
       sendLog('winws', 'info', `Test process exited with code ${code}`)
-      testProc = null
-      win()?.webContents.send(IPC.onTestOutput, { stream: 'exit', text: String(code ?? '') })
+      // Only clear our own reference: a newer test may already be running
+      // (stopTestInternal kills without waiting for 'exit').
+      if (testProc === proc) testProc = null
+      safeSend(IPC.onTestOutput, { stream: 'exit', text: String(code ?? '') })
     })
     return true
   })
@@ -181,6 +204,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.getGameFilter, async () => getGameFilterMode(getDataDir()))
   ipcMain.handle(IPC.setGameFilter, async (_e, mode: GameFilterMode) => {
+    if (mode !== 'disabled' && mode !== 'all' && mode !== 'tcp' && mode !== 'udp') {
+      throw new Error(`Invalid game filter mode: ${String(mode).slice(0, 50)}`)
+    }
     setGameFilterMode(getDataDir(), mode)
     sendLog('app', 'info', `Game filter → ${mode}. Restart zapret to apply.`)
     return true
@@ -188,6 +214,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.getIPSetMode, async () => getIPSetMode(getListsDir()))
   ipcMain.handle(IPC.setIPSetMode, async (_e, mode: IPSetMode) => {
+    if (mode !== 'none' && mode !== 'loaded' && mode !== 'any') {
+      throw new Error(`Invalid IPSet mode: ${String(mode).slice(0, 50)}`)
+    }
     setIPSetMode(getListsDir(), mode)
     sendLog('app', 'info', `IPSet mode → ${mode}. Restart zapret to apply.`)
     return true
@@ -201,6 +230,8 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.listFakes, async () => listAvailableFakes())
   ipcMain.handle(IPC.replaceFake, async (_e, kind: 'discord' | 'game', fake: string) => {
+    if (kind !== 'discord' && kind !== 'game') throw new Error(`Invalid fake kind: ${String(kind).slice(0, 20)}`)
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(fake)) throw new Error(`Invalid fake name: ${String(fake).slice(0, 64)}`)
     replaceActiveFake(kind, fake)
     sendLog('app', 'info', `Active ${kind} fake → ${fake}. Restart zapret to apply.`)
     saveSettings(kind === 'discord' ? { discordFake: fake } : { gameFake: fake })
@@ -224,10 +255,9 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.updateStrategies, async () => {
-    const w = win()
     const r = await updateStrategiesFromGithub(
       getDataDir(),
-      (p) => w?.webContents.send(IPC.onDownloadProgress, p),
+      (p) => safeSend(IPC.onDownloadProgress, p),
       (t) => sendLog('updater', 'info', t)
     )
     return r
@@ -312,9 +342,17 @@ export function registerIpcHandlers(): void {
       filters: [{ name: translate(locale, 'dialog.exportFilter'), extensions: ['log', 'txt'] }]
     })
     if (res.canceled || !res.filePath) return null
-    const text = getBufferedLogs().map((l) => `[${l.ts}] [${l.source}/${l.level}] ${l.text}`).join('\n')
-    fs.writeFileSync(res.filePath, text, 'utf8')
-    await shell.openPath(path.dirname(res.filePath))
+    try {
+      const text = getBufferedLogs().map((l) => `[${l.ts}] [${l.source}/${l.level}] ${l.text}`).join('\n')
+      fs.writeFileSync(res.filePath, text, 'utf8')
+    } catch (e) {
+      throw new Error(`Cannot write log file: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    try {
+      await shell.openPath(path.dirname(res.filePath))
+    } catch {
+      /* best-effort: file is already written */
+    }
     return res.filePath
   })
 }

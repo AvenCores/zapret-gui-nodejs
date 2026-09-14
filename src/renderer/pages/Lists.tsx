@@ -1,5 +1,5 @@
 /** Lists: editor for user `*-user.txt` files in data/lists (exclude + general). */
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, Spinner } from '../components/ui'
 import type { UserListMeta } from '../../shared/types'
@@ -58,6 +58,8 @@ export default function Lists(): React.JSX.Element {
   const [saving, setSaving] = useState<boolean>(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [addValue, setAddValue] = useState<string>('')
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
 
   useEffect(() => {
     void (async () => {
@@ -74,19 +76,27 @@ export default function Lists(): React.JSX.Element {
 
   useEffect(() => {
     if (!selected) return
+    const requestName = selected
+    let cancelled = false
     setSavedAt(null)
     void (async () => {
       setLoadingFile(true)
       try {
-        const text = await window.zapret.readUserList(selected)
+        const text = await window.zapret.readUserList(requestName)
+        // The user may have switched files while loading: a stale response
+        // must never overwrite the newly selected file (would corrupt on save).
+        if (cancelled) return
         setContent(text)
         setOriginal(text)
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
       } finally {
-        setLoadingFile(false)
+        if (!cancelled) setLoadingFile(false)
       }
     })()
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected])
 
@@ -96,9 +106,12 @@ export default function Lists(): React.JSX.Element {
   const isGeneral = selected === 'list-general-user.txt'
 
   async function reload(): Promise<void> {
+    const requestName = selected
     try {
-      const [list, text] = await Promise.all([window.zapret.listUserLists(), window.zapret.readUserList(selected)])
+      const [list, text] = await Promise.all([window.zapret.listUserLists(), window.zapret.readUserList(requestName)])
       setMetas(list)
+      // Guard against a tab switch mid-reload (same stale-write hazard as above).
+      if (selectedRef.current !== requestName) return
       setContent(text)
       setOriginal(text)
       setSavedAt(null)
@@ -109,10 +122,14 @@ export default function Lists(): React.JSX.Element {
 
   async function save(): Promise<void> {
     if (!selected || saving) return
+    const requestName = selected
+    const requestContent = content
     setSaving(true)
     try {
-      const updated = await window.zapret.saveUserList(selected, content)
-      setOriginal(content)
+      const updated = await window.zapret.saveUserList(requestName, requestContent)
+      // Only commit if the user didn't switch files mid-save.
+      if (selectedRef.current !== requestName) return
+      setOriginal(requestContent)
       setMetas((prev) => (prev ? prev.map((m) => (m.name === updated.name ? updated : m)) : prev))
       setSavedAt(new Date().toLocaleTimeString())
     } catch (e) {

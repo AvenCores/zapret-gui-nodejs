@@ -36,6 +36,7 @@ export function isDarkTheme(theme: AppTheme): boolean {
 }
 
 let systemThemeQuery: MediaQueryList | null = null
+let logSubscribed = false
 
 /**
  * Apply a theme setting to `<html class="dark">`. In `auto` mode a listener
@@ -117,7 +118,7 @@ export const useUi = create<UiState>((set, get) => ({
   bypassStrategyKey: null,
 
   checkBypassOne: async (id) => {
-    if (get().bypassChecking[id]) return
+    if (get().bypassChecking[id] || get().bypassCheckingAll) return
     set((s) => ({ bypassChecking: { ...s.bypassChecking, [id]: true } }))
     try {
       const r = await window.zapret.checkBypass(id)
@@ -137,12 +138,21 @@ export const useUi = create<UiState>((set, get) => ({
     }))
     try {
       const ids: BypassTargetId[] = ['youtube', 'cloudflare', 'discord']
-      const results = await Promise.all(ids.map((id) => window.zapret.checkBypass(id)))
+      // One flaky target must not discard the other two results.
+      const settled = await Promise.allSettled(ids.map((id) => window.zapret.checkBypass(id)))
+      const errors: string[] = []
       set((s) => {
         const bypass = { ...s.bypass }
-        for (const r of results) bypass[r.id] = r
+        for (const r of settled) {
+          if (r.status === 'fulfilled') bypass[r.value.id] = r.value
+          else errors.push(r.reason instanceof Error ? r.reason.message : String(r.reason))
+        }
+        // A strategy switch mid-flight makes these results stale — record
+        // them anyway but tag with the key they were measured for, so the
+        // Dashboard can tell they belong to the previous strategy.
         return { bypass, bypassStrategyKey: strategyKey }
       })
+      if (errors.length > 0) set({ error: errors.join(' · ').slice(0, 500) })
     } catch (e) {
       set({ error: e instanceof Error ? e.message : String(e) })
     } finally {
@@ -151,12 +161,17 @@ export const useUi = create<UiState>((set, get) => ({
   },
 
   init: async () => {
+    // StrictMode double-invokes effects in dev: subscribing twice would
+    // duplicate every log line. Subscribe once per page lifetime.
+    if (!logSubscribed) {
+      logSubscribed = true
+      window.zapret.onLog((line) => get().pushLog(line))
+    }
     const settings = await call('init', () => window.zapret.getSettings(), set, get)
     if (settings) {
       set({ settings, locale: settings.locale, theme: settings.theme })
       syncThemeClass(settings.theme)
     }
-    window.zapret.onLog((line) => get().pushLog(line))
     await get().refreshStatus()
     await get().refreshStrategies()
   },

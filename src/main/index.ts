@@ -29,6 +29,23 @@ import type { GameFilterMode, IPSetMode, TrayPage, ZapretStatus } from '../share
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
+// `onLog` subscription is global (not per-window): createWindow() runs on
+// every second-instance/activate, and a per-window subscribe would duplicate
+// log delivery N times.
+let logForwardingArmed = false
+function armLogForwarding(): void {
+  if (logForwardingArmed) return
+  logForwardingArmed = true
+  onLog((line) => {
+    try {
+      if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send(IPC.onLog, line)
+      }
+    } catch {
+      /* renderer gone */
+    }
+  })
+}
 app.on('before-quit', () => {
   isQuitting = true
   destroyTray()
@@ -47,7 +64,16 @@ function toTrayStatus(s: string): ZapretStatus {
   return 'unknown'
 }
 
+let refreshTrayRunning = false
+let refreshTrayQueued = false
+let serviceBusy = false
+
 async function refreshTray(): Promise<void> {
+  if (refreshTrayRunning) {
+    refreshTrayQueued = true
+    return
+  }
+  refreshTrayRunning = true
   try {
     const settings = loadSettings()
     if (!settings.showTrayIcon) {
@@ -97,6 +123,12 @@ async function refreshTray(): Promise<void> {
     setupTray(zs, getTrayLabels(settings.locale, zs), ctx, trayCallbacks())
   } catch {
     /* tray refresh is best-effort */
+  } finally {
+    refreshTrayRunning = false
+    if (refreshTrayQueued) {
+      refreshTrayQueued = false
+      void refreshTray()
+    }
   }
 }
 
@@ -127,12 +159,24 @@ function toggleMainWindow(): void {
 
 /** Tell the renderer its cached status/strategies/settings may be stale. */
 function notifyRenderer(): void {
-  mainWindow?.webContents.send(IPC.statusChanged)
+  try {
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send(IPC.statusChanged)
+    }
+  } catch {
+    /* renderer gone */
+  }
 }
 
 function navigateTo(page: TrayPage): void {
   showMainWindow()
-  mainWindow?.webContents.send(IPC.navigate, page)
+  try {
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send(IPC.navigate, page)
+    }
+  } catch {
+    /* renderer gone */
+  }
 }
 
 /**
@@ -141,6 +185,8 @@ function navigateTo(page: TrayPage): void {
  * page was mounted and subscribed).
  */
 async function serviceAction(kind: 'start' | 'stop' | 'restart'): Promise<void> {
+  if (serviceBusy) return
+  serviceBusy = true
   try {
     const st = await getStatus(await isAdmin())
     if (st.ownership === 'foreign') {
@@ -160,6 +206,7 @@ async function serviceAction(kind: 'start' | 'stop' | 'restart'): Promise<void> 
     err('app', `Tray ${kind} failed: ${msg.slice(0, 300)}`)
     dialog.showErrorBox('Zapret GUI', msg.slice(0, 500))
   } finally {
+    serviceBusy = false
     notifyRenderer()
     await refreshTray()
   }
@@ -257,18 +304,22 @@ function trayCallbacks() {
     },
     onExportLogs: () => {
       void (async () => {
-        const locale = loadSettings().locale
-        const res = await dialog.showSaveDialog(mainWindow ?? undefined as unknown as BrowserWindow, {
-          title: translate(locale, 'dialog.exportTitle'),
-          defaultPath: `zapret-gui-logs-${new Date().toISOString().slice(0, 10)}.log`,
-          filters: [{ name: translate(locale, 'dialog.exportFilter'), extensions: ['log', 'txt'] }]
-        })
-        if (res.canceled || !res.filePath) return
-        const text = getBufferedLogs()
-          .map((l) => `[${l.ts}] [${l.source}/${l.level}] ${l.text}`)
-          .join('\n')
-        fs.writeFileSync(res.filePath, text, 'utf8')
-        await shell.openPath(path.dirname(res.filePath))
+        try {
+          const locale = loadSettings().locale
+          const res = await dialog.showSaveDialog(mainWindow ?? undefined as unknown as BrowserWindow, {
+            title: translate(locale, 'dialog.exportTitle'),
+            defaultPath: `zapret-gui-logs-${new Date().toISOString().slice(0, 10)}.log`,
+            filters: [{ name: translate(locale, 'dialog.exportFilter'), extensions: ['log', 'txt'] }]
+          })
+          if (res.canceled || !res.filePath) return
+          const text = getBufferedLogs()
+            .map((l) => `[${l.ts}] [${l.source}/${l.level}] ${l.text}`)
+            .join('\n')
+          fs.writeFileSync(res.filePath, text, 'utf8')
+          await shell.openPath(path.dirname(res.filePath))
+        } catch (e) {
+          err('app', `Export logs failed: ${e instanceof Error ? e.message : String(e)}`)
+        }
       })()
     },
     onQuit: () => {
@@ -328,10 +379,8 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // Stream buffered + future logs to the renderer.
-  onLog((line) => {
-    mainWindow?.webContents.send(IPC.onLog, line)
-  })
+  // Stream buffered + future logs to the renderer (subscribed once globally).
+  armLogForwarding()
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     const devUrl = process.env['ELECTRON_RENDERER_URL']
@@ -360,7 +409,13 @@ function setupAutoUpdater(): void {
   autoUpdater.autoDownload = false
   autoUpdater.on('update-available', (infoUpdate) => {
     info('updater', `App update available: ${infoUpdate.version}`)
-    mainWindow?.webContents.send('zapret:app-update-available', infoUpdate.version)
+    try {
+      if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send(IPC.onAppUpdateAvailable, infoUpdate.version)
+      }
+    } catch {
+      /* renderer gone */
+    }
   })
   autoUpdater.on('error', (e) => {
     err('updater', `autoUpdater error: ${String(e).slice(0, 300)}`)
@@ -422,14 +477,23 @@ if (!app.requestSingleInstanceLock()) {
       optimizer.watchWindowShortcuts(window)
     })
 
-    initLogger(getAppLogPath())
-    ensureDataDirSeeded()
-    info('app', `Zapret GUI starting. Data dir: ${getDataDir()}`)
+    try {
+      initLogger(getAppLogPath())
+      ensureDataDirSeeded()
+    } catch (e) {
+      // A broken %APPDATA% / AV lock must not silently kill startup.
+      console.error(`Startup seeding failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    try {
+      info('app', `Zapret GUI starting. Data dir: ${getDataDir()}`)
+    } catch {
+      /* logging is best-effort */
+    }
 
     registerIpcHandlers()
     createWindow()
     setupAutoUpdater()
-    void firstRunCheck()
+    void firstRunCheck().catch(() => undefined)
     void refreshTray()
     setInterval(() => {
       void refreshTray()
@@ -438,6 +502,8 @@ if (!app.requestSingleInstanceLock()) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
+  }).catch((e) => {
+    console.error(`app.whenReady failed: ${e instanceof Error ? e.message : String(e)}`)
   })
 }
 
