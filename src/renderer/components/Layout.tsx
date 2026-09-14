@@ -10,8 +10,7 @@ const NAV: Array<{ id: Page }> = [
   { id: 'dashboard' },
   { id: 'strategies' },
   { id: 'lists' },
-  { id: 'diagnostics' },
-  { id: 'settings' }
+  { id: 'diagnostics' }
 ]
 
 export default function Layout(props: { children: React.ReactNode }): React.JSX.Element {
@@ -78,6 +77,18 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
               ]}
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setPage('settings')}
+            className={`flex w-full items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition active:scale-[0.98] ${
+              page === 'settings'
+                ? 'border-sky-500/50 bg-sky-600/90 font-medium text-white'
+                : 'border-slate-200 text-slate-500 hover:bg-slate-200 hover:text-slate-800 dark:border-slate-700/60 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-100'
+            }`}
+          >
+            <NavIcon id="settings" />
+            {t('nav.settings')}
+          </button>
           <button
             type="button"
             onClick={() => setAboutOpen(true)}
