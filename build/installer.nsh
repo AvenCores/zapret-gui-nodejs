@@ -11,6 +11,18 @@
  *    so a silent update never touches the user's language/theme. When the
  *    page IS shown, `ZguiOptionsCreate` replaces the sentinels with the
  *    visible defaults (system language + auto theme).
+ * 3. Service handling for updates (`customCheckAppRunning` + `customInstall`):
+ *    the `zapret` service runs winws.exe from %APPDATA%\zapret-gui\data
+ *    (never from $INSTDIR), so strictly it cannot lock installer files —
+ *    but it is still stopped right before the old version is removed and
+ *    the new files are copied, then started again, so an update from the
+ *    setup exe can neither fail nor leave the bypass down. Only a service
+ *    that was RUNNING and that WE managed to stop is started back: a
+ *    service the user stopped on purpose stays stopped. The `WinDivert`
+ *    driver service is deliberately left loaded (fast reconnect, no reboot
+ *    prompts). Every step is best-effort: if `net stop` fails (e.g. no
+ *    rights in the outer UAC instance), the install simply proceeds as
+ *    before — services never block an update.
  *
  * UTF-8 encoded — compiled by electron-builder with the Unicode NSIS build.
  */
@@ -22,6 +34,7 @@
 !macro customInit
   StrCpy $ZguiLang ""
   StrCpy $ZguiTheme ""
+  StrCpy $ZguiZapretWasRunning "0"
 !macroend
 
 ; The options page exists only in the installer. Without this guard the
@@ -33,6 +46,44 @@ Var ZguiLang
 Var ZguiTheme
 Var ZguiLangCombo
 Var ZguiThemeCombo
+; "1" when this install stopped a RUNNING zapret service (customInstall
+; starts it back). Never "1" for a service the user had stopped themselves.
+Var ZguiZapretWasRunning
+; Needed by the default _CHECK_APP_RUNNING used in customCheckAppRunning
+; below (the template skips its own include once the override is defined).
+!include "getProcessInfo.nsh"
+Var pid
+
+; Runs in the install section after the user confirmed, right before the old
+; version is removed and new files are copied (see installSection.nsh).
+; Keeps electron-builder's default "close the running app" behavior, then
+; quiesces the zapret service so nothing can interfere with the update.
+; NOTE: this replaces only the *body* of CHECK_APP_RUNNING — its wrapper in
+; the template already declares/sets $CmdPath/$PowerShellPath, but the
+; IS_POWERSHELL_AVAILABLE probe must be replicated here, otherwise makensis
+; fails with "unknown variable IsPowerShellAvailable" (warning 6000 is
+; treated as an error by electron-builder).
+!macro customCheckAppRunning
+  !insertmacro IS_POWERSHELL_AVAILABLE
+  !insertmacro _CHECK_APP_RUNNING
+
+  StrCpy $ZguiZapretWasRunning "0"
+  ; Exit code 0 = "RUNNING" found in `sc query zapret` output (also covers
+  ; missing service (1060) and STOPPED state: findstr matches nothing).
+  nsExec::ExecToStack `"$SYSDIR\cmd.exe" /C sc query zapret | "$SYSDIR\findstr.exe" "RUNNING"`
+  Pop $0
+  Pop $1
+  ${If} $0 == 0
+    DetailPrint "Stopping zapret service for update..."
+    ; Synchronous: returns only after the service actually stopped.
+    nsExec::ExecToStack `"$SYSDIR\net.exe" stop zapret`
+    Pop $0
+    Pop $1
+    ${If} $0 == 0
+      StrCpy $ZguiZapretWasRunning "1"
+    ${EndIf}
+  ${EndIf}
+!macroend
 
 !macro customPageAfterChangeDir
   Page custom ZguiOptionsCreate ZguiOptionsLeave
@@ -126,6 +177,17 @@ FunctionEnd
   FileOpen $0 "$INSTDIR\install-defaults.json" w
   FileWrite $0 '{"locale":"$ZguiLang","theme":"$ZguiTheme"}$\r$\n'
   FileClose $0
+
+  ; Success path only: bring back a zapret service this install stopped.
+  ; Best-effort (a `start= auto` service also recovers on reboot); a service
+  ; the user had stopped before the update is never touched.
+  ${If} $ZguiZapretWasRunning == "1"
+    DetailPrint "Restarting zapret service..."
+    nsExec::ExecToStack `"$SYSDIR\net.exe" start zapret`
+    Pop $0
+    Pop $1
+    StrCpy $ZguiZapretWasRunning "0"
+  ${EndIf}
 !macroend
 
 !macro customUnInstall
