@@ -28,6 +28,11 @@ Var ZguiThemeCombo
   StrCpy $ZguiTheme "auto"
 !macroend
 
+; The options page exists only in the installer. Without this guard the
+; uninstaller build (BUILD_UNINSTALLER) compiles the functions but never
+; references them, failing the build on makensis warning 6010
+; (electron-builder treats warnings as errors).
+!ifndef BUILD_UNINSTALLER
 !macro customPageAfterChangeDir
   Page custom ZguiOptionsCreate ZguiOptionsLeave
 !macroend
@@ -112,6 +117,7 @@ Function ZguiOptionsLeave
     StrCpy $ZguiTheme "auto"
   ${EndIf}
 FunctionEnd
+!endif
 
 !macro customInstall
   ; Single quotes: inner double quotes stay literal, $vars still expand.
