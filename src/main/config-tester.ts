@@ -615,8 +615,10 @@ async function killWinws(): Promise<void> {
   if (process.platform === 'linux') {
     await run('pkill', ['-f', 'nfqws'], { timeoutMs: 8000 }).catch(() => ({ stdout: '', stderr: '', code: 1 }))
     try {
-      const { runElevatedArgs } = await import('./linux/elevate')
-      await runElevatedArgs('pkill', ['-f', 'nfqws'], 8000).catch(() => undefined)
+      // Elevated pkill (the daemon usually runs as root); prompts at most
+      // once via pkexec, silent with passwordless sudo configured.
+      const { runPrivileged } = await import('./linux/elevate')
+      await runPrivileged('pkill', ['-f', 'nfqws'], 8000).catch(() => undefined)
     } catch {
       /* best-effort */
     }
@@ -801,7 +803,7 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
   if (!(await isAdmin())) {
     throw new Error(
       process.platform === 'linux'
-        ? 'Root rights are required to run tests (nfqws + firewall)'
+        ? 'Cannot elevate privileges for tests (nfqws + firewall): install sudo/doas or polkit (pkexec), or run Strategies → "Set up passwordless operation" first'
         : 'Administrator rights are required to run tests'
     )
   }
@@ -947,9 +949,14 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
         // Pipe (not ignore) stderr: if winws dies on startup (driver load,
         // bad args) the tail explains WHY instead of a generic "not found".
         // Streams are drained so a chatty winws can never block on a full pipe.
-        child = isLinux
-          ? spawn(exe, args, { cwd: binDir, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
-          : spawn(exe, args, { cwd: binDir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
+        // On Linux nfqws needs root: elevate per call (passwordless sudo when
+        // configured, else one pkexec prompt) while the app stays as the user.
+        if (isLinux) {
+          const { spawnElevated } = await import('./linux/elevate')
+          child = await spawnElevated(exe, args, { cwd: binDir, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
+        } else {
+          child = spawn(exe, args, { cwd: binDir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
+        }
         activeChild = child
         child.stdout?.resume()
         child.stderr?.on('data', (d: Buffer) => {

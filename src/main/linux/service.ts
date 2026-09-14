@@ -14,7 +14,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { execFile, spawn, type ChildProcess } from 'node:child_process'
+import { execFile, type ChildProcess } from 'node:child_process'
 import type { ServiceState, StatusSnapshot, Strategy } from '../../shared/types'
 import {
   ANY_INTERFACE,
@@ -27,7 +27,19 @@ import {
   type InitSystem
 } from './constants'
 import { loadLinuxConf, saveLinuxConf, type LinuxConf } from './config'
-import { detectElevateCmd, isRoot, runElevatedArgs, runElevatedScript, buildSudoersContent, buildDoasRules, whichBin } from './elevate'
+import {
+  canElevateWithoutPassword,
+  checkElevateAvailable,
+  detectElevateCmd,
+  isRoot,
+  runPrivileged,
+  runPrivilegedScript,
+  runQuery,
+  spawnElevated,
+  buildSudoersContent,
+  buildDoasRules,
+  whichBin
+} from './elevate'
 import {
   detectFirewallBackend,
   firewallClear,
@@ -106,8 +118,10 @@ export async function getNfqwsProcessPath(): Promise<string | null> {
 }
 
 async function pkillNfqws(): Promise<void> {
+  // Elevated first (the daemon usually runs as root), then best-effort for
+  // own processes. runPrivileged prompts at most once via pkexec.
   try {
-    await runElevatedArgs('pkill', ['-f', 'nfqws'], 10000)
+    await runPrivileged('pkill', ['-f', 'nfqws'], 10000)
   } catch {
     /* best-effort */
   }
@@ -307,7 +321,18 @@ export function detectLinuxOwnership(
 
 /** Full Linux status snapshot (service + nfqws + conf + firewall). */
 export async function getLinuxStatus(dataDir: string): Promise<{ snapshot: StatusSnapshot; extra: LinuxStatusExtra }> {
-  const admin = isRoot() || (await canElevatePasswordless())
+  // The app itself runs as the user; `isAdmin` means "privileged operations
+  // are available" (root or per-call elevation via sudo/doas/pkexec).
+  const root = isRoot()
+  let elevateCmd = 'none'
+  try {
+    const cmd = detectElevateCmd()
+    elevateCmd = cmd === '' ? 'root' : cmd
+  } catch {
+    elevateCmd = 'none'
+  }
+  const nopass = root || (await canElevatePasswordless())
+  const admin = root || (elevateCmd !== 'none' && checkElevateAvailable())
   const init = await detectInitSystem().catch(() => 'unknown' as InitSystem)
   const conf = loadLinuxConf(dataDir)
   const requested: FirewallBackend = conf?.firewall_backend ?? 'auto'
@@ -346,6 +371,9 @@ export async function getLinuxStatus(dataDir: string): Promise<{ snapshot: Statu
     winwsPath: nfqwsProcPath,
     ownership,
     isAdmin: admin,
+    isRoot: root,
+    elevateCmd,
+    nopass,
     platform: 'linux',
     initSystem: init,
     firewallBackend: requested,
@@ -462,7 +490,7 @@ export async function installLinuxStrategy(
   await firewallSetup(backend, { tcp: parsed.tcpPorts, udp: parsed.udpPorts, interface: conf.interface }, say)
 
   say('Starting nfqws --daemon ...')
-  const r = await runElevatedArgs(nfqwsPath, nfqwsArgv, 20000)
+  const r = await runPrivileged(nfqwsPath, nfqwsArgv, 20000)
   if (r.code !== 0) {
     throw new Error(`nfqws failed to start: ${(r.stdout + r.stderr).trim().slice(0, 500)}`)
   }
@@ -490,10 +518,11 @@ export async function installLinuxStrategy(
 export async function startLinuxService(dataDir: string, onLog?: (t: string) => void): Promise<void> {
   const init = await detectInitSystem().catch(() => 'unknown' as InitSystem)
   if (init === 'unknown') {
-    // No init: re-run the stored runner daemon directly.
+    // No init: re-run the stored runner daemon directly (elevated per call,
+    // the app itself keeps running as the user).
     const runner = getLinuxRunnerPath(dataDir)
     if (!fs.existsSync(runner)) throw new Error('No runner found — apply a strategy first')
-    const r = await runElevatedArgs('bash', [runner, 'daemon'], 30000)
+    const r = await runPrivileged('bash', [runner, 'daemon'], 30000)
     if (r.code !== 0) throw new Error(`Start failed: ${(r.stdout + r.stderr).trim().slice(0, 400)}`)
     onLog?.('nfqws daemon started (no init system).')
     return
@@ -594,17 +623,9 @@ export async function testLinuxStrategy(
   await firewallSetup(backend, { tcp: parsed.tcpPorts, udp: parsed.udpPorts, interface: conf?.interface ?? ANY_INTERFACE }, onLog)
   const argv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: false })
   onLog?.(`Starting foreground test: nfqws ${argv.join(' ')}`)
-  const elevateCmd = (() => {
-    try {
-      return detectElevateCmd()
-    } catch {
-      return ''
-    }
-  })()
-  const child =
-    elevateCmd === ''
-      ? spawn(nfqwsPath, argv, { cwd: binDir })
-      : spawn(elevateCmd, [nfqwsPath, ...argv], { cwd: binDir })
+  // Elevated per call (passwordless sudo when configured, else one pkexec
+  // prompt) — the app itself keeps running as the user.
+  const child = await spawnElevated(nfqwsPath, argv, { cwd: binDir })
   foregroundProc = child
   child.stdout?.on('data', (d: Buffer) => onOutput?.('stdout', String(d)))
   child.stderr?.on('data', (d: Buffer) => onOutput?.('stderr', String(d)))
@@ -644,7 +665,8 @@ export async function getLinuxPermissionsStatus(
     sudoers = fs.existsSync(SUDOERS_FILE) && fs.readFileSync(SUDOERS_FILE, 'utf8').includes('Zapret')
   } catch {
     try {
-      const r = await runElevatedArgs('cat', [SUDOERS_FILE], 8000)
+      // Read-only check that never prompts (background-safe).
+      const r = await runQuery('cat', [SUDOERS_FILE], 8000)
       sudoers = r.code === 0 && r.stdout.includes('Zapret')
     } catch {
       sudoers = false
@@ -671,17 +693,35 @@ export async function getLinuxPermissionsStatus(
 
 /**
  * Install NOPASSWD rules (sudoers.d file, or doas.conf block when doas is
- * the elevate command). Requires an initial elevation (password prompt via
- * sudo/pkexec is expected on first run).
+ * the elevate command). This is the *one-time* elevation: a single auth
+ * (pkexec prompt) here makes all later service operations passwordless
+ * while the app itself keeps running as the user.
  */
 export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string) => void): Promise<void> {
   const say = (t: string): void => onLog?.(t)
   const user = currentLoginUser()
   const nfqwsPath = getLinuxNfqwsPath(dataDir)
-  const nftPath = await whichBin('nft')
-  const iptPath = await whichBin('iptables')
-  const ip6tPath = await whichBin('ip6tables')
-  const pkillPath = await whichBin('pkill')
+  const [nftPath, iptPath, ip6tPath, pkillPath] = await Promise.all([
+    whichBin('nft'),
+    whichBin('iptables'),
+    whichBin('ip6tables'),
+    whichBin('pkill')
+  ])
+  const [systemctlPath, rcServicePath, rcUpdatePath, svPath, s6SvcPath, dinitctlPath, mkdirPath, rmPath, chmodPath, teePath, visudoPath, bashPath] =
+    await Promise.all([
+      whichBin('systemctl'),
+      whichBin('rc-service'),
+      whichBin('rc-update'),
+      whichBin('sv'),
+      whichBin('s6-svc'),
+      whichBin('dinitctl'),
+      whichBin('mkdir'),
+      whichBin('rm'),
+      whichBin('chmod'),
+      whichBin('tee'),
+      whichBin('visudo'),
+      whichBin('bash')
+    ])
   let cmd: string
   try {
     cmd = detectElevateCmd()
@@ -689,25 +729,49 @@ export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string)
     throw e
   }
   if (cmd === 'doas') {
-    const rules = buildDoasRules(user, nfqwsPath, { nftPath, iptablesPath: iptPath, ip6tablesPath: ip6tPath })
+    const rules = buildDoasRules(user, nfqwsPath, {
+      nftPath,
+      iptablesPath: iptPath,
+      ip6tablesPath: ip6tPath,
+      extraBins: [systemctlPath, rcServicePath, rcUpdatePath, svPath, s6SvcPath, dinitctlPath, mkdirPath, rmPath, chmodPath, teePath, bashPath]
+    })
     say(`Appending NOPASSWD rules to /etc/doas.conf for ${user} ...`)
     const b64 = Buffer.from(`\n${rules}`, 'utf8').toString('base64')
-    const r = await runElevatedScript(`base64 -d >> /etc/doas.conf <<'ZAPRET_EOF'\n${b64}\nZAPRET_EOF`, 20000)
+    const r = await runPrivilegedScript(`base64 -d >> /etc/doas.conf <<'ZAPRET_EOF'\n${b64}\nZAPRET_EOF`, 20000)
     if (r.code !== 0) throw new Error(`doas setup failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
     say('doas rules installed.')
     return
   }
-  const content = buildSudoersContent(user, nfqwsPath, { nftPath, iptablesPath: iptPath, ip6tablesPath: ip6tPath, pkillPath })
+  const content = buildSudoersContent(user, nfqwsPath, {
+    nftPath,
+    iptablesPath: iptPath,
+    ip6tablesPath: ip6tPath,
+    pkillPath,
+    systemctlPath,
+    rcServicePath,
+    rcUpdatePath,
+    svPath,
+    s6SvcPath,
+    dinitctlPath,
+    mkdirPath,
+    rmPath,
+    chmodPath,
+    teePath,
+    visudoPath,
+    bashPath,
+    runnerPath: getLinuxRunnerPath(dataDir),
+    extraTeePaths: ['/etc/hosts', '/etc/hosts.zapret-gui.bak']
+  })
   say(`Writing ${SUDOERS_FILE} for ${user} ...`)
   const b64 = Buffer.from(content, 'utf8').toString('base64')
-  const r = await runElevatedScript(
+  const r = await runPrivilegedScript(
     `base64 -d > ${SUDOERS_FILE} <<'ZAPRET_EOF'\n${b64}\nZAPRET_EOF\nchmod 440 ${SUDOERS_FILE}`,
     20000
   )
   if (r.code !== 0) throw new Error(`sudoers setup failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
-  const check = await runElevatedArgs('visudo', ['-c', '-f', SUDOERS_FILE], 15000).catch(() => null)
+  const check = await runPrivileged('visudo', ['-c', '-f', SUDOERS_FILE], 15000).catch(() => null)
   if (check && check.code !== 0) {
-    await runElevatedArgs('rm', ['-f', SUDOERS_FILE], 10000).catch(() => undefined)
+    await runPrivileged('rm', ['-f', SUDOERS_FILE], 10000).catch(() => undefined)
     throw new Error('sudoers syntax check failed — file removed')
   }
   say('NOPASSWD configured (visudo OK).')

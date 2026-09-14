@@ -313,10 +313,12 @@ export function registerIpcHandlers(): void {
     if (!(await isAdmin())) {
       throw new Error(
         process.platform === 'linux'
-          ? 'Root rights are required to update /etc/hosts. Run the app as root (or set up passwordless sudo) and retry.'
+          ? 'No privilege escalation tool found (install sudo/doas or polkit/pkexec) — cannot update /etc/hosts.'
           : 'Administrator rights are required to update the system hosts file. Click "Restart as administrator" and retry.'
       )
     }
+    // On Linux the write itself elevates per call (single prompt at most)
+    // while the app keeps running as the user (see strategy-updater).
     await applyHosts(remoteContent)
     sendLog('app', 'info', 'System Hosts updated (backup: hosts.zapret-gui.bak).')
     return true
@@ -564,6 +566,8 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.relaunchAsAdmin, async () => {
+    // On Linux this throws by design (the app never relaunches as a whole
+    // under root); on Windows it restarts elevated via UAC.
     const exe = process.execPath
     const ok = await relaunchAppAsAdmin(exe, process.argv.slice(1))
     if (ok && app.isPackaged) {

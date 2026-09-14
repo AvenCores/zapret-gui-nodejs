@@ -18,7 +18,7 @@ import {
   type FirewallBackend,
   type FirewallBackendResolved
 } from './constants'
-import { runElevatedArgs } from './elevate'
+import { runPrivileged, runQuery } from './elevate'
 
 export interface FirewallPorts {
   tcp: string
@@ -210,7 +210,7 @@ export function buildIptablesClearCommands(): IptablesSetupStep[] {
 export async function firewallSetupNft(ports: FirewallPorts, onLog?: (t: string) => void): Promise<void> {
   const [tableProto, tableName] = NFT_TABLE.split(' ')
   // Best-effort clear of a previous table (mirrors backend_setup).
-  const existing = await runElevatedArgs('nft', ['list', 'tables'], 10000)
+  const existing = await runPrivileged('nft', ['list', 'tables'], 10000)
   if ((existing.stdout ?? '').includes(NFT_TABLE) || (existing.stdout ?? '').includes(tableName)) {
     for (const args of [
       ['flush', 'chain', tableProto, tableName, NFT_CHAIN],
@@ -219,12 +219,12 @@ export async function firewallSetupNft(ports: FirewallPorts, onLog?: (t: string)
       ['delete', 'chain', tableProto, tableName, NFT_CHAIN_PRE],
       ['delete', 'table', tableProto, tableName]
     ]) {
-      await runElevatedArgs('nft', args, 10000)
+      await runPrivileged('nft', args, 10000)
     }
   }
   for (const args of buildNftSetupCommands(ports)) {
     onLog?.(`nft ${args.join(' ')}`)
-    const r = await runElevatedArgs('nft', args, 15000)
+    const r = await runPrivileged('nft', args, 15000)
     if (r.code !== 0) {
       throw new Error(`nft failed: ${(r.stdout + r.stderr).trim().slice(0, 400)}`)
     }
@@ -234,7 +234,7 @@ export async function firewallSetupNft(ports: FirewallPorts, onLog?: (t: string)
 /** Remove the nft table/chains. Best-effort (never throws). */
 export async function firewallClearNft(onLog?: (t: string) => void): Promise<void> {
   const [tableProto, tableName] = NFT_TABLE.split(' ')
-  const existing = await runElevatedArgs('nft', ['list', 'tables'], 10000).catch(() => ({ stdout: '', stderr: '', code: 1 }))
+  const existing = await runPrivileged('nft', ['list', 'tables'], 10000).catch(() => ({ stdout: '', stderr: '', code: 1 }))
   if (!((existing as { stdout: string }).stdout ?? '').includes(tableName)) return
   for (const args of [
     ['flush', 'chain', tableProto, tableName, NFT_CHAIN],
@@ -245,7 +245,7 @@ export async function firewallClearNft(onLog?: (t: string) => void): Promise<voi
   ]) {
     try {
       onLog?.(`nft ${args.join(' ')}`)
-      await runElevatedArgs('nft', args, 10000)
+      await runPrivileged('nft', args, 10000)
     } catch {
       /* best-effort */
     }
@@ -257,7 +257,7 @@ export async function firewallSetupIptables(ports: FirewallPorts, onLog?: (t: st
   for (const step of buildIptablesSetupCommands(ports)) {
     const isCleanup = step.args.includes('-D') || step.args.includes('-F') || step.args.includes('-X')
     onLog?.(`${step.cmd} ${step.args.join(' ')}`)
-    const r = await runElevatedArgs(step.cmd, step.args, 15000)
+    const r = await runPrivileged(step.cmd, step.args, 15000)
     if (r.code !== 0 && !isCleanup) {
       throw new Error(`${step.cmd} failed: ${(r.stdout + r.stderr).trim().slice(0, 400)}`)
     }
@@ -269,7 +269,7 @@ export async function firewallClearIptables(onLog?: (t: string) => void): Promis
   for (const step of buildIptablesClearCommands()) {
     try {
       onLog?.(`${step.cmd} ${step.args.join(' ')}`)
-      await runElevatedArgs(step.cmd, step.args, 10000)
+      await runPrivileged(step.cmd, step.args, 10000)
     } catch {
       /* best-effort */
     }
@@ -296,14 +296,14 @@ export async function firewallClear(backend: FirewallBackendResolved, onLog?: (t
   }
 }
 
-/** Whether firewall rules for zapret are currently present. */
+/** Whether firewall rules for zapret are currently present (never prompts). */
 export async function isFirewallActive(backend: FirewallBackendResolved): Promise<boolean> {
   try {
     if (backend === 'nftables') {
-      const r = await runElevatedArgs('nft', ['list', 'tables'], 10000)
+      const r = await runQuery('nft', ['list', 'tables'], 10000)
       return (r.stdout ?? '').includes('zapretunix')
     }
-    const r = await runElevatedArgs('iptables', ['-t', IPT_TABLE, '-L', IPT_CHAIN, '-n'], 10000)
+    const r = await runQuery('iptables', ['-t', IPT_TABLE, '-L', IPT_CHAIN, '-n'], 10000)
     return r.code === 0
   } catch {
     return false

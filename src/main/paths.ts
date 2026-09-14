@@ -136,6 +136,50 @@ export function seedLinuxNfqws(bundledDir: string, dataBinDir: string, platformD
   }
 }
 /**
+ * Ensure the user-owned data dir is actually writable by this (non-root)
+ * process. Users migrating from the old "run the whole app as root" model
+ * often have a root-owned `~/.config/zapret-gui` tree, which would otherwise
+ * fail later with cryptic EACCES errors.
+ *
+ * When the dir is not writable, ownership is repaired with a *single*
+ * elevated call (`chown -R uid:gid`, one pkexec prompt at most, silent with
+ * passwordless sudo) instead of relaunching the app as root.
+ *
+ * @returns `ok` when writable, `root` when running as root (nothing to do),
+ * `unwritable` when the repair failed or was declined.
+ */
+export async function ensureUserOwnsDataDir(): Promise<'ok' | 'root' | 'unwritable'> {
+  if (process.platform !== 'linux') return 'ok'
+  try {
+    if (typeof process.geteuid === 'function' && process.geteuid() === 0) return 'root'
+  } catch {
+    /* fall through to the writability probe */
+  }
+  const base = path.join(app.getPath('appData'), 'zapret-gui')
+  const probe = (): boolean => {
+    try {
+      fs.mkdirSync(base, { recursive: true })
+      const probeFile = path.join(base, '.write-test')
+      fs.writeFileSync(probeFile, 'ok', 'utf8')
+      fs.rmSync(probeFile, { force: true })
+      return true
+    } catch {
+      return false
+    }
+  }
+  if (probe()) return 'ok'
+  try {
+    if (typeof process.getuid !== 'function' || typeof process.getgid !== 'function') return 'unwritable'
+    const { runPrivileged } = await import('./linux/elevate')
+    const r = await runPrivileged('chown', ['-R', `${process.getuid()}:${process.getgid()}`, base], 60000)
+    if (r.code !== 0) return 'unwritable'
+  } catch {
+    return 'unwritable'
+  }
+  return probe() ? 'ok' : 'unwritable'
+}
+
+/**
  * First-run seeding: copy bundled `bin/`, `lists/`, `utils/`, `strategies/`
  * into the writable data dir (never overwrites user-modified files,
  * except that missing files are restored). Also creates `*-user.txt`

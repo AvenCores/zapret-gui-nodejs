@@ -1,10 +1,13 @@
 /**
  * Process execution helpers: plain exec, admin detection and UAC elevation.
  *
- * Strategy: the app asks to run elevated once (button "relaunch as admin").
- * Service/hosts operations then run directly. For single-shot elevation
- * without restart, {@link runElevated} re-launches a command via
- * `powershell Start-Process -Verb RunAs`.
+ * Privilege model: on Windows the app asks to run elevated once (button
+ * "relaunch as admin") and service/hosts operations then run directly.
+ * On Linux the app always stays under the user — only root-dependent parts
+ * elevate per call via `sudo -n`/`doas -n` (after the one-time NOPASSWD
+ * setup) or a single `pkexec` prompt (see `linux/elevate`).
+ * For single-shot elevation without restart on Windows, {@link runElevated}
+ * re-launches a command via `powershell Start-Process -Verb RunAs`.
  * @module main/exec
  */
 import { spawn, execFile } from 'node:child_process'
@@ -56,24 +59,17 @@ export function runPowershell(script: string, timeoutMs = 30000): Promise<ExecRe
   return run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `${utf8}${script}`], { timeoutMs })
 }
 
-/** True when the current process runs elevated (admin / root). */
+/**
+ * True when service/hosts operations are available: elevated on Windows,
+ * root or able to elevate per call (sudo/doas/pkexec) on Linux. On Linux
+ * this does NOT mean the app itself runs as root — the app always stays
+ * under the user and only privileged calls elevate.
+ */
 export async function isAdmin(): Promise<boolean> {
   if (process.platform === 'linux') {
     try {
-      if (typeof process.geteuid === 'function' && process.geteuid() === 0) return true
-    } catch {
-      /* fall through */
-    }
-    // Passwordless sudo also counts as "can manage the service".
-    try {
-      const { isRoot, detectElevateCmd } = await import('./linux/elevate')
-      if (isRoot()) return true
-      const cmd = detectElevateCmd()
-      if (cmd === 'sudo') {
-        const r = await run('sudo', ['-n', 'true'], { timeoutMs: 8000 })
-        return r.code === 0
-      }
-      return false
+      const { isRoot, checkElevateAvailable } = await import('./linux/elevate')
+      return isRoot() || checkElevateAvailable()
     } catch {
       return false
     }
@@ -95,10 +91,15 @@ export async function runElevated(command: string, args: string[], cwd?: string)
   return r.code === 0
 }
 
-/** Relaunch the whole Electron app elevated (used by the dashboard button). */
+/** Relaunch the whole Electron app elevated (Windows UAC flow only). */
 export async function relaunchAppAsAdmin(appPath: string, appArgs: string[]): Promise<boolean> {
   if (process.platform === 'linux') {
-    return relaunchAppAsRootLinux(appPath, appArgs)
+    // By design the Linux app never relaunches as a whole under root:
+    // privileged calls elevate individually (pkexec prompt or passwordless
+    // sudo) while the app keeps running as the user.
+    throw new Error(
+      'Restarting the whole app as root is not used on Linux — privileged actions ask for elevation individually (a single system prompt), and "Set up passwordless operation" on the Strategies tab removes even that.'
+    )
   }
   const ps =
     `Start-Process -FilePath '${appPath.replace(/'/g, "''")}'` +
@@ -109,8 +110,10 @@ export async function relaunchAppAsAdmin(appPath: string, appArgs: string[]): Pr
 }
 
 /**
- * Chromium refuses to run as root with the sandbox on — the elevated copy
- * would crash instantly without this flag. Pure.
+ * Append `--no-sandbox` for a process that runs as root (Chromium refuses
+ * to run as root with the sandbox on). Kept as a tested helper; the Linux
+ * app itself no longer relaunches as a whole under root.
+ * Pure.
  */
 export function ensureNoSandbox(args: string[]): string[] {
   return args.includes('--no-sandbox') ? [...args] : [...args, '--no-sandbox']
@@ -184,78 +187,6 @@ export function buildTerminalArgs(spec: GuiTerminal, elevCmd: string, target: st
   if (spec.mode === 'dd') return ['--', elevCmd, ...target]
   if (spec.mode === 'e') return ['-e', elevCmd, ...target]
   return [elevCmd, ...target]
-}
-
-/**
- * Linux relaunch chain (GUI-first):
- * 1. `pkexec` graphical dialog (with display env forwarded for Wayland),
- * 2. a terminal emulator running `sudo/doas` (detached — the emulator owns
- *    the elevated app, so our timeouts can never kill it),
- * 3. direct `sudo/doas` (last resort, works only with NOPASSWD or a tty).
- * Returns false instead of prompting nowhere — the UI surfaces that.
- */
-async function relaunchAppAsRootLinux(appPath: string, appArgs: string[]): Promise<boolean> {
-  try {
-    const { detectElevateCmd, isRoot, commandExists } = await import('./linux/elevate')
-    if (isRoot()) return true
-    let elev: string
-    try {
-      elev = detectElevateCmd()
-    } catch {
-      return false
-    }
-    if (elev === '') return true
-    const target = [appPath, ...ensureNoSandbox(appArgs)]
-
-    // 1. Graphical polkit prompt (GNOME/KDE agents, no terminal needed).
-    if (commandExists('pkexec')) {
-      const r = await run(
-        'pkexec',
-        ['/usr/bin/env', ...pickGuiEnv(process.env), ...target],
-        { timeoutMs: 300000 }
-      )
-      if (r.code === 0) return true
-      // Dismissed / no agent / Wayland env issue — keep trying below.
-    }
-
-    // sudo/doas for the terminal and direct fallbacks.
-    const sudoish = elev === 'sudo' || elev === 'doas' ? elev : commandExists('sudo') ? 'sudo' : commandExists('doas') ? 'doas' : null
-
-    // 2. Terminal emulator (detached: we only check it *started*).
-    if (sudoish) {
-      const term = findGuiTerminal(commandExists)
-      if (term) {
-        const started = await new Promise<boolean>((resolve) => {
-          let child: ReturnType<typeof spawn>
-          try {
-            child = spawn(term.cmd, buildTerminalArgs(term, sudoish, target), {
-              detached: true,
-              stdio: 'ignore'
-            })
-          } catch {
-            resolve(false)
-            return
-          }
-          child.on('error', () => resolve(false))
-          // Emulators that daemonize exit fast; blocking ones (xterm -e)
-          // stay alive while the user types the password — either way a
-          // quick quiet window means "launched".
-          setTimeout(() => resolve(true), 2500).unref?.()
-          child.unref?.()
-        })
-        if (started) return true
-      }
-    }
-
-    // 3. Last resort: piped sudo (succeeds only with NOPASSWD).
-    if (sudoish) {
-      const r = await run(sudoish, target, { timeoutMs: 60000 })
-      return r.code === 0
-    }
-    return false
-  } catch {
-    return false
-  }
 }
 
 /** Spawn a long-lived child (foreground winws/nfqws test / test script). */

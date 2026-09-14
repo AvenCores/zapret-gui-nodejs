@@ -17,7 +17,7 @@ import {
   toIptablesPorts
 } from '../src/main/linux/firewall'
 import { buildSystemdUnit, buildDinitConf, serviceLocation } from '../src/main/linux/init-system'
-import { buildSudoersContent, buildDoasRules } from '../src/main/linux/elevate'
+import { buildSudoersContent, buildDoasRules, isAuthFailure, noAuthMessage, withPathVariants } from '../src/main/linux/elevate'
 import { mapPlatformDir } from '../src/main/linux/download'
 import { detectLinuxOwnership } from '../src/main/linux/service'
 import { buildRunnerScript } from '../src/main/linux/service'
@@ -213,6 +213,67 @@ describe('permissions content', () => {
   it('generates doas rules', () => {
     const rules = buildDoasRules('bob', '/data/bin/nfqws')
     expect(rules).toContain('permit nopass bob as root cmd /data/bin/nfqws')
+  })
+  it('covers service management for silent per-call elevation (no whole-app root)', () => {
+    const content = buildSudoersContent('alice', '/data/bin/nfqws', {
+      systemctlPath: '/usr/bin/systemctl',
+      teePath: '/usr/bin/tee',
+      chmodPath: '/usr/bin/chmod',
+      mkdirPath: '/usr/bin/mkdir',
+      rmPath: '/usr/bin/rm',
+      visudoPath: '/usr/sbin/visudo',
+      bashPath: '/usr/bin/bash',
+      runnerPath: '/home/alice/.config/zapret-gui/data/zapret-linux-run.sh',
+      extraTeePaths: ['/etc/hosts', '/etc/hosts.zapret-gui.bak']
+    })
+    // init service control
+    expect(content).toContain('/usr/bin/systemctl daemon-reload')
+    expect(content).toContain('/usr/bin/systemctl restart zapret_discord_youtube')
+    expect(content).toContain('/usr/bin/systemctl start zapret_discord_youtube')
+    // service-file installs via tee + chmod (no shell quoting pitfalls)
+    expect(content).toContain('/usr/bin/tee /etc/systemd/system/zapret_discord_youtube.service')
+    expect(content).toContain('/usr/bin/chmod 0644 /etc/systemd/system/zapret_discord_youtube.service')
+    expect(content).toContain('/usr/bin/chmod 0755 /etc/systemd/system/zapret_discord_youtube.service')
+    expect(content).toContain('/usr/bin/mkdir -p /etc/sv/zapret_discord_youtube')
+    expect(content).toContain('/usr/bin/rm -f /etc/systemd/system/zapret_discord_youtube.service')
+    // self-check + no-init runner + hosts
+    expect(content).toContain('/usr/sbin/visudo -c -f /etc/sudoers.d/zapret')
+    expect(content).toContain('/usr/bin/bash /home/alice/.config/zapret-gui/data/zapret-linux-run.sh daemon')
+    expect(content).toContain('/usr/bin/tee /etc/hosts')
+    expect(content).toContain('/usr/bin/tee /etc/hosts.zapret-gui.bak')
+  })
+  it('emits /usr-merged path variants so sudo string-matching succeeds', () => {
+    const content = buildSudoersContent('alice', '/data/bin/nfqws', { systemctlPath: '/usr/bin/systemctl' })
+    expect(content).toContain('/usr/bin/systemctl daemon-reload')
+    expect(content).toContain('/bin/systemctl daemon-reload')
+  })
+  it('extends doas rules with service binaries', () => {
+    const rules = buildDoasRules('bob', '/data/bin/nfqws', { extraBins: ['/usr/bin/systemctl', '/usr/bin/tee'] })
+    expect(rules).toContain('permit nopass bob as root cmd /usr/bin/systemctl')
+    expect(rules).toContain('permit nopass bob as root cmd /usr/bin/tee')
+  })
+})
+
+describe('per-call elevation helpers (pure parts)', () => {
+  it('classifies sudo/doas auth failures (pkexec fallback) vs command errors', () => {
+    expect(isAuthFailure('sudo: a password is required')).toBe(true)
+    expect(isAuthFailure('sudo: no tty present and no askpass program specified')).toBe(true)
+    expect(isAuthFailure('sudo: a terminal is required to read the password')).toBe(true)
+    expect(isAuthFailure('alice is not in the sudoers file. This incident will be reported')).toBe(true)
+    expect(isAuthFailure('doas: operation not permitted')).toBe(true)
+    // Genuine command failures must NOT trigger a password prompt.
+    expect(isAuthFailure('nft: syntax error at line 1')).toBe(false)
+    expect(isAuthFailure('')).toBe(false)
+    expect(isAuthFailure('systemctl: Unit zapret_discord_youtube.service not found')).toBe(false)
+  })
+  it('builds merged-/usr path variants', () => {
+    expect(withPathVariants('/usr/bin/systemctl')).toEqual(['/usr/bin/systemctl', '/bin/systemctl'])
+    expect(withPathVariants('/usr/sbin/nft')).toEqual(['/usr/sbin/nft', '/sbin/nft'])
+    expect(withPathVariants('/bin/ls')).toEqual(['/bin/ls', '/usr/bin/ls'])
+    expect(withPathVariants('/opt/custom/bin')).toEqual(['/opt/custom/bin'])
+  })
+  it('explains missing elevation tools', () => {
+    expect(noAuthMessage()).toContain('pkexec')
   })
 })
 

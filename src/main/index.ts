@@ -7,7 +7,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
-import { ensureDataDirSeeded, getDataDir, getAppLogPath, getBundledAssetsDir, getListsDir } from './paths'
+import { ensureDataDirSeeded, ensureUserOwnsDataDir, getDataDir, getAppLogPath, getBundledAssetsDir, getListsDir } from './paths'
 import { initLogger, info, err, onLog, getBufferedLogs } from './logger'
 import { registerIpcHandlers, listStrategies } from './ipc-handlers'
 import { setupTray, getTrayLabels, destroyTray, type TrayContext } from './tray'
@@ -309,7 +309,15 @@ function trayCallbacks() {
     },
     onRelaunchAdmin: () => {
       void (async () => {
-        const ok = await relaunchAppAsAdmin(process.execPath, process.argv.slice(1))
+        let ok = false
+        try {
+          ok = await relaunchAppAsAdmin(process.execPath, process.argv.slice(1))
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          err('app', `Relaunch as admin failed: ${msg.slice(0, 200)}`)
+          dialog.showErrorBox('Zapret GUI', msg.slice(0, 500))
+          return
+        }
         if (ok && app.isPackaged) {
           info('app', 'Restarting with administrator rights — closing this instance.')
           setTimeout(() => app.quit(), 500).unref?.()
@@ -502,11 +510,30 @@ if (!app.requestSingleInstanceLock()) {
     showMainWindow()
   })
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     electronApp.setAppUserModelId('com.zapret.gui')
     app.on('browser-window-created', (_, window) => {
       optimizer.watchWindowShortcuts(window)
     })
+
+    if (process.platform === 'linux') {
+      // Migration from the old "run the whole app as root" model: a
+      // root-owned data dir is repaired with a single elevated `chown`
+      // instead of forcing the app itself under root.
+      try {
+        const st = await ensureUserOwnsDataDir()
+        if (st === 'unwritable') {
+          const home = process.env.HOME ?? '~'
+          dialog.showErrorBox(
+            'Zapret GUI',
+            `Data directory is not writable (likely left over from running the app as root).\n` +
+              `Fix it once with:\n  sudo chown -R $(id -u):$(id -g) ${home}/.config/zapret-gui`
+          )
+        }
+      } catch {
+        /* best-effort: seeding below reports real failures */
+      }
+    }
 
     try {
       initLogger(getAppLogPath())

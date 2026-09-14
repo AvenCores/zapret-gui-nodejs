@@ -371,6 +371,9 @@ export default function Dashboard(): React.JSX.Element {
 
   const running = status.zapret === 'RUNNING'
   const isLinux = (platform ?? status.platform) === 'linux'
+  // On Linux the app itself runs as the user (privileged calls elevate
+  // individually), so the badge reflects the real EUID, not manageability.
+  const rootLike = isLinux ? (status.isRoot ?? status.isAdmin) : status.isAdmin
   const zapretInstalled = status.zapret !== 'NOT_INSTALLED'
   // Remove only makes sense when there is something to remove: an installed
   // service or a stray winws.exe process.
@@ -494,8 +497,8 @@ export default function Dashboard(): React.JSX.Element {
           </Row>
         ) : null}
         <Row label={isLinux ? t('dashboard.root') : t('dashboard.admin')}>
-          <Badge tone={status.isAdmin ? 'green' : 'yellow'}>
-            {status.isAdmin ? t(isLinux ? 'dashboard.rootYes' : 'dashboard.adminYes') : t(isLinux ? 'dashboard.rootNo' : 'dashboard.adminNo')}
+          <Badge tone={rootLike ? 'green' : 'yellow'}>
+            {rootLike ? t(isLinux ? 'dashboard.rootYes' : 'dashboard.adminYes') : t(isLinux ? 'dashboard.rootNo' : 'dashboard.adminNo')}
           </Badge>
         </Row>
 

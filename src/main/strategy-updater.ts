@@ -248,10 +248,48 @@ function hostsWriteError(what: string, hostsPath: string, e: unknown): Error {
   const detail = e instanceof Error ? e.message : String(e)
   const priv =
     process.platform === 'linux'
-      ? 'Run the app as root (or configure passwordless sudo) and retry.'
+      ? 'Allow the privilege prompt when it appears (or configure passwordless operation via Strategies → Setup), then retry.'
       : 'Run the app as administrator and allow hosts-file changes in your antivirus ' +
         '(Defender "Controlled folder access" / hosts protection), then retry.'
   return new Error(`Cannot ${what} the system hosts file (${hostsPath}): ${detail}. ${priv}`)
+}
+
+/** True when the current user can rewrite the hosts file without elevation. */
+function canWriteHostsDirectly(hostsPath: string): boolean {
+  try {
+    fs.accessSync(hostsPath, fs.constants.W_OK)
+    const backupPath = `${hostsPath}.zapret-gui.bak`
+    if (!fs.existsSync(backupPath)) fs.accessSync(path.dirname(hostsPath), fs.constants.W_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Linux elevated hosts write: the app keeps running as the user, only the
+ * file update elevates (passwordless `tee` when NOPASSWD was configured,
+ * otherwise a single `pkexec` prompt per call).
+ */
+async function applyHostsElevated(hostsPath: string, current: string, next: string): Promise<void> {
+  const { runPrivileged } = await import('./linux/elevate')
+  const backupPath = `${hostsPath}.zapret-gui.bak`
+  try {
+    let needBackup = true
+    try {
+      needBackup = !fs.existsSync(backupPath)
+    } catch {
+      needBackup = true
+    }
+    if (needBackup) {
+      const b = await runPrivileged('tee', [backupPath], 20000, { input: current })
+      if (b.code !== 0) throw new Error((b.stdout + b.stderr).trim().slice(0, 200))
+    }
+    const w = await runPrivileged('tee', [hostsPath], 20000, { input: next })
+    if (w.code !== 0) throw new Error((w.stdout + w.stderr).trim().slice(0, 200))
+  } catch (e) {
+    throw hostsWriteError('write', hostsPath, e)
+  }
 }
 
 /**
@@ -295,6 +333,12 @@ export async function applyHosts(remoteContent: string, opts?: { hostsPath?: str
     next = `${current.slice(0, start)}${remoteContent}\n${current.slice(end)}`
   } else {
     next = `${current.replace(/\s+$/, '')}\n\n${remoteContent}\n`
+  }
+  // Linux as a regular user: only the file update elevates (single prompt
+  // at most) instead of requiring the whole app to run as root.
+  if (process.platform === 'linux' && !opts?.hostsPath && !canWriteHostsDirectly(hostsPath)) {
+    await applyHostsElevated(hostsPath, current, next)
+    return
   }
   const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-hosts-')), 'hosts')
   try {

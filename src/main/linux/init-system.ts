@@ -6,7 +6,7 @@
 import fs from 'node:fs'
 import { execFile } from 'node:child_process'
 import { LINUX_SERVICE_NAME, type InitSystem } from './constants'
-import { runElevatedArgs, runElevatedScript } from './elevate'
+import { runPrivileged, runQuery, writeFileAsRoot } from './elevate'
 import type { ServiceState } from '../../shared/types'
 
 function readFileSafe(p: string): string {
@@ -165,7 +165,8 @@ export function buildDinitConf(opts: { runnerPath: string }): string {
 // ---------------------------------------------------------------------------
 
 async function shOut(cmd: string, args: string[], timeoutMs = 10000): Promise<{ code: number; out: string }> {
-  const r = await runElevatedArgs(cmd, args, timeoutMs).catch(() => ({ stdout: '', stderr: '', code: 1 }))
+  // Status polling must never pop an auth dialog — runQuery only.
+  const r = await runQuery(cmd, args, timeoutMs).catch(() => ({ stdout: '', stderr: '', code: 1 }))
   return { code: (r as { code: number | null }).code ?? 1, out: `${(r as { stdout: string }).stdout ?? ''}\n${(r as { stderr: string }).stderr ?? ''}` }
 }
 
@@ -222,13 +223,13 @@ export async function queryLinuxServiceState(
 // Install / start / stop / restart / remove
 // ---------------------------------------------------------------------------
 
-/** Write text to a root-owned path via elevate. */
+/** Write text to a root-owned path via elevation (single pkexec prompt at most). */
 async function writeRootFile(dest: string, content: string, mode = '0644'): Promise<void> {
-  const b64 = Buffer.from(content, 'utf8').toString('base64')
-  // base64 avoids every quoting pitfall (spaces, quotes, `$`) in unit files.
-  const script = `base64 -d > ${dest} <<'ZAPRET_EOF'\n${b64}\nZAPRET_EOF\nchmod ${mode} ${dest}`
-  const r = await runElevatedScript(script, 20000)
-  if (r.code !== 0) throw new Error(`Cannot write ${dest}: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
+  try {
+    await writeFileAsRoot(dest, content, mode)
+  } catch (e) {
+    throw new Error(`Cannot write ${dest}: ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}`)
+  }
 }
 
 export async function installInitService(
@@ -242,10 +243,10 @@ export async function installInitService(
       const dest = `/etc/systemd/system/${name}.service`
       say(`Writing ${dest} ...`)
       await writeRootFile(dest, buildSystemdUnit({ runnerPath: opts.runnerPath, workDir: opts.workDir }))
-      await runElevatedArgs('systemctl', ['daemon-reload'], 20000)
-      await runElevatedArgs('systemctl', ['enable', name], 20000)
+      await runPrivileged('systemctl', ['daemon-reload'], 20000)
+      await runPrivileged('systemctl', ['enable', name], 20000)
       say('Starting systemd service...')
-      const r = await runElevatedArgs('systemctl', ['restart', name], 20000)
+      const r = await runPrivileged('systemctl', ['restart', name], 20000)
       if (r.code !== 0) throw new Error(`systemctl start failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
       return
     }
@@ -253,22 +254,22 @@ export async function installInitService(
       const dest = `/etc/init.d/${name}`
       say(`Writing ${dest} ...`)
       await writeRootFile(dest, buildOpenrcScript({ runnerPath: opts.runnerPath, workDir: opts.workDir, serviceName: name }), '0755')
-      await runElevatedArgs('rc-update', ['add', name, 'default'], 20000)
-      const r = await runElevatedArgs('rc-service', [name, 'restart'], 20000)
+      await runPrivileged('rc-update', ['add', name, 'default'], 20000)
+      const r = await runPrivileged('rc-service', [name, 'restart'], 20000)
       if (r.code !== 0) throw new Error(`rc-service start failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
       return
     }
     case 'runit': {
       const dir = `/etc/sv/${name}`
-      await runElevatedArgs('mkdir', ['-p', dir], 10000)
+      await runPrivileged('mkdir', ['-p', dir], 10000)
       await writeRootFile(`${dir}/run`, buildRunitRun({ runnerPath: opts.runnerPath }), '0755')
       await writeRootFile(`${dir}/finish`, buildRunitFinish({ runnerPath: opts.runnerPath }), '0755')
-      await runElevatedArgs('sv', ['up', name], 15000)
+      await runPrivileged('sv', ['up', name], 15000)
       return
     }
     case 's6': {
       const dir = `/etc/s6/sv/${name}`
-      await runElevatedArgs('mkdir', ['-p', `${dir}/log`], 10000)
+      await runPrivileged('mkdir', ['-p', `${dir}/log`], 10000)
       await writeRootFile(
         `${dir}/run`,
         `#!/bin/sh\nexec 2>&1\ncd "${opts.workDir}"\nexec "${opts.runnerPath}" daemon\n`,
@@ -282,7 +283,7 @@ export async function installInitService(
       const dest = `/etc/dinit.d/${name}`
       say(`Writing ${dest} ...`)
       await writeRootFile(dest, buildDinitConf({ runnerPath: opts.runnerPath }))
-      await runElevatedArgs('dinitctl', ['enable', name], 20000)
+      await runPrivileged('dinitctl', ['enable', name], 20000)
       return
     }
     default:
@@ -292,7 +293,7 @@ export async function installInitService(
 
 export async function startInitService(init: InitSystem, serviceName = LINUX_SERVICE_NAME): Promise<void> {
   const run = async (cmd: string, args: string[]): Promise<void> => {
-    const r = await runElevatedArgs(cmd, args, 20000)
+    const r = await runPrivileged(cmd, args, 20000)
     if (r.code !== 0) throw new Error(`${cmd} ${args.join(' ')} failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
   }
   switch (init) {
@@ -313,7 +314,7 @@ export async function startInitService(init: InitSystem, serviceName = LINUX_SER
 
 export async function stopInitService(init: InitSystem, serviceName = LINUX_SERVICE_NAME): Promise<void> {
   const run = async (cmd: string, args: string[]): Promise<void> => {
-    const r = await runElevatedArgs(cmd, args, 20000)
+    const r = await runPrivileged(cmd, args, 20000)
     if (r.code !== 0) throw new Error(`${cmd} ${args.join(' ')} failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
   }
   switch (init) {
@@ -340,7 +341,7 @@ export async function removeInitService(
   const say = (t: string): void => onLog?.(t)
   const bestEffort = async (cmd: string, args: string[]): Promise<void> => {
     try {
-      await runElevatedArgs(cmd, args, 15000)
+      await runPrivileged(cmd, args, 15000)
     } catch {
       /* ignore */
     }
@@ -349,30 +350,30 @@ export async function removeInitService(
     case 'systemd':
       await bestEffort('systemctl', ['stop', serviceName])
       await bestEffort('systemctl', ['disable', serviceName])
-      await runElevatedArgs('rm', ['-f', `/etc/systemd/system/${serviceName}.service`], 10000)
+      await runPrivileged('rm', ['-f', `/etc/systemd/system/${serviceName}.service`], 10000)
       await bestEffort('systemctl', ['daemon-reload'])
       say('systemd service removed.')
       return
     case 'openrc':
       await bestEffort('rc-service', [serviceName, 'stop'])
       await bestEffort('rc-update', ['del', serviceName, 'default'])
-      await runElevatedArgs('rm', ['-f', `/etc/init.d/${serviceName}`], 10000)
+      await runPrivileged('rm', ['-f', `/etc/init.d/${serviceName}`], 10000)
       say('OpenRC service removed.')
       return
     case 'runit':
       await bestEffort('sv', ['down', serviceName])
-      await runElevatedArgs('rm', ['-rf', `/etc/sv/${serviceName}`], 10000)
+      await runPrivileged('rm', ['-rf', `/etc/sv/${serviceName}`], 10000)
       say('runit service removed.')
       return
     case 's6':
       await bestEffort('s6-svc', ['-d', serviceLocation('s6', serviceName)])
-      await runElevatedArgs('rm', ['-rf', serviceLocation('s6', serviceName)], 10000)
+      await runPrivileged('rm', ['-rf', serviceLocation('s6', serviceName)], 10000)
       say('s6 service removed.')
       return
     case 'dinit':
       await bestEffort('dinitctl', ['stop', serviceName])
       await bestEffort('dinitctl', ['disable', serviceName])
-      await runElevatedArgs('rm', ['-f', `/etc/dinit.d/${serviceName}`], 10000)
+      await runPrivileged('rm', ['-f', `/etc/dinit.d/${serviceName}`], 10000)
       say('dinit service removed.')
       return
     default:

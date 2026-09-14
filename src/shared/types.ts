@@ -80,7 +80,17 @@ export interface StatusSnapshot {
   winwsPath: string | null
   /** Whether the installed `zapret` service points into our own data/bin dir. */
   ownership: ServiceOwnership
+  /**
+   * Whether privileged operations are available (admin on Windows;
+   * root or per-call elevation via sudo/doas/pkexec on Linux).
+   */
   isAdmin: boolean
+  /** Linux: true when the app process itself runs as root (normally false). */
+  isRoot?: boolean
+  /** Linux: elevation method (`root` | `sudo` | `doas` | `pkexec` | `none`). */
+  elevateCmd?: string
+  /** Linux: true when privileged calls run without a password prompt. */
+  nopass?: boolean
   /** Runtime platform (`win32` on Windows, `linux` on Linux). */
   platform?: AppPlatform
   /** Init system on Linux (null/undefined on Windows). */
