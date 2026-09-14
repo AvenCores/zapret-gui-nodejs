@@ -121,12 +121,43 @@ describe('parseStrategyArgsForLinux (bundled JSON configs)', () => {
     expect(argv.join(' ')).not.toContain('<BIN>')
     expect(argv.join(' ')).not.toContain('<LISTS>')
   })
-  it('materializes placeholders to real dirs', () => {
-    const argv = materializeNfqwsArgv(['--filter-tcp=80 --hostlist="<LISTS>/list-general.txt" --new'], {
+  it('materializes placeholders to real dirs (exact, no doubling/quotes)', () => {
+    const argv = materializeNfqwsArgv(['--filter-tcp=80 --hostlist="<LISTS>/list-general.txt"'], {
       binDir: '/d/bin',
       listsDir: '/d/lists'
     })
-    expect(argv.join(' ')).toContain('/d/lists/list-general.txt')
+    expect(argv).toEqual(['--filter-tcp=80', '--hostlist=/d/lists/list-general.txt'])
+  })
+  it('regression: no doubled segments or literal quotes (issue: /data/root/.../lists/...)', () => {
+    const binDir = '/root/.config/zapret-gui/data/bin'
+    const listsDir = '/root/.config/zapret-gui/data/lists'
+    const argv = materializeNfqwsArgv(
+      [
+        '--filter-udp=443 --hostlist="<LISTS>/list-general.txt" --ipset-exclude="<LISTS>/ipset-exclude.txt" --dpi-desync=fake'
+      ],
+      { binDir, listsDir }
+    )
+    expect(argv).toEqual([
+      '--filter-udp=443',
+      '--hostlist=/root/.config/zapret-gui/data/lists/list-general.txt',
+      '--ipset-exclude=/root/.config/zapret-gui/data/lists/ipset-exclude.txt',
+      '--dpi-desync=fake'
+    ])
+    for (const a of argv) {
+      expect(a).not.toContain('"')
+      expect(a).not.toContain('data/root')
+    }
+  })
+  it('prefixes bare relative bin/lists (raw .bat %BIN%/%LISTS% forms) exactly once', () => {
+    const argv = materializeNfqwsArgv(
+      ['--filter-tcp=80 --hostlist-exclude="lists/list-exclude.txt" --dpi-desync-fake-tls="bin/tls_clienthello_www_google_com.bin"'],
+      { binDir: '/d/bin', listsDir: '/d/lists' }
+    )
+    expect(argv).toEqual([
+      '--filter-tcp=80',
+      '--hostlist-exclude=/d/lists/list-exclude.txt',
+      '--dpi-desync-fake-tls=/d/bin/tls_clienthello_www_google_com.bin'
+    ])
   })
 })
 

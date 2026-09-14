@@ -194,6 +194,16 @@ export function parseStrategyArgsForLinux(
 /**
  * Materialize `<BIN>/<LISTS>/<ROOT>` placeholders inside nfqws blocks to
  * real absolute paths, then tokenize into argv entries.
+ *
+ * Two traps handled here (both hit production as
+ * `cannot access ipset file '"/root/.../data/root/.../lists/..."'`):
+ * - spawn() delivers each array element verbatim (no shell), so `.bat`
+ *   quoting must go *entirely* — a surviving `"` becomes part of the
+ *   filename (like Windows `materializeArgsForSpawn` does).
+ * - bare relative `bin/`/`lists/` (from raw `.bat` `%BIN%`/`%LISTS%` forms)
+ *   are prefixed only outside absolute paths (lookbehind): after
+ *   `<LISTS>` → `/data/lists`, the `lists/` inside that substitution must
+ *   NOT be replaced again, or the dir doubles (`/data/data/lists/...`).
  * Pure.
  */
 export function materializeNfqwsArgv(
@@ -202,17 +212,19 @@ export function materializeNfqwsArgv(
 ): string[] {
   const out: string[] = []
   for (const block of blocks) {
-    const resolved = block
-      .split('<BIN>').join(opts.binDir)
-      .split('<LISTS>').join(opts.listsDir)
-      .split('<ROOT>').join(opts.binDir)
-      .split('bin/').join(`${opts.binDir}/`)
-      .split('lists/').join(`${opts.listsDir}/`)
-      // Collapse accidental double slashes (except after `:`).
-      .replace(/([^:])\/\/+/g, '$1/')
-    for (const tok of tokenizeCommandLine(resolved)) {
-      const clean = tok.trim().replace(/^"|"$/g, '')
-      if (clean) out.push(clean)
+    for (const raw of tokenizeCommandLine(block)) {
+      let t = raw.trim().replace(/"/g, '')
+      if (!t) continue
+      t = t
+        .split('<BIN>').join(opts.binDir)
+        .split('<LISTS>').join(opts.listsDir)
+        .split('<ROOT>').join(opts.binDir)
+      t = t
+        .replace(/(?<![\w/])bin\//g, `${opts.binDir}/`)
+        .replace(/(?<![\w/])lists\//g, `${opts.listsDir}/`)
+      // Collapse accidental double slashes (except after `scheme:`).
+      t = t.replace(/([^:])\/\/+/g, '$1/')
+      out.push(t)
     }
     out.push('--new')
   }
