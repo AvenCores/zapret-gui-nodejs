@@ -177,7 +177,11 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
   (mangle/postrouting + prerouting, `queue num 220 bypass`, connbytes 1:6 / 1:3)
 * **Сервис/автозапуск**: systemd / OpenRC / runit / s6 / dinit (детект как в `init.sh` по `/proc/1/*` и `/run/*`);
   без известной init-системы работает разовый запуск демона без автозапуска
-* **Права**: повышение через `sudo`/`doas` (в root — напрямую, в GUI — `pkexec`/терминал для перезапуска);
+* **Права**: повышение через `sudo`/`doas` (в root — напрямую); перезапуск с правами root идёт по цепочке
+  `pkexec` (графический диалог, display-env пробрасывается для Wayland) → терминал (`xdg-terminal-exec`,
+  `gnome-terminal`, `ptyxis`, `kgx`, `konsole`, `xfce4-terminal`, …, `$TERMINAL`) с `sudo/doas` → прямой `sudo`;
+  elevated-копия всегда стартует с `--no-sandbox` (Chromium под root иначе падает), а если спросить пароль
+  негде — приложение показывает ошибку вместо молчания;
   кнопка «Настроить работу без пароля» пишет `/etc/sudoers.d/zapret` (с проверкой `visudo -c`) или правила `doas.conf`
   — аналог `service.sh setup-permissions`
 * **Интерфейсы**: селектор (`any` + `/sys/class/net`) — аналог интерактивного выбора в `run`/`config`

@@ -13,11 +13,17 @@ export type ElevateCmd = '' | 'sudo' | 'doas' | 'pkexec'
 
 let cachedCmd: ElevateCmd | null = null
 
-function hasBinary(name: string): boolean {
+/**
+ * Sync PATH lookup for an executable (used for terminal/polkit detection).
+ * Pure-ish: touches PATH only. Never throws.
+ */
+export function commandExists(name: string): boolean {
+  const clean = String(name ?? '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 64)
+  if (!clean || clean.includes('/') || clean.includes('..')) return false
   const pathEnv = (process.env.PATH ?? '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin').split(':')
   for (const dir of pathEnv) {
     try {
-      const full = path.join(dir, name)
+      const full = path.join(dir, clean)
       fs.accessSync(full, fs.constants.X_OK)
       return true
     } catch {
@@ -25,6 +31,10 @@ function hasBinary(name: string): boolean {
     }
   }
   return false
+}
+
+function hasBinary(name: string): boolean {
+  return commandExists(name)
 }
 
 /** True when the current process is root (EUID 0). */

@@ -1153,7 +1153,7 @@ function Flag(props: { code: Locale }): React.JSX.Element {
 }
 
 function AdminBanner(): React.JSX.Element | null {
-  const { status, t, platform } = useUi()
+  const { status, t, platform, setError } = useUi()
   const [dismissed, setDismissed] = useState(false)
   const [pending, setPending] = useState(false)
   if (!status || status.isAdmin || dismissed) return null
@@ -1162,9 +1162,11 @@ function AdminBanner(): React.JSX.Element | null {
     if (pending) return
     setPending(true)
     try {
-      await window.zapret.relaunchAsAdmin()
-    } catch {
-      // Success quits the app; a failure just re-enables the button.
+      const ok = await window.zapret.relaunchAsAdmin().catch(() => false)
+      // Success quits the app; anything else must be visible (previously a
+      // missing polkit agent/terminal left the button spinning forever).
+      if (!ok) setError(t('dashboard.relaunchFailed'))
+    } finally {
       setPending(false)
     }
   }

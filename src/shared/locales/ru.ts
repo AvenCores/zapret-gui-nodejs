@@ -259,6 +259,7 @@ export const ru = {
   'dashboard.rootYes': 'root ✓',
   'dashboard.rootNo': 'пользователь',
   'dashboard.relaunchRoot': 'Перезапустить с правами root',
+  'dashboard.relaunchFailed': 'Не удалось запросить повышение прав: нет рабочего pkexec, терминала, или пароль не введён. Запустите приложение вручную через sudo либо настройте работу без пароля.',
   'linux.interface': 'Сетевой интерфейс',
   'linux.firewallBackend': 'Бэкенд файрвола',
   'linux.firewallAuto': 'Авто',

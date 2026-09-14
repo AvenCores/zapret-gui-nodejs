@@ -259,6 +259,7 @@ export const en = {
   'dashboard.rootYes': 'root ✓',
   'dashboard.rootNo': 'user',
   'dashboard.relaunchRoot': 'Relaunch as root',
+  'dashboard.relaunchFailed': 'Could not request elevation: no working pkexec, terminal, or the password was not entered. Start the app manually via sudo or set up passwordless operation.',
   'linux.interface': 'Network interface',
   'linux.firewallBackend': 'Firewall backend',
   'linux.firewallAuto': 'Auto',

@@ -301,6 +301,10 @@ function trayCallbacks() {
         if (ok && app.isPackaged) {
           info('app', 'Restarting with administrator rights — closing this instance.')
           setTimeout(() => app.quit(), 500).unref?.()
+        } else if (!ok) {
+          const msg = translate(loadSettings().locale, 'dashboard.relaunchFailed')
+          err('app', `Relaunch as admin failed: ${msg.slice(0, 200)}`)
+          dialog.showErrorBox('Zapret GUI', msg)
         }
       })()
     },

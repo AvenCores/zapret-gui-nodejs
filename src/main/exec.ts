@@ -98,41 +98,7 @@ export async function runElevated(command: string, args: string[], cwd?: string)
 /** Relaunch the whole Electron app elevated (used by the dashboard button). */
 export async function relaunchAppAsAdmin(appPath: string, appArgs: string[]): Promise<boolean> {
   if (process.platform === 'linux') {
-    try {
-      const { detectElevateCmd, isRoot } = await import('./linux/elevate')
-      if (isRoot()) return true
-      const cmd = detectElevateCmd()
-      if (cmd === '') return true
-      // GUI apps need a graphical prompt: prefer pkexec, fall back to a
-      // terminal-wrapped sudo (best-effort across desktop environments).
-      if (cmd === 'pkexec') {
-        const r = await run('pkexec', [appPath, ...appArgs], { timeoutMs: 60000 })
-        return r.code === 0
-      }
-      const terminal =
-        process.env.TERMINAL ??
-        (await hasLinuxBinary('x-terminal-emulator')
-          ? 'x-terminal-emulator'
-          : (await hasLinuxBinary('gnome-terminal'))
-            ? 'gnome-terminal'
-            : (await hasLinuxBinary('konsole'))
-              ? 'konsole'
-              : null)
-      if (terminal) {
-        const quoted: string = [appPath, ...appArgs].map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(' ')
-        const r =
-          terminal === 'gnome-terminal'
-            ? await run(terminal, ['--', 'sudo', appPath, ...appArgs], { timeoutMs: 60000 })
-            : terminal === 'konsole'
-              ? await run(terminal, ['-e', `sudo ${quoted}`], { timeoutMs: 60000 })
-              : await run(terminal, ['-e', `sudo ${quoted}`], { timeoutMs: 60000 })
-        return r.code === 0
-      }
-      const r = await run('sudo', [appPath, ...appArgs], { timeoutMs: 60000 })
-      return r.code === 0
-    } catch {
-      return false
-    }
+    return relaunchAppAsRootLinux(appPath, appArgs)
   }
   const ps =
     `Start-Process -FilePath '${appPath.replace(/'/g, "''")}'` +
@@ -142,9 +108,145 @@ export async function relaunchAppAsAdmin(appPath: string, appArgs: string[]): Pr
   return r.code === 0
 }
 
-async function hasLinuxBinary(name: string): Promise<boolean> {
-  const r = await run('sh', ['-c', `command -v ${name} >/dev/null 2>&1`], { timeoutMs: 5000 })
-  return r.code === 0
+/**
+ * Chromium refuses to run as root with the sandbox on — the elevated copy
+ * would crash instantly without this flag. Pure.
+ */
+export function ensureNoSandbox(args: string[]): string[] {
+  return args.includes('--no-sandbox') ? [...args] : [...args, '--no-sandbox']
+}
+
+/**
+ * Display env to forward through `pkexec env ...` (pkexec scrubs everything
+ * else, and on Wayland even DISPLAY may be missing — forward what exists).
+ * Pure — covered by unit tests.
+ */
+export function pickDisplayEnv(env: Record<string, string | undefined>): string[] {
+  const out: string[] = []
+  for (const k of ['DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'XAUTHORITY', 'XDG_SESSION_TYPE']) {
+    const v = env[k]
+    if (typeof v === 'string' && v !== '') out.push(`${k}=${v}`)
+  }
+  return out
+}
+
+export type GuiTerminalMode = 'dd' | 'e' | 'direct'
+
+export interface GuiTerminal {
+  cmd: string
+  mode: GuiTerminalMode
+}
+
+/**
+ * Find a GUI terminal for a password prompt. Order: $TERMINAL override,
+ * freedesktop dispatcher, GNOME (Terminal/Console/Ptyxis-era), KDE,
+ * Xfce/MATE/LXDE, GPU terminals, then X11 fallbacks. Pure (injectable
+ * lookup) — covered by unit tests.
+ */
+export function findGuiTerminal(has: (name: string) => boolean): GuiTerminal | null {
+  const custom = (process.env.TERMINAL ?? '').trim().split(/\s+/)[0] ?? ''
+  if (custom !== '' && has(custom)) return { cmd: custom, mode: 'e' }
+  const list: Array<[string, GuiTerminalMode]> = [
+    ['xdg-terminal-exec', 'direct'],
+    ['gnome-terminal', 'dd'],
+    ['ptyxis', 'dd'],
+    ['kgx', 'e'],
+    ['konsole', 'e'],
+    ['xfce4-terminal', 'e'],
+    ['mate-terminal', 'e'],
+    ['lxterminal', 'e'],
+    ['alacritty', 'e'],
+    ['kitty', 'direct'],
+    ['xterm', 'e'],
+    ['uxterm', 'e']
+  ]
+  for (const [name, mode] of list) {
+    if (has(name)) return { cmd: name, mode }
+  }
+  return null
+}
+
+/**
+ * Build the terminal argv that runs `elevCmd <target...>` inside it.
+ * `dd` terminals take `-- cmd...`, `e` terminals take `-e cmd...`,
+ * `direct` ones (kitty, xdg-terminal-exec) take the command as-is. Pure.
+ */
+export function buildTerminalArgs(spec: GuiTerminal, elevCmd: string, target: string[]): string[] {
+  if (spec.mode === 'dd') return ['--', elevCmd, ...target]
+  if (spec.mode === 'e') return ['-e', elevCmd, ...target]
+  return [elevCmd, ...target]
+}
+
+/**
+ * Linux relaunch chain (GUI-first):
+ * 1. `pkexec` graphical dialog (with display env forwarded for Wayland),
+ * 2. a terminal emulator running `sudo/doas` (detached — the emulator owns
+ *    the elevated app, so our timeouts can never kill it),
+ * 3. direct `sudo/doas` (last resort, works only with NOPASSWD or a tty).
+ * Returns false instead of prompting nowhere — the UI surfaces that.
+ */
+async function relaunchAppAsRootLinux(appPath: string, appArgs: string[]): Promise<boolean> {
+  try {
+    const { detectElevateCmd, isRoot, commandExists } = await import('./linux/elevate')
+    if (isRoot()) return true
+    let elev: string
+    try {
+      elev = detectElevateCmd()
+    } catch {
+      return false
+    }
+    if (elev === '') return true
+    const target = [appPath, ...ensureNoSandbox(appArgs)]
+
+    // 1. Graphical polkit prompt (GNOME/KDE agents, no terminal needed).
+    if (commandExists('pkexec')) {
+      const r = await run(
+        'pkexec',
+        ['/usr/bin/env', ...pickDisplayEnv(process.env), ...target],
+        { timeoutMs: 300000 }
+      )
+      if (r.code === 0) return true
+      // Dismissed / no agent / Wayland env issue — keep trying below.
+    }
+
+    // sudo/doas for the terminal and direct fallbacks.
+    const sudoish = elev === 'sudo' || elev === 'doas' ? elev : commandExists('sudo') ? 'sudo' : commandExists('doas') ? 'doas' : null
+
+    // 2. Terminal emulator (detached: we only check it *started*).
+    if (sudoish) {
+      const term = findGuiTerminal(commandExists)
+      if (term) {
+        const started = await new Promise<boolean>((resolve) => {
+          let child: ReturnType<typeof spawn>
+          try {
+            child = spawn(term.cmd, buildTerminalArgs(term, sudoish, target), {
+              detached: true,
+              stdio: 'ignore'
+            })
+          } catch {
+            resolve(false)
+            return
+          }
+          child.on('error', () => resolve(false))
+          // Emulators that daemonize exit fast; blocking ones (xterm -e)
+          // stay alive while the user types the password — either way a
+          // quick quiet window means "launched".
+          setTimeout(() => resolve(true), 2500).unref?.()
+          child.unref?.()
+        })
+        if (started) return true
+      }
+    }
+
+    // 3. Last resort: piped sudo (succeeds only with NOPASSWD).
+    if (sudoish) {
+      const r = await run(sudoish, target, { timeoutMs: 60000 })
+      return r.code === 0
+    }
+    return false
+  } catch {
+    return false
+  }
 }
 
 /** Spawn a long-lived child (foreground winws/nfqws test / test script). */

@@ -304,4 +304,5 @@ export const cs = {
   'engine.version': 'Engine version',
   'engine.download': 'Update engine',
   'engine.missing': '{engine} not found — update the engine.',
+  'dashboard.relaunchFailed': 'Could not request elevation: no working pkexec, terminal, or the password was not entered. Start the app manually via sudo or set up passwordless operation.',
 } as const
