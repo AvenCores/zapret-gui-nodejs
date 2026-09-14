@@ -4,7 +4,6 @@ import { useUi, type Page } from '../store'
 import { Btn } from './ui'
 import { SUPPORTED_LOCALES, type Locale } from '../../shared/i18n'
 import { URLS } from '../../shared/constants'
-import type { UpdateInfo } from '../../shared/types'
 import appIconUrl from '../assets/app-icon.png'
 
 const NAV: Array<{ id: Page }> = [
@@ -12,8 +11,6 @@ const NAV: Array<{ id: Page }> = [
   { id: 'strategies' },
   { id: 'lists' },
   { id: 'diagnostics' },
-  { id: 'logs' },
-  { id: 'updates' },
   { id: 'settings' }
 ]
 
@@ -109,24 +106,7 @@ const SBER_CARD_RAW = '2202205014644675'
 function AboutModal(props: { onClose: () => void }): React.JSX.Element {
   const { onClose } = props
   const { t } = useUi()
-  const [info, setInfo] = useState<UpdateInfo | null>(null)
-  const [versionFailed, setVersionFailed] = useState(false)
   const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    let alive = true
-    window.zapret
-      .checkUpdates()
-      .then((v) => {
-        if (alive) setInfo(v)
-      })
-      .catch(() => {
-        if (alive) setVersionFailed(true)
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -187,34 +167,6 @@ function AboutModal(props: { onClose: () => void }): React.JSX.Element {
         </div>
 
         <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{t('about.description')}</p>
-
-        {!versionFailed ? (
-          <div className="mt-3 min-h-[44px] space-y-1 text-sm">
-            {info ? (
-              <>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500 dark:text-slate-400">{t('updates.app')}</span>
-                  <span className="font-medium">{info.appVersion}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500 dark:text-slate-400">{t('updates.current')}</span>
-                  <span className="font-medium">{info.localVersion}</span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="h-4 w-28 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
-                  <span className="h-4 w-14 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="h-4 w-28 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
-                  <span className="h-4 w-14 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
-                </div>
-              </>
-            )}
-          </div>
-        ) : null}
 
         <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           {t('about.links')}

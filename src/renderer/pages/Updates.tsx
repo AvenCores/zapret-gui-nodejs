@@ -1,10 +1,10 @@
-/** Updates: zapret version check, ipset/hosts/strategies refresh. */
+/** Updates section (embedded in Settings): version check, ipset/strategies refresh. */
 import React, { useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, ProgressBar, Row, Spinner } from '../components/ui'
 import type { DownloadProgress, UpdateInfo } from '../../shared/types'
 
-export default function Updates(): React.JSX.Element {
+export default function UpdatesSection(): React.JSX.Element {
   const { t, setError, status } = useUi()
   const [info, setInfo] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState<boolean>(false)
@@ -28,9 +28,7 @@ export default function Updates(): React.JSX.Element {
   const spin = (key: string): React.JSX.Element | null => (busyKey === key ? <Spinner /> : null)
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <h1 className="text-xl font-semibold">{t('nav.updates')}</h1>
-
+    <div className="space-y-4">
       <Card title={`${t('updates.current')} / ${t('updates.remote')}`}>
         <Row label={t('updates.current')}>
           <Badge tone="gray">{info?.localVersion ?? '…'}</Badge>

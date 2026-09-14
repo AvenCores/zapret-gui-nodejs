@@ -5,9 +5,7 @@ import Dashboard from './pages/Dashboard'
 import Strategies from './pages/Strategies'
 import Settings from './pages/Settings'
 import Lists from './pages/Lists'
-import Updates from './pages/Updates'
 import Diagnostics from './pages/Diagnostics'
-import Logs from './pages/Logs'
 import { useUi, syncThemeClass } from './store'
 
 export default function App(): React.JSX.Element {
@@ -54,9 +52,7 @@ export default function App(): React.JSX.Element {
         {page === 'strategies' && <Strategies />}
         {page === 'settings' && <Settings />}
         {page === 'lists' && <Lists />}
-        {page === 'updates' && <Updates />}
         {page === 'diagnostics' && <Diagnostics />}
-        {page === 'logs' && <Logs />}
       </div>
     </Layout>
   )

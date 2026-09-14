@@ -2,6 +2,8 @@
 import React, { useEffect, useState } from 'react'
 import { useUi } from '../store'
 import { Card, Row, Spinner } from '../components/ui'
+import UpdatesSection from './Updates'
+import LogsSection from './Logs'
 
 export default function Settings(): React.JSX.Element {
   const { t, settings, applySettings, setError } = useUi()
@@ -81,16 +83,23 @@ export default function Settings(): React.JSX.Element {
             onChange={(v) => void applySettings({ trayTuningMenu: v })}
           />
         </Row>
-        <Row label={t('settings.trayQuickSettings')}>
-          <Toggle
-            value={settings?.trayQuickSettings ?? true}
-            onChange={(v) => void applySettings({ trayQuickSettings: v })}
-          />
-        </Row>
-      </Card>
-    </div>
-  )
-}
+          <Row label={t('settings.trayQuickSettings')}>
+            <Toggle
+              value={settings?.trayQuickSettings ?? true}
+              onChange={(v) => void applySettings({ trayQuickSettings: v })}
+            />
+          </Row>
+        </Card>
+
+        <h2 className="pt-2 text-xl font-semibold">{t('nav.updates')}</h2>
+        <UpdatesSection />
+
+        <div className="pt-2">
+          <LogsSection />
+        </div>
+      </div>
+    )
+  }
 
 function Toggle(props: { value: boolean; onChange: (v: boolean) => void }): React.JSX.Element {
   return (

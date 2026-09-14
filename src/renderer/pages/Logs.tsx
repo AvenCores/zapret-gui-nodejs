@@ -1,4 +1,4 @@
-/** Logs page: live stream + filter + export. */
+/** Logs section (embedded in Settings): live stream + filter + export. */
 import React, { useState } from 'react'
 import { useUi } from '../store'
 import { Btn, Card } from '../components/ui'
@@ -9,7 +9,7 @@ const levelColor: Record<string, string> = {
   error: 'text-red-600 dark:text-red-300'
 }
 
-export default function Logs(): React.JSX.Element {
+export default function LogsSection(): React.JSX.Element {
   const { t, logs, clearLogs } = useUi()
   const [filter, setFilter] = useState<string>('')
 
@@ -21,9 +21,9 @@ export default function Logs(): React.JSX.Element {
   )
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">{t('logs.title')}</h1>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">{t('nav.logs')}</h2>
         <div className="flex items-center gap-2">
           <Btn variant="secondary" onClick={clearLogs} disabled={logs.length === 0}>
             {t('logs.clear')}
