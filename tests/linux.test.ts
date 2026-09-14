@@ -23,7 +23,7 @@ import { detectLinuxOwnership } from '../src/main/linux/service'
 import { buildRunnerScript } from '../src/main/linux/service'
 import { isLinuxPlatform, isWindowsPlatform, dpiEngineBinary } from '../src/main/linux/platform'
 
-const EXAMPLE_BAT = path.join(process.cwd(), 'zapret-discord-youtube-linux-master', 'custom-strategies', 'general_nix1.bat')
+const EXAMPLE_BAT = path.join(process.cwd(), 'bundled-assets', 'bat', 'general_nix1.bat')
 const GENERATED_JSON = path.join(process.cwd(), 'bundled-assets', 'strategies', 'general_nix1.json')
 
 describe('platform helpers', () => {
@@ -87,7 +87,7 @@ describe('game filter substitution (common.sh parity)', () => {
   })
 })
 
-describe('parseBatForLinux (general_nix1.bat from the example)', () => {
+describe('parseBatForLinux (bundled general_nix1.bat)', () => {
   it('extracts wf ports and filter blocks', () => {
     const content = fs.readFileSync(EXAMPLE_BAT, 'utf8')
     const parsed = parseBatForLinux(content, { useGameFilterTcp: false, useGameFilterUdp: false })

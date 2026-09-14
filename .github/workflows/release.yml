@@ -29,7 +29,7 @@ jobs:
       - name: Cache Electron toolchain
         # See build.yml: warm cache + retries survive transient 5xx while
         # electron-builder fetches its NSIS/winCodeSign toolchain.
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -101,7 +101,7 @@ jobs:
         run: npm ci
 
       - name: Cache Electron toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/electron

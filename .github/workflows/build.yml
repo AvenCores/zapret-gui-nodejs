@@ -35,7 +35,7 @@ jobs:
         # electron-builder downloads Electron + NSIS/winCodeSign tooling from
         # GitHub releases on every cold run; a warm cache turns a transient
         # 504 from that download step into a non-issue.
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -102,7 +102,7 @@ jobs:
         run: npm ci
 
       - name: Cache Electron toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cache/electron
