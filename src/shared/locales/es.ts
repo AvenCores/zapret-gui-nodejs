@@ -245,4 +245,8 @@ export const es = {
   'tool.conflictRemovingDriver': 'Removing {name}…',
   'tool.conflictsRemoved': 'Removed: {list}',
   'tool.conflictsNone': 'No conflicting services found',
+  'action.select': 'Select',
+  'strategies.selected': 'selected',
+  'strategies.pendingText': '"{chosen}" is selected, but "{active}" is running. Apply the strategy or cancel the selection.',
+  'strategies.cancelSelection': 'Cancel selection',
 } as const

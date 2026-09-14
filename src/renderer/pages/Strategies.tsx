@@ -14,7 +14,7 @@ function splitName(name: string): { base: string; tag: string | null } {
 }
 
 export default function Strategies(): React.JSX.Element {
-  const { t, strategies, refreshStrategies, refreshStatus, busy, setError, status, settings } = useUi()
+  const { t, strategies, refreshStrategies, refreshStatus, busy, setError, status, settings, applySettings } = useUi()
   const [selected, setSelected] = useState<string>('')
   const [testing, setTesting] = useState<string | null>(null)
   const [testOut, setTestOut] = useState<string>('')
@@ -47,8 +47,15 @@ export default function Strategies(): React.JSX.Element {
   const listRef = useRef<HTMLDivElement>(null)
 
   const flatIds = useMemo(() => filtered.map((s) => s.id), [filtered])
-  const isActive = (s: Strategy): boolean =>
-    status?.activeStrategy === s.name || settings?.activeStrategyId === s.id
+  /** Strategy installed as the Windows service (registry name). */
+  const installedId = strategies.find((s) => s.name === (status?.activeStrategy ?? ''))?.id ?? null
+  /** Strategy picked via "Select" (persisted, does not touch the service). */
+  const chosenId = settings?.activeStrategyId ?? null
+  const chosen = strategies.find((s) => s.id === chosenId) ?? null
+  const installed = strategies.find((s) => s.id === installedId) ?? null
+  const pending = chosen !== null && chosen.id !== installedId
+  const isInstalled = (s: Strategy): boolean => s.id === installedId
+  const isChosen = (s: Strategy): boolean => s.id === chosenId
 
   useEffect(() => {
     if (flatIds.length === 0) {
@@ -95,7 +102,8 @@ export default function Strategies(): React.JSX.Element {
   function renderRow(s: Strategy): React.JSX.Element {
     const sel = s.id === selected
     const hl = s.id === highlightedId
-    const active = isActive(s)
+    const installed = isInstalled(s)
+    const chosen = isChosen(s) && !installed
     const { base, tag } = splitName(s.name)
     return (
       <button
@@ -108,10 +116,7 @@ export default function Strategies(): React.JSX.Element {
         aria-selected={sel}
         title={s.name}
         onClick={() => setSelected(s.id)}
-        onDoubleClick={() => {
-          setSelected(s.id)
-          void apply(s.id)
-        }}
+        onDoubleClick={() => void select(s.id)}
         onMouseEnter={() => setHighlightedId(s.id)}
         onFocus={() => setHighlightedId(s.id)}
         className={[
@@ -126,7 +131,13 @@ export default function Strategies(): React.JSX.Element {
         <span
           className={[
             'h-1.5 w-1.5 shrink-0 rounded-full transition-colors',
-            sel ? 'bg-white' : active ? 'bg-emerald-400' : 'bg-slate-400/60 group-hover:bg-slate-400'
+            sel
+              ? 'bg-white'
+              : installed
+                ? 'bg-emerald-400'
+                : chosen
+                  ? 'bg-sky-400'
+                  : 'bg-slate-400/60 group-hover:bg-slate-400'
           ].join(' ')}
         />
         <span className="min-w-0 flex-1 truncate">
@@ -144,7 +155,7 @@ export default function Strategies(): React.JSX.Element {
             </span>
           ) : null}
         </span>
-        {active ? (
+        {installed ? (
           <span
             className={[
               'shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide',
@@ -152,6 +163,15 @@ export default function Strategies(): React.JSX.Element {
             ].join(' ')}
           >
             {t('strategies.active')}
+          </span>
+        ) : chosen ? (
+          <span
+            className={[
+              'shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide',
+              sel ? 'bg-white/20 text-white' : 'bg-sky-500/15 text-sky-600 dark:text-sky-300'
+            ].join(' ')}
+          >
+            {t('strategies.selected')}
           </span>
         ) : null}
         {sel ? (
@@ -195,6 +215,28 @@ export default function Strategies(): React.JSX.Element {
     try {
       await window.zapret.installStrategy(target.id)
       await refreshStatus()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** Pick a strategy without touching the Windows service. */
+  async function select(id?: string): Promise<void> {
+    const target = strategies.find((s) => s.id === (id ?? selected)) ?? current
+    if (!target || target.id === chosenId) return
+    try {
+      await applySettings({ activeStrategyId: target.id })
+      setSelected(target.id)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** Drop the pending pick and return to the installed strategy. */
+  async function cancelSelection(): Promise<void> {
+    try {
+      await applySettings({ activeStrategyId: installedId })
+      if (installedId) setSelected(installedId)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -364,18 +406,36 @@ export default function Strategies(): React.JSX.Element {
                 {m}
               </Badge>
             ))}
-            {(status?.activeStrategy === current.name || settings?.activeStrategyId === current.id) && (
+            {isInstalled(current) ? (
               <Badge tone="green">{t('strategies.active')}</Badge>
-            )}
+            ) : isChosen(current) ? (
+              <Badge tone="blue">{t('strategies.selected')}</Badge>
+            ) : null}
             {current.origin === 'imported' ? (
               <Badge tone="yellow">{t('strategies.imported')}</Badge>
             ) : null}
           </div>
           <Code>{current.rawArgs}</Code>
           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t('strategies.applyHint')}</p>
+          {pending && chosen ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+              <span className="flex-1 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+                ⚠{' '}
+                {t('strategies.pendingText')
+                  .replace('{chosen}', chosen.name)
+                  .replace('{active}', installed?.name ?? t('dashboard.none'))}
+              </span>
+              <Btn variant="secondary" onClick={() => void apply(chosen.id)} disabled={!status?.isAdmin}>
+                {t('action.apply')}
+              </Btn>
+              <Btn variant="ghost" onClick={() => void cancelSelection()}>
+                {t('strategies.cancelSelection')}
+              </Btn>
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Btn onClick={() => void apply()} disabled={!status?.isAdmin}>
-              {t('action.apply')}
+            <Btn onClick={() => void select()} disabled={isChosen(current)}>
+              {t('action.select')}
             </Btn>
             <Btn variant="secondary" onClick={() => void toggleTest()} disabled={!status?.isAdmin}>
               {testing ? t('strategies.testStop') : t('action.test')}
