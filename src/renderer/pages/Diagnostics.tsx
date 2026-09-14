@@ -250,19 +250,27 @@ function ConfigTesterCard(): React.JSX.Element {
         <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
           {t('diag.selectConfigs')} ({sel.size}/{strategies.length})
         </span>
-        <span className="flex gap-1">
+        <span className="flex items-center gap-1.5">
           <button
             disabled={running}
             onClick={() => setSelected(new Set(strategies.map((s) => s.id)))}
-            className="rounded px-2 py-0.5 text-[11px] font-medium text-sky-600 hover:underline disabled:opacity-40 dark:text-sky-400"
+            title={t('diag.selectAll')}
+            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-sky-500/40 hover:bg-sky-500/10 hover:text-sky-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600/60 dark:bg-slate-700/50 dark:text-slate-300 dark:hover:border-sky-400/40 dark:hover:bg-sky-400/10 dark:hover:text-sky-300"
           >
+            <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current stroke-2" aria-hidden="true">
+              <path d="M2.5 8.5 6 12 13.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             {t('diag.selectAll')}
           </button>
           <button
             disabled={running}
             onClick={() => setSelected(new Set())}
-            className="rounded px-2 py-0.5 text-[11px] font-medium text-sky-600 hover:underline disabled:opacity-40 dark:text-sky-400"
+            title={t('diag.selectNone')}
+            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600/60 dark:bg-slate-700/50 dark:text-slate-300 dark:hover:border-red-400/40 dark:hover:bg-red-400/10 dark:hover:text-red-300"
           >
+            <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current stroke-2" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+            </svg>
             {t('diag.selectNone')}
           </button>
         </span>
