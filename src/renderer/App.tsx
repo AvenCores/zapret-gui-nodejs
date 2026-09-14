@@ -7,7 +7,7 @@ import Settings from './pages/Settings'
 import Updates from './pages/Updates'
 import Diagnostics from './pages/Diagnostics'
 import Logs from './pages/Logs'
-import { useUi } from './store'
+import { useUi, syncThemeClass } from './store'
 
 export default function App(): React.JSX.Element {
   const { page, init, theme, t } = useUi()
@@ -19,7 +19,7 @@ export default function App(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark')
+    syncThemeClass(theme)
   }, [theme])
 
   if (!ready) {

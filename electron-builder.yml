@@ -21,6 +21,7 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
   installerIcon: bundled-assets/icon.ico
   installerHeaderIcon: bundled-assets/icon.ico
   uninstallerIcon: bundled-assets/icon.ico

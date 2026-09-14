@@ -100,6 +100,7 @@ export const ar = {
   'settings.theme': 'السمة',
   'settings.themeDark': 'داكنة',
   'settings.themeLight': 'فاتحة',
+  'settings.themeAuto': 'تلقائي',
   'updates.current': 'إصدار بيانات zapret',
   'updates.remote': 'أحدث إصدار',
   'updates.app': 'إصدار التطبيق',

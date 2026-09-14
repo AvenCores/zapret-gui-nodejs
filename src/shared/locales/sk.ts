@@ -100,6 +100,7 @@ export const sk = {
   'settings.theme': 'Motív',
   'settings.themeDark': 'Tmavý',
   'settings.themeLight': 'Svetlý',
+  'settings.themeAuto': 'Automaticky',
   'updates.current': 'Verzia dát zapret',
   'updates.remote': 'Najnovšia verzia',
   'updates.app': 'Verzia aplikácie',

@@ -100,6 +100,7 @@ export const id = {
   'settings.theme': 'Tema',
   'settings.themeDark': 'Gelap',
   'settings.themeLight': 'Terang',
+  'settings.themeAuto': 'Otomatis',
   'updates.current': 'Versi data zapret',
   'updates.remote': 'Versi terbaru',
   'updates.app': 'Versi aplikasi',

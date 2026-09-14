@@ -100,6 +100,7 @@ export const ro = {
   'settings.theme': 'Temă',
   'settings.themeDark': 'Întunecată',
   'settings.themeLight': 'Luminoasă',
+  'settings.themeAuto': 'Automat',
   'updates.current': 'Versiunea datelor zapret',
   'updates.remote': 'Ultima versiune',
   'updates.app': 'Versiunea aplicației',

@@ -100,6 +100,7 @@ export const ja = {
   'settings.theme': 'テーマ',
   'settings.themeDark': 'ダーク',
   'settings.themeLight': 'ライト',
+  'settings.themeAuto': '自動',
   'updates.current': 'zapret データバージョン',
   'updates.remote': '最新バージョン',
   'updates.app': 'アプリバージョン',

@@ -100,6 +100,7 @@ export const kk = {
   'settings.theme': 'Тақырып',
   'settings.themeDark': 'Қараңғы',
   'settings.themeLight': 'Ашық',
+  'settings.themeAuto': 'Авто',
   'updates.current': 'zapret деректер нұсқасы',
   'updates.remote': 'Өзекті нұсқа',
   'updates.app': 'Қолданба нұсқасы',

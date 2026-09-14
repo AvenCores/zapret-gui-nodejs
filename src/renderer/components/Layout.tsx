@@ -74,6 +74,7 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
               value={settings?.theme ?? 'dark'}
               onChange={(v) => void applySettings({ theme: v })}
               options={[
+                { value: 'auto', label: t('settings.themeAuto'), icon: <ContrastIcon /> },
                 { value: 'dark', label: t('settings.themeDark'), icon: <MoonIcon /> },
                 { value: 'light', label: t('settings.themeLight'), icon: <SunIcon /> }
               ]}

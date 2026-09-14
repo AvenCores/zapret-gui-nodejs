@@ -100,6 +100,7 @@ export const hi = {
   'settings.theme': 'थीम',
   'settings.themeDark': 'गहरा',
   'settings.themeLight': 'हल्का',
+  'settings.themeAuto': 'ऑटो',
   'updates.current': 'zapret डेटा संस्करण',
   'updates.remote': 'नवीनतम संस्करण',
   'updates.app': 'ऐप संस्करण',

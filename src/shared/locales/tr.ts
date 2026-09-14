@@ -100,6 +100,7 @@ export const tr = {
   'settings.theme': 'Tema',
   'settings.themeDark': 'Koyu',
   'settings.themeLight': 'Açık',
+  'settings.themeAuto': 'Otomatik',
   'updates.current': 'zapret veri sürümü',
   'updates.remote': 'Güncel sürüm',
   'updates.app': 'Uygulama sürümü',

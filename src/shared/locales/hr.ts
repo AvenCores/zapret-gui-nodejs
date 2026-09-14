@@ -100,6 +100,7 @@ export const hr = {
   'settings.theme': 'Tema',
   'settings.themeDark': 'Tamna',
   'settings.themeLight': 'Svijetla',
+  'settings.themeAuto': 'Automatski',
   'updates.current': 'Verzija zapret podataka',
   'updates.remote': 'Najnovija verzija',
   'updates.app': 'Verzija aplikacije',

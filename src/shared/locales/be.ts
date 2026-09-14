@@ -100,6 +100,7 @@ export const be = {
   'settings.theme': 'Тэма',
   'settings.themeDark': 'Цёмная',
   'settings.themeLight': 'Светлая',
+  'settings.themeAuto': 'Аўта',
   'updates.current': 'Версія даных zapret',
   'updates.remote': 'Актуальная версія',
   'updates.app': 'Версія праграмы',

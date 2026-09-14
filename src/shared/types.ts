@@ -16,6 +16,9 @@ export type ServiceState =
 /** High-level zapret status shown on the dashboard. */
 export type ZapretStatus = 'running' | 'stopped' | 'not-installed' | 'unknown'
 
+/** UI theme: fixed dark/light or follow the OS color scheme. */
+export type AppTheme = 'dark' | 'light' | 'auto'
+
 /** Game filter modes (mirrors service.bat `game_filter.enabled` flag file). */
 export type GameFilterMode = 'disabled' | 'all' | 'tcp' | 'udp'
 
@@ -117,7 +120,7 @@ export interface LogLine {
 /** App settings persisted to disk (`%APPDATA%/zapret-gui/settings.json`). */
 export interface AppSettings {
   locale: Locale
-  theme: 'dark' | 'light'
+  theme: AppTheme
   autoLaunch: boolean
   startMinimizedToTray: boolean
   minimizeToTrayOnClose: boolean

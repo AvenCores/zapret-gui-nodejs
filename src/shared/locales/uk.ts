@@ -100,6 +100,7 @@ export const uk = {
   'settings.theme': 'Тема',
   'settings.themeDark': 'Темна',
   'settings.themeLight': 'Світла',
+  'settings.themeAuto': 'Авто',
   'updates.current': 'Версія даних zapret',
   'updates.remote': 'Актуальна версія',
   'updates.app': 'Версія застосунку',

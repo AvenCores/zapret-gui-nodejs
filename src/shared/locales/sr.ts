@@ -100,6 +100,7 @@ export const sr = {
   'settings.theme': 'Tema',
   'settings.themeDark': 'Tamna',
   'settings.themeLight': 'Svetla',
+  'settings.themeAuto': 'Automatski',
   'updates.current': 'Verzija zapret podataka',
   'updates.remote': 'Najnovija verzija',
   'updates.app': 'Verzija aplikacije',

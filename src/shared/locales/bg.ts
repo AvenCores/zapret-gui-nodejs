@@ -100,6 +100,7 @@ export const bg = {
   'settings.theme': 'Тема',
   'settings.themeDark': 'Тъмна',
   'settings.themeLight': 'Светла',
+  'settings.themeAuto': 'Автоматично',
   'updates.current': 'Версия на данните на zapret',
   'updates.remote': 'Актуална версия',
   'updates.app': 'Версия на приложението',

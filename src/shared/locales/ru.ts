@@ -100,6 +100,7 @@ export const ru = {
   'settings.theme': 'Тема',
   'settings.themeDark': 'Тёмная',
   'settings.themeLight': 'Светлая',
+  'settings.themeAuto': 'Авто',
   'updates.current': 'Версия данных zapret',
   'updates.remote': 'Актуальная версия',
   'updates.app': 'Версия приложения',

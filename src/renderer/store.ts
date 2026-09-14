@@ -4,16 +4,41 @@
  * @module renderer/store
  */
 import { create } from 'zustand'
-import type { AppSettings, LogLine, StatusSnapshot, Strategy } from '../shared/types'
+import type { AppSettings, AppTheme, LogLine, StatusSnapshot, Strategy } from '../shared/types'
 import { translate, type I18nKey, type Locale } from '../shared/i18n'
 
 export type Page = 'dashboard' | 'strategies' | 'settings' | 'updates' | 'diagnostics' | 'logs'
+
+/** Resolve a theme setting to a concrete dark flag (auto = OS color scheme). */
+export function isDarkTheme(theme: AppTheme): boolean {
+  if (theme === 'dark') return true
+  if (theme === 'light') return false
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+let systemThemeQuery: MediaQueryList | null = null
+
+/**
+ * Apply a theme setting to `<html class="dark">`. In `auto` mode a listener
+ * keeps the UI in sync when the OS color scheme changes at runtime.
+ */
+export function syncThemeClass(theme: AppTheme): void {
+  document.documentElement.classList.toggle('dark', isDarkTheme(theme))
+  if (systemThemeQuery) {
+    systemThemeQuery.onchange = null
+    systemThemeQuery = null
+  }
+  if (theme === 'auto') {
+    systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    systemThemeQuery.onchange = (e) => document.documentElement.classList.toggle('dark', e.matches)
+  }
+}
 
 interface UiState {
   page: Page
   setPage: (p: Page) => void
   locale: Locale
-  theme: 'dark' | 'light'
+  theme: AppTheme
   t: (key: I18nKey) => string
   settings: AppSettings | null
   status: StatusSnapshot | null
@@ -62,7 +87,7 @@ export const useUi = create<UiState>((set, get) => ({
     const settings = await call('init', () => window.zapret.getSettings(), set, get)
     if (settings) {
       set({ settings, locale: settings.locale, theme: settings.theme })
-      document.documentElement.classList.toggle('dark', settings.theme === 'dark')
+      syncThemeClass(settings.theme)
     }
     window.zapret.onLog((line) => get().pushLog(line))
     await get().refreshStatus()
@@ -92,7 +117,7 @@ export const useUi = create<UiState>((set, get) => ({
     const settings = await call('settings', () => window.zapret.saveSettings(patch), set, get)
     if (settings) {
       set({ settings, locale: settings.locale, theme: settings.theme })
-      document.documentElement.classList.toggle('dark', settings.theme === 'dark')
+      syncThemeClass(settings.theme)
       if (settings.theme !== prevTheme) {
         // Briefly enable surface recolor transitions (see .theme-anim in index.css).
         document.documentElement.classList.add('theme-anim')

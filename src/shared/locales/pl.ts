@@ -100,6 +100,7 @@ export const pl = {
   'settings.theme': 'Motyw',
   'settings.themeDark': 'Ciemny',
   'settings.themeLight': 'Jasny',
+  'settings.themeAuto': 'Automatycznie',
   'updates.current': 'Wersja danych zapret',
   'updates.remote': 'Najnowsza wersja',
   'updates.app': 'Wersja aplikacji',

@@ -100,6 +100,7 @@ export const ko = {
   'settings.theme': '테마',
   'settings.themeDark': '다크',
   'settings.themeLight': '라이트',
+  'settings.themeAuto': '자동',
   'updates.current': 'zapret 데이터 버전',
   'updates.remote': '최신 버전',
   'updates.app': '앱 버전',

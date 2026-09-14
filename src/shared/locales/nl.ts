@@ -100,6 +100,7 @@ export const nl = {
   'settings.theme': 'Thema',
   'settings.themeDark': 'Donker',
   'settings.themeLight': 'Licht',
+  'settings.themeAuto': 'Automatisch',
   'updates.current': 'zapret-dataversie',
   'updates.remote': 'Nieuwste versie',
   'updates.app': 'App-versie',

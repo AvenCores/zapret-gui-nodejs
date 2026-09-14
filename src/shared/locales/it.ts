@@ -100,6 +100,7 @@ export const it = {
   'settings.theme': 'Tema',
   'settings.themeDark': 'Scuro',
   'settings.themeLight': 'Chiaro',
+  'settings.themeAuto': 'Automatico',
   'updates.current': 'Versione dati zapret',
   'updates.remote': 'Versione attuale',
   'updates.app': 'Versione app',

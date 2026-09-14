@@ -100,6 +100,7 @@ export const hu = {
   'settings.theme': 'Téma',
   'settings.themeDark': 'Sötét',
   'settings.themeLight': 'Világos',
+  'settings.themeAuto': 'Automatikus',
   'updates.current': 'zapret adatverzió',
   'updates.remote': 'Legújabb verzió',
   'updates.app': 'Alkalmazásverzió',

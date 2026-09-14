@@ -100,6 +100,7 @@ export const zh = {
   'settings.theme': '主题',
   'settings.themeDark': '深色',
   'settings.themeLight': '浅色',
+  'settings.themeAuto': '自动',
   'updates.current': 'zapret 数据版本',
   'updates.remote': '最新版本',
   'updates.app': '应用版本',

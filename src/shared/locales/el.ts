@@ -100,6 +100,7 @@ export const el = {
   'settings.theme': 'Θέμα',
   'settings.themeDark': 'Σκοτεινό',
   'settings.themeLight': 'Φωτεινό',
+  'settings.themeAuto': 'Αυτόματο',
   'updates.current': 'Έκδοση δεδομένων zapret',
   'updates.remote': 'Τρέχουσα έκδοση',
   'updates.app': 'Έκδοση εφαρμογής',

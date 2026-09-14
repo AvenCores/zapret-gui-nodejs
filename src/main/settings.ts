@@ -3,10 +3,11 @@
  * @module main/settings
  */
 import fs from 'node:fs'
-import { app, nativeTheme } from 'electron'
+import path from 'node:path'
+import { app } from 'electron'
 import { getSettingsPath } from './paths'
-import type { AppSettings } from '../shared/types'
-import { normalizeLocale, resolveSystemLocale as resolveSystemLocaleImpl, type Locale } from '../shared/i18n'
+import type { AppSettings, AppTheme } from '../shared/types'
+import { isSupportedLocale, normalizeLocale, resolveSystemLocale as resolveSystemLocaleImpl, type Locale } from '../shared/i18n'
 
 const BASE_DEFAULTS = {
   autoLaunch: false,
@@ -28,10 +29,45 @@ export function resolveSystemLocale(tag: string): Locale {
 
 export { normalizeLocale }
 
+/** Coerce an unknown value to a valid theme (fallback `dark`). Pure. */
+export function normalizeTheme(value: unknown): AppTheme {
+  return value === 'dark' || value === 'light' || value === 'auto' ? value : 'dark'
+}
+
 /**
- * First-run defaults taken from the OS: UI language from the system locale,
- * theme from the OS dark-mode setting. Used only while no settings file
- * exists (i.e. until the user explicitly picks a language/theme).
+ * Name of the file the NSIS installer optionally drops next to the installed
+ * `.exe` (see `build/installer.nsh`, options page "Language / Theme").
+ * Consumed once on first run (see `loadSettings`), then deleted.
+ */
+export const INSTALLER_DEFAULTS_FILE = 'install-defaults.json'
+
+/**
+ * Read the language/theme choice made on the installer options page.
+ * Returns `{}` when the file is missing or invalid. The file is deleted
+ * after a successful read so it never overrides real user settings.
+ */
+export function readInstallerDefaults(): Partial<Pick<AppSettings, 'locale' | 'theme'>> {
+  try {
+    const file = path.join(path.dirname(app.getPath('exe')), INSTALLER_DEFAULTS_FILE)
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>
+    const out: Partial<Pick<AppSettings, 'locale' | 'theme'>> = {}
+    if (typeof raw.locale === 'string' && isSupportedLocale(raw.locale)) out.locale = raw.locale
+    if (raw.theme === 'dark' || raw.theme === 'light' || raw.theme === 'auto') out.theme = raw.theme
+    try {
+      fs.rmSync(file, { force: true })
+    } catch {
+      /* non-fatal: stale file is simply ignored once settings exist */
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * First-run defaults: UI language from the system locale, theme follows the
+ * OS (`auto`). Used only while no settings file exists (i.e. until the user
+ * explicitly picks a language/theme in the app or in the installer).
  */
 export function systemDefaults(): Pick<AppSettings, 'locale' | 'theme'> {
   let locale: Locale = 'ru'
@@ -40,13 +76,16 @@ export function systemDefaults(): Pick<AppSettings, 'locale' | 'theme'> {
   } catch {
     /* keep fallback */
   }
-  let theme: AppSettings['theme'] = 'dark'
+  return { locale, theme: 'auto' }
+}
+
+function persistSettings(next: AppSettings): void {
   try {
-    theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+    fs.mkdirSync(path.dirname(getSettingsPath()), { recursive: true })
+    fs.writeFileSync(getSettingsPath(), JSON.stringify(next, null, 2), 'utf8')
   } catch {
-    /* keep fallback */
+    /* non-fatal: settings stay in memory for this session */
   }
-  return { locale, theme }
 }
 
 export function loadSettings(): AppSettings {
@@ -57,17 +96,24 @@ export function loadSettings(): AppSettings {
     // Backward compat: old files store 'ru' | 'en'; new files store any
     // supported code. Unknown/corrupted values fall back to English.
     merged.locale = normalizeLocale((parsed as Record<string, unknown>).locale ?? merged.locale)
+    merged.theme = normalizeTheme((parsed as Record<string, unknown>).theme ?? merged.theme)
     return merged
   } catch {
-    return { ...BASE_DEFAULTS, ...systemDefaults() }
+    // No settings yet: installer choice wins over OS detection, then persist
+    // so the choice survives (the installer file is one-shot).
+    const first: AppSettings = { ...BASE_DEFAULTS, ...systemDefaults(), ...readInstallerDefaults() }
+    first.locale = normalizeLocale(first.locale)
+    first.theme = normalizeTheme(first.theme)
+    persistSettings(first)
+    return first
   }
 }
 
 export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   if (patch.locale !== undefined) patch = { ...patch, locale: normalizeLocale(patch.locale) }
+  if (patch.theme !== undefined) patch = { ...patch, theme: normalizeTheme(patch.theme) }
   const next = { ...loadSettings(), ...patch }
-  fs.mkdirSync(require('node:path').dirname(getSettingsPath()), { recursive: true })
-  fs.writeFileSync(getSettingsPath(), JSON.stringify(next, null, 2), 'utf8')
+  persistSettings(next)
   applyAutoLaunch(next.autoLaunch)
   return next
 }

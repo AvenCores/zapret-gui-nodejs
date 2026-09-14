@@ -100,6 +100,7 @@ export const cs = {
   'settings.theme': 'Motiv',
   'settings.themeDark': 'Tmavý',
   'settings.themeLight': 'Světlý',
+  'settings.themeAuto': 'Automaticky',
   'updates.current': 'Verze dat zapret',
   'updates.remote': 'Nejnovější verze',
   'updates.app': 'Verze aplikace',

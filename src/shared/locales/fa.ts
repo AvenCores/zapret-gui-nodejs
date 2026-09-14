@@ -100,6 +100,7 @@ export const fa = {
   'settings.theme': 'تم',
   'settings.themeDark': 'تیره',
   'settings.themeLight': 'روشن',
+  'settings.themeAuto': 'خودکار',
   'updates.current': 'نسخه داده‌های zapret',
   'updates.remote': 'آخرین نسخه',
   'updates.app': 'نسخه برنامه',
