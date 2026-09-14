@@ -50,7 +50,7 @@ const api = {
     ipcRenderer.invoke(IPC.replaceFake, kind, fake),
   checkUpdates: (): Promise<UpdateInfo> => ipcRenderer.invoke(IPC.checkUpdates),
   updateIPSet: (): Promise<{ lines: number; bytes: number }> => ipcRenderer.invoke(IPC.updateIPSet),
-  updateHosts: (): Promise<{ needsUpdate: boolean; firstLine: string; lastLine: string; remoteContent: string }> =>
+  updateHosts: (): Promise<{ needsUpdate: boolean; firstLine: string; lastLine: string; remoteContent: string; currentHasFirst: boolean; currentHasLast: boolean }> =>
     ipcRenderer.invoke(IPC.updateHosts),
   applyHosts: (remoteContent: string): Promise<boolean> => ipcRenderer.invoke(IPC.applyHosts, remoteContent),
   updateStrategies: (): Promise<{ tag: string; filesUpdated: string[]; backupDir: string }> =>

@@ -1,7 +1,7 @@
 /** Dashboard: service status, bypass test, quick actions. */
 import React, { useEffect, useState } from 'react'
 import { bypassStrategyKeyOf, useUi } from '../store'
-import { Badge, Btn, Card, Dot, Row, Spinner } from '../components/ui'
+import { Badge, Btn, Card, Code, Dot, Row, Spinner } from '../components/ui'
 import { BYPASS_TARGETS } from '../../shared/constants'
 import type { BypassCheckResult, BypassTargetId, ServiceState } from '../../shared/types'
 
@@ -156,6 +156,149 @@ function BypassIcon(props: { id: BypassTargetId }): React.JSX.Element {
   if (props.id === 'youtube') return <YoutubeIcon />
   if (props.id === 'discord') return <DiscordIcon />
   return <CloudIcon />
+}
+
+/** Full-featured hosts block: check upstream, inspect markers, apply, verify. */
+function HostsBlock(): React.JSX.Element {
+  const { t, setError, status } = useUi()
+  const [hosts, setHosts] = useState<{
+    needsUpdate: boolean
+    firstLine: string
+    lastLine: string
+    remoteContent: string
+    currentHasFirst: boolean
+    currentHasLast: boolean
+  } | null>(null)
+  const [busy, setBusy] = useState<null | 'check' | 'apply'>(null)
+  const [applied, setApplied] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [checkedAt, setCheckedAt] = useState<string | null>(null)
+
+  async function check(): Promise<void> {
+    if (busy) return
+    setBusy('check')
+    setApplied(false)
+    try {
+      setHosts(await window.zapret.updateHosts())
+      setCheckedAt(new Date().toLocaleString())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function apply(): Promise<void> {
+    if (busy || !hosts) return
+    setBusy('apply')
+    try {
+      await window.zapret.applyHosts(hosts.remoteContent)
+      // Re-check to verify the install actually landed.
+      const re = await window.zapret.updateHosts()
+      setHosts(re)
+      setCheckedAt(new Date().toLocaleString())
+      setApplied(!re.needsUpdate)
+      if (re.needsUpdate) setError(t('updates.hostsDiffers'))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const remoteLines = hosts ? hosts.remoteContent.split(/\r?\n/).filter((l) => l.length > 0) : []
+  const remoteBytes = hosts ? new TextEncoder().encode(hosts.remoteContent).length : 0
+  const localMarkers =
+    hosts === null
+      ? null
+      : hosts.currentHasFirst && hosts.currentHasLast
+        ? 'full'
+        : hosts.currentHasFirst || hosts.currentHasLast
+          ? 'partial'
+          : 'missing'
+
+  return (
+    <Card title={t('updates.hostsTitle')}>
+      <div className="flex flex-wrap items-center gap-2">
+        {hosts === null ? (
+          <Badge tone="gray">
+            <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current stroke-2" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.5" />
+              <path d="m10.5 10.5 3 3" strokeLinecap="round" />
+            </svg>
+            {t('updates.hostsNotChecked')}
+          </Badge>
+        ) : hosts.needsUpdate ? (
+          <Badge tone="yellow">⚠ {t('updates.hostsDiffers')}</Badge>
+        ) : (
+          <Badge tone="green">✓ {t('updates.hostsUpToDate')}</Badge>
+        )}
+        {checkedAt ? (
+          <span className="ml-auto text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+            {t('updates.hostsCheckedAt').replace('{time}', checkedAt)}
+          </span>
+        ) : null}
+      </div>
+
+      {hosts ? (
+        <div className="mt-1">
+          <Row label={t('updates.hostsLocal')}>
+            <span className="flex min-w-0 items-center gap-2">
+              {localMarkers === 'full' ? (
+                <Badge tone="green">✓</Badge>
+              ) : localMarkers === 'partial' ? (
+                <Badge tone="yellow">⚠</Badge>
+              ) : (
+                <Badge tone="red">✕</Badge>
+              )}
+              <span
+                className="max-w-[280px] truncate font-mono text-[11px] text-slate-500 dark:text-slate-400"
+                title={`${hosts.firstLine}\n…\n${hosts.lastLine}`}
+              >
+                {hosts.firstLine} … {hosts.lastLine}
+              </span>
+            </span>
+          </Row>
+          <Row label={t('updates.hostsUpstream')}>
+            <span className="font-mono text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+              {t('updates.hostsStats').replace('{lines}', String(remoteLines.length)).replace('{bytes}', String(remoteBytes))}
+            </span>
+          </Row>
+        </div>
+      ) : null}
+
+      {hosts ? (
+        <div className="mt-1">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+          >
+            {expanded ? t('action.less') : t('action.more')}
+          </button>
+          {expanded ? (
+            <div className="mt-2">
+              <Code>{hosts.remoteContent.slice(0, 6000)}</Code>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Btn variant="secondary" onClick={() => void check()} disabled={busy !== null}>
+          {busy === 'check' ? <Spinner /> : t('updates.updateHosts')}
+        </Btn>
+        {hosts?.needsUpdate ? (
+          <Btn onClick={() => void apply()} disabled={busy !== null || !status?.isAdmin}>
+            {busy === 'apply' ? <Spinner /> : t('updates.applyHosts')}
+          </Btn>
+        ) : null}
+      </div>
+      {applied && hosts && !hosts.needsUpdate ? (
+        <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">✓ {t('updates.hostsApplied')}</p>
+      ) : null}
+    </Card>
+  )
 }
 
 export default function Dashboard(): React.JSX.Element {
@@ -319,6 +462,8 @@ export default function Dashboard(): React.JSX.Element {
           </Btn>
         </div>
       </Card>
+
+      <HostsBlock />
 
       <BypassTest />
     </div>

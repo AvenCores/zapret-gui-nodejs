@@ -1,14 +1,13 @@
 /** Updates: zapret version check, ipset/hosts/strategies refresh. */
 import React, { useState } from 'react'
 import { useUi } from '../store'
-import { Badge, Btn, Card, Code, ProgressBar, Row, Spinner } from '../components/ui'
+import { Badge, Btn, Card, ProgressBar, Row, Spinner } from '../components/ui'
 import type { DownloadProgress, UpdateInfo } from '../../shared/types'
 
 export default function Updates(): React.JSX.Element {
   const { t, setError, status } = useUi()
   const [info, setInfo] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState<boolean>(false)
-  const [hosts, setHosts] = useState<{ needsUpdate: boolean; firstLine: string; lastLine: string; remoteContent: string } | null>(null)
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
   const [result, setResult] = useState<string | null>(null)
@@ -88,15 +87,6 @@ export default function Updates(): React.JSX.Element {
           <Btn
             variant="secondary"
             disabled={disabled || busyKey !== null}
-            onClick={() => void wrap('hosts', async () => {
-              setHosts(await window.zapret.updateHosts())
-            })}
-          >
-            {spin('hosts')} {t('updates.updateHosts')}
-          </Btn>
-          <Btn
-            variant="secondary"
-            disabled={disabled || busyKey !== null}
             onClick={() => {
               setProgress({ percent: 0, transferred: 0, total: null })
               const off = window.zapret.onDownloadProgress(setProgress)
@@ -124,29 +114,6 @@ export default function Updates(): React.JSX.Element {
         ) : null}
         {result ? <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">✓ {result}</p> : null}
       </Card>
-
-      {hosts ? (
-        <Card title={t('updates.hostsTitle')} onClose={() => setHosts(null)} closeLabel={t('action.close')}>
-          <p className="mb-2 text-sm text-slate-600 dark:text-slate-300">
-            {hosts.needsUpdate ? `⚠ ${t('updates.hostsDiffers')}` : `✓ ${t('updates.hostsUpToDate')}`}
-          </p>
-          <Code>{hosts.remoteContent.slice(0, 4000)}</Code>
-          {hosts.needsUpdate ? (
-            <div className="mt-2">
-              <Btn
-                disabled={disabled}
-                onClick={() => void wrap('apply-hosts', async () => {
-                  await window.zapret.applyHosts(hosts.remoteContent)
-                  setHosts(null)
-                  setResult(t('updates.hostsApplied'))
-                })}
-              >
-                {spin('apply-hosts')} {t('updates.applyHosts')}
-              </Btn>
-            </div>
-          ) : null}
-        </Card>
-      ) : null}
     </div>
   )
 }

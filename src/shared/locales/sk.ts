@@ -230,4 +230,9 @@ export const sk = {
   'diag.testLog': 'Test log',
   'diag.results': 'Results',
   'diag.openFolder': 'Open folder',
+  'updates.hostsLocal': 'System Hosts',
+  'updates.hostsUpstream': 'Upstream',
+  'updates.hostsCheckedAt': 'Checked: {time}',
+  'updates.hostsStats': '{lines} lines, {bytes} bytes',
+  'updates.hostsNotChecked': 'Not checked',
 } as const
