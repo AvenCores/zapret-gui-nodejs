@@ -18,8 +18,6 @@
 Десктопный GUI для [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube)
 — обход DPI-блокировок Discord / YouTube / Telegram через `winws.exe` + WinDivert.
 
-Автор: **avencores** — https://github.com/AvenCores/zapret-gui-nodejs
-
 Стек: **Electron + React + TypeScript + TailwindCSS + zustand**,
 установщик через **electron-builder (NSIS)**, автообновление приложения через **electron-updater**.
 
