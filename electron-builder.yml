@@ -27,8 +27,6 @@ linux:
     - rpm
   maintainer: avencores
   description: Desktop GUI for zapret DPI bypass (Discord / YouTube) — nfqws + nftables/iptables
-  desktop:
-    StartupNotify: 'true'
 # `sudo`/`pkexec` prompts happen at runtime (per-action elevation like the
 # Windows UAC flow); the package itself must NOT force root on launch.
 nsis:

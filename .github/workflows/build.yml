@@ -62,7 +62,7 @@ jobs:
       - name: Build installer
         # Retried: the packaging step downloads external toolchain bits and
         # occasionally hits transient HTTP 5xx from the mirror.
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 25
           max_attempts: 3
@@ -124,7 +124,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y rpm
 
       - name: Build Linux packages
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 25
           max_attempts: 3
