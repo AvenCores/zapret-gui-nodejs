@@ -205,5 +205,8 @@ export const ar = {
   'tray.exportLogs': 'تصدير السجلات',
   'tray.allStrategies': 'كل الاستراتيجيات…',
   'settings.trayTitle': 'الدرج',
-  'settings.showTrayIcon': 'إظهار أيقونة الدرج'
+  'settings.showTrayIcon': 'إظهار أيقونة الدرج',
+  'settings.trayStrategyMenu': 'القائمة الفرعية «الاستراتيجيات»',
+  'settings.trayTuningMenu': 'القوائم الفرعية «Game Filter / IPSet»',
+  'settings.trayQuickSettings': 'إعدادات سريعة في القائمة'
 } as const

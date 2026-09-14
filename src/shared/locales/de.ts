@@ -205,5 +205,8 @@ export const de = {
   'tray.exportLogs': 'Protokolle exportieren',
   'tray.allStrategies': 'Alle Strategien…',
   'settings.trayTitle': 'Tray',
-  'settings.showTrayIcon': 'Taskleistensymbol anzeigen'
+  'settings.showTrayIcon': 'Taskleistensymbol anzeigen',
+  'settings.trayStrategyMenu': 'Untermenü „Strategien“',
+  'settings.trayTuningMenu': 'Untermenüs „Game Filter / IPSet“',
+  'settings.trayQuickSettings': 'Schnelleinstellungen im Menü'
 } as const

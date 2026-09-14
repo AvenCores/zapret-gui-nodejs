@@ -205,5 +205,8 @@ export const sr = {
   'tray.exportLogs': 'Izvezi evidencije',
   'tray.allStrategies': 'Sve strategije…',
   'settings.trayTitle': 'Sistemska kaseta',
-  'settings.showTrayIcon': 'Prikaži ikonicu u sistemskoj kaseti'
+  'settings.showTrayIcon': 'Prikaži ikonicu u sistemskoj kaseti',
+  'settings.trayStrategyMenu': 'Podmeni „Strategije”',
+  'settings.trayTuningMenu': 'Podmeniji „Game Filter / IPSet”',
+  'settings.trayQuickSettings': 'Brza podešavanja u meniju'
 } as const

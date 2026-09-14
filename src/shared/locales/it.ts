@@ -205,5 +205,8 @@ export const it = {
   'tray.exportLogs': 'Esporta registri',
   'tray.allStrategies': 'Tutte le strategie…',
   'settings.trayTitle': 'Tray',
-  'settings.showTrayIcon': 'Mostra icona nel tray'
+  'settings.showTrayIcon': 'Mostra icona nel tray',
+  'settings.trayStrategyMenu': 'Sottomenu «Strategie»',
+  'settings.trayTuningMenu': 'Sottomenu «Game Filter / IPSet»',
+  'settings.trayQuickSettings': 'Impostazioni rapide nel menu'
 } as const

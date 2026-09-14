@@ -125,6 +125,10 @@ export interface AppSettings {
   startMinimizedToTray: boolean
   minimizeToTrayOnClose: boolean
   showTrayIcon: boolean
+  /** Tray menu sections visibility (toggled from Settings → Tray). */
+  trayStrategyMenu: boolean
+  trayTuningMenu: boolean
+  trayQuickSettings: boolean
   activeStrategyId: string | null
   discordFake: string | null
   gameFake: string | null

@@ -205,5 +205,8 @@ export const ja = {
   'tray.exportLogs': 'ログをエクスポート',
   'tray.allStrategies': 'すべての戦略…',
   'settings.trayTitle': 'トレイ',
-  'settings.showTrayIcon': 'トレイアイコンを表示'
+  'settings.showTrayIcon': 'トレイアイコンを表示',
+  'settings.trayStrategyMenu': '「戦略」サブメニュー',
+  'settings.trayTuningMenu': '「Game Filter / IPSet」サブメニュー',
+  'settings.trayQuickSettings': 'メニューのクイック設定'
 } as const

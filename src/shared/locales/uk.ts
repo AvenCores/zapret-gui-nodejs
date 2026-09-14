@@ -205,5 +205,8 @@ export const uk = {
   'tray.exportLogs': 'Експорт логів',
   'tray.allStrategies': 'Всі стратегії…',
   'settings.trayTitle': 'Трей',
-  'settings.showTrayIcon': 'Показувати іконку в треї'
+  'settings.showTrayIcon': 'Показувати іконку в треї',
+  'settings.trayStrategyMenu': 'Підменю «Стратегії»',
+  'settings.trayTuningMenu': 'Підменю «Game Filter / IPSet»',
+  'settings.trayQuickSettings': 'Швидкі налаштування в меню'
 } as const

@@ -205,5 +205,8 @@ export const id = {
   'tray.exportLogs': 'Ekspor log',
   'tray.allStrategies': 'Semua strategi…',
   'settings.trayTitle': 'Baki',
-  'settings.showTrayIcon': 'Tampilkan ikon baki'
+  'settings.showTrayIcon': 'Tampilkan ikon baki',
+  'settings.trayStrategyMenu': 'Submenu “Strategi”',
+  'settings.trayTuningMenu': 'Submenu “Game Filter / IPSet”',
+  'settings.trayQuickSettings': 'Pengaturan cepat di menu'
 } as const

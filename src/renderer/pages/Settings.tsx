@@ -69,6 +69,24 @@ export default function Settings(): React.JSX.Element {
             onChange={(v) => void applySettings({ startMinimizedToTray: v })}
           />
         </Row>
+        <Row label={t('settings.trayStrategyMenu')}>
+          <Toggle
+            value={settings?.trayStrategyMenu ?? true}
+            onChange={(v) => void applySettings({ trayStrategyMenu: v })}
+          />
+        </Row>
+        <Row label={t('settings.trayTuningMenu')}>
+          <Toggle
+            value={settings?.trayTuningMenu ?? true}
+            onChange={(v) => void applySettings({ trayTuningMenu: v })}
+          />
+        </Row>
+        <Row label={t('settings.trayQuickSettings')}>
+          <Toggle
+            value={settings?.trayQuickSettings ?? true}
+            onChange={(v) => void applySettings({ trayQuickSettings: v })}
+          />
+        </Row>
       </Card>
     </div>
   )

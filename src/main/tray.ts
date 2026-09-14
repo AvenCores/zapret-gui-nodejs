@@ -141,6 +141,10 @@ export interface TrayContext {
   startMinimized: boolean
   /** App version for the footer row (`app.getVersion()`). */
   version: string
+  /** Menu sections visibility (Settings → Tray). All default to true. */
+  trayStrategyMenu: boolean
+  trayTuningMenu: boolean
+  trayQuickSettings: boolean
 }
 
 /** Pre-translated tray strings for the app's active locale. */
@@ -341,25 +345,29 @@ function buildMenu(status: ZapretStatus, labels: TrayLabels, ctx: TrayContext, c
     { label: labels.stop, click: cb.onStop, enabled: actions.stop },
     { label: labels.restart, click: cb.onRestart, enabled: actions.restart },
     { type: 'separator' },
-    {
-      label: labels.strategies,
-      submenu: [
-        ...(visible.length > 0
-          ? visible.map((s) => ({
-              label: truncateLabel(s.name),
-              type: 'radio' as const,
-              checked:
-                ctx.activeStrategyId != null ? s.id === ctx.activeStrategyId : s.name === ctx.activeStrategy,
-              click: (): void => cb.onPickStrategy(s.id)
-            }))
-          : [{ label: labels.none, enabled: false }]),
-        { type: 'separator' as const },
-        {
-          label: `${labels.allStrategies} (${ctx.totalStrategies})`,
-          click: (): void => cb.onNavigate('strategies')
-        }
-      ]
-    },
+    ...(ctx.trayStrategyMenu
+      ? [
+          {
+            label: labels.strategies,
+            submenu: [
+              ...(visible.length > 0
+                ? visible.map((s) => ({
+                    label: truncateLabel(s.name),
+                    type: 'radio' as const,
+                    checked:
+                      ctx.activeStrategyId != null ? s.id === ctx.activeStrategyId : s.name === ctx.activeStrategy,
+                    click: (): void => cb.onPickStrategy(s.id)
+                  }))
+                : [{ label: labels.none, enabled: false }]),
+              { type: 'separator' as const },
+              {
+                label: `${labels.allStrategies} (${ctx.totalStrategies})`,
+                click: (): void => cb.onNavigate('strategies')
+              }
+            ]
+          }
+        ]
+      : []),
     {
       label: labels.gotoMenu,
       submenu: NAV_PAGES.map((page) => ({
@@ -367,49 +375,57 @@ function buildMenu(status: ZapretStatus, labels: TrayLabels, ctx: TrayContext, c
         click: (): void => cb.onNavigate(page)
       }))
     },
-    {
-      label: truncateLabel(labels.gameFilter, 40),
-      submenu: GAME_MODES.map((m) => ({
-        label: gameLabel(m),
-        type: 'radio' as const,
-        checked: ctx.gameFilter === m,
-        enabled: ctx.isAdmin,
-        click: (): void => cb.onGameFilter(m)
-      }))
-    },
-    {
-      label: labels.ipset,
-      submenu: IPSET_MODES.map((m) => ({
-        label: ipsetLabel(m),
-        type: 'radio' as const,
-        checked: ctx.ipset === m,
-        enabled: ctx.isAdmin,
-        click: (): void => cb.onIPSet(m)
-      }))
-    },
+    ...(ctx.trayTuningMenu
+      ? [
+          {
+            label: truncateLabel(labels.gameFilter, 40),
+            submenu: GAME_MODES.map((m) => ({
+              label: gameLabel(m),
+              type: 'radio' as const,
+              checked: ctx.gameFilter === m,
+              enabled: ctx.isAdmin,
+              click: (): void => cb.onGameFilter(m)
+            }))
+          },
+          {
+            label: labels.ipset,
+            submenu: IPSET_MODES.map((m) => ({
+              label: ipsetLabel(m),
+              type: 'radio' as const,
+              checked: ctx.ipset === m,
+              enabled: ctx.isAdmin,
+              click: (): void => cb.onIPSet(m)
+            }))
+          }
+        ]
+      : []),
     { type: 'separator' },
     ...(!ctx.isAdmin ? [{ label: labels.relaunchAdmin, click: cb.onRelaunchAdmin }] : []),
     { label: labels.openData, click: cb.onOpenData },
     { label: labels.exportLogs, click: cb.onExportLogs },
-    { type: 'separator' },
-    {
-      label: labels.autoLaunch,
-      type: 'checkbox',
-      checked: ctx.autoLaunch,
-      click: (): void => cb.onToggleSetting('autoLaunch')
-    },
-    {
-      label: labels.minimizeToTray,
-      type: 'checkbox',
-      checked: ctx.minimizeToTray,
-      click: (): void => cb.onToggleSetting('minimizeToTrayOnClose')
-    },
-    {
-      label: labels.startMinimized,
-      type: 'checkbox',
-      checked: ctx.startMinimized,
-      click: (): void => cb.onToggleSetting('startMinimizedToTray')
-    },
+    ...(ctx.trayQuickSettings
+      ? [
+          { type: 'separator' as const },
+          {
+            label: labels.autoLaunch,
+            type: 'checkbox' as const,
+            checked: ctx.autoLaunch,
+            click: (): void => cb.onToggleSetting('autoLaunch')
+          },
+          {
+            label: labels.minimizeToTray,
+            type: 'checkbox' as const,
+            checked: ctx.minimizeToTray,
+            click: (): void => cb.onToggleSetting('minimizeToTrayOnClose')
+          },
+          {
+            label: labels.startMinimized,
+            type: 'checkbox' as const,
+            checked: ctx.startMinimized,
+            click: (): void => cb.onToggleSetting('startMinimizedToTray')
+          }
+        ]
+      : []),
     { type: 'separator' },
     { label: labels.open, click: cb.onShow },
     { label: `${labels.version}: ${ctx.version}`, enabled: false },

@@ -205,5 +205,8 @@ export const el = {
   'tray.exportLogs': 'Εξαγωγή αρχείων καταγραφής',
   'tray.allStrategies': 'Όλες οι στρατηγικές…',
   'settings.trayTitle': 'Δίσκος',
-  'settings.showTrayIcon': 'Εμφάνιση εικονιδίου στο δίσκο'
+  'settings.showTrayIcon': 'Εμφάνιση εικονιδίου στο δίσκο',
+  'settings.trayStrategyMenu': 'Υπομενού «Στρατηγικές»',
+  'settings.trayTuningMenu': 'Υπομενού «Game Filter / IPSet»',
+  'settings.trayQuickSettings': 'Γρήγορες ρυθμίσεις στο μενού'
 } as const

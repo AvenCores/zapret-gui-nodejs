@@ -205,5 +205,8 @@ export const hr = {
   'tray.exportLogs': 'Izvezi zapisnike',
   'tray.allStrategies': 'Sve strategije…',
   'settings.trayTitle': 'Traka',
-  'settings.showTrayIcon': 'Prikaži ikonu u traci'
+  'settings.showTrayIcon': 'Prikaži ikonu u traci',
+  'settings.trayStrategyMenu': 'Podizbornik „Strategije”',
+  'settings.trayTuningMenu': 'Podizbornici „Game Filter / IPSet”',
+  'settings.trayQuickSettings': 'Brze postavke u izborniku'
 } as const

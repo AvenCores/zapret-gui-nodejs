@@ -205,5 +205,8 @@ export const hu = {
   'tray.exportLogs': 'Naplók exportálása',
   'tray.allStrategies': 'Összes stratégia…',
   'settings.trayTitle': 'Tálca',
-  'settings.showTrayIcon': 'Tálcaikon megjelenítése'
+  'settings.showTrayIcon': 'Tálcaikon megjelenítése',
+  'settings.trayStrategyMenu': '„Stratégiák” almenü',
+  'settings.trayTuningMenu': '„Game Filter / IPSet” almenük',
+  'settings.trayQuickSettings': 'Gyorsbeállítások a menüben'
 } as const

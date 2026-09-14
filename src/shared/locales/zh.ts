@@ -205,5 +205,8 @@ export const zh = {
   'tray.exportLogs': '导出日志',
   'tray.allStrategies': '所有策略…',
   'settings.trayTitle': '托盘',
-  'settings.showTrayIcon': '显示托盘图标'
+  'settings.showTrayIcon': '显示托盘图标',
+  'settings.trayStrategyMenu': '“策略”子菜单',
+  'settings.trayTuningMenu': '“Game Filter / IPSet”子菜单',
+  'settings.trayQuickSettings': '菜单中的快速设置'
 } as const

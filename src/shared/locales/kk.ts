@@ -205,5 +205,8 @@ export const kk = {
   'tray.exportLogs': 'Логтарды экспорттау',
   'tray.allStrategies': 'Барлық стратегиялар…',
   'settings.trayTitle': 'Трей',
-  'settings.showTrayIcon': 'Трей белгішесін көрсету'
+  'settings.showTrayIcon': 'Трей белгішесін көрсету',
+  'settings.trayStrategyMenu': '«Стратегиялар» ішкі мәзірі',
+  'settings.trayTuningMenu': '«Game Filter / IPSet» ішкі мәзірлері',
+  'settings.trayQuickSettings': 'Мәзірдегі жылдам параметрлер'
 } as const

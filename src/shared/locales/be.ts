@@ -205,5 +205,8 @@ export const be = {
   'tray.exportLogs': 'Экспарт логаў',
   'tray.allStrategies': 'Усе стратэгіі…',
   'settings.trayTitle': 'Трэй',
-  'settings.showTrayIcon': 'Паказваць абразок у трэі'
+  'settings.showTrayIcon': 'Паказваць абразок у трэі',
+  'settings.trayStrategyMenu': 'Падменю «Стратэгіі»',
+  'settings.trayTuningMenu': 'Падменю «Game Filter / IPSet»',
+  'settings.trayQuickSettings': 'Хуткія налады ў меню'
 } as const

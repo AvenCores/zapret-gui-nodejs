@@ -205,5 +205,8 @@ export const pl = {
   'tray.exportLogs': 'Eksportuj logi',
   'tray.allStrategies': 'Wszystkie strategie…',
   'settings.trayTitle': 'Zasobnik',
-  'settings.showTrayIcon': 'Pokazuj ikonę w zasobniku'
+  'settings.showTrayIcon': 'Pokazuj ikonę w zasobniku',
+  'settings.trayStrategyMenu': 'Podmenu „Strategie”',
+  'settings.trayTuningMenu': 'Podmenu „Game Filter / IPSet”',
+  'settings.trayQuickSettings': 'Szybkie ustawienia w menu'
 } as const

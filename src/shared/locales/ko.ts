@@ -205,5 +205,8 @@ export const ko = {
   'tray.exportLogs': '로그 내보내기',
   'tray.allStrategies': '모든 전략…',
   'settings.trayTitle': '트레이',
-  'settings.showTrayIcon': '트레이 아이콘 표시'
+  'settings.showTrayIcon': '트레이 아이콘 표시',
+  'settings.trayStrategyMenu': '“전략” 하위 메뉴',
+  'settings.trayTuningMenu': '“Game Filter / IPSet” 하위 메뉴',
+  'settings.trayQuickSettings': '메뉴의 빠른 설정'
 } as const

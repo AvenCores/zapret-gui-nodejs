@@ -205,5 +205,8 @@ export const nl = {
   'tray.exportLogs': 'Logboeken exporteren',
   'tray.allStrategies': 'Alle strategieën…',
   'settings.trayTitle': 'Systeemvak',
-  'settings.showTrayIcon': 'Pictogram in systeemvak tonen'
+  'settings.showTrayIcon': 'Pictogram in systeemvak tonen',
+  'settings.trayStrategyMenu': 'Submenu «Strategieën»',
+  'settings.trayTuningMenu': 'Submenu’s «Game Filter / IPSet»',
+  'settings.trayQuickSettings': 'Snelle instellingen in menu'
 } as const

@@ -205,5 +205,8 @@ export const sk = {
   'tray.exportLogs': 'Exportovať protokoly',
   'tray.allStrategies': 'Všetky stratégie…',
   'settings.trayTitle': 'Panel oznámení',
-  'settings.showTrayIcon': 'Zobraziť ikonu v paneli'
+  'settings.showTrayIcon': 'Zobraziť ikonu v paneli',
+  'settings.trayStrategyMenu': 'Podponuka „Stratégie“',
+  'settings.trayTuningMenu': 'Podponuky „Game Filter / IPSet“',
+  'settings.trayQuickSettings': 'Rýchle nastavenia v ponuke'
 } as const

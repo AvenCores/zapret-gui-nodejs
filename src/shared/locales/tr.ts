@@ -205,5 +205,8 @@ export const tr = {
   'tray.exportLogs': 'Günlükleri dışa aktar',
   'tray.allStrategies': 'Tüm stratejiler…',
   'settings.trayTitle': 'Tepsi',
-  'settings.showTrayIcon': 'Tepsi simgesini göster'
+  'settings.showTrayIcon': 'Tepsi simgesini göster',
+  'settings.trayStrategyMenu': '“Stratejiler” alt menüsü',
+  'settings.trayTuningMenu': '“Game Filter / IPSet” alt menüleri',
+  'settings.trayQuickSettings': 'Menüde hızlı ayarlar'
 } as const

@@ -205,5 +205,8 @@ export const hi = {
   'tray.exportLogs': 'लॉग निर्यात करें',
   'tray.allStrategies': 'सभी रणनीतियाँ…',
   'settings.trayTitle': 'ट्रे',
-  'settings.showTrayIcon': 'ट्रे आइकन दिखाएं'
+  'settings.showTrayIcon': 'ट्रे आइकन दिखाएं',
+  'settings.trayStrategyMenu': '“रणनीतियाँ” सबमेनू',
+  'settings.trayTuningMenu': '“Game Filter / IPSet” सबमेनू',
+  'settings.trayQuickSettings': 'मेनू में त्वरित सेटिंग'
 } as const

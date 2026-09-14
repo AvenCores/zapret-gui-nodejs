@@ -205,5 +205,8 @@ export const fr = {
   'tray.exportLogs': 'Exporter les journaux',
   'tray.allStrategies': 'Toutes les stratégies…',
   'settings.trayTitle': 'Zone de notification',
-  'settings.showTrayIcon': 'Afficher l’icône de notification'
+  'settings.showTrayIcon': 'Afficher l’icône de notification',
+  'settings.trayStrategyMenu': 'Sous-menu « Stratégies »',
+  'settings.trayTuningMenu': 'Sous-menus « Game Filter / IPSet »',
+  'settings.trayQuickSettings': 'Réglages rapides dans le menu'
 } as const

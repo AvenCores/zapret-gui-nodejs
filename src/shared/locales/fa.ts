@@ -205,5 +205,8 @@ export const fa = {
   'tray.exportLogs': 'خروجی گرفتن از گزارش‌ها',
   'tray.allStrategies': 'همه راهبردها…',
   'settings.trayTitle': 'سینی',
-  'settings.showTrayIcon': 'نمایش آیکون سینی'
+  'settings.showTrayIcon': 'نمایش آیکون سینی',
+  'settings.trayStrategyMenu': 'زیرمنوی «راهبردها»',
+  'settings.trayTuningMenu': 'زیرمنوهای «Game Filter / IPSet»',
+  'settings.trayQuickSettings': 'تنظیمات سریع در منو'
 } as const

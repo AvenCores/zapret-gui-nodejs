@@ -14,6 +14,9 @@ const BASE_DEFAULTS = {
   startMinimizedToTray: false,
   minimizeToTrayOnClose: true,
   showTrayIcon: true,
+  trayStrategyMenu: true,
+  trayTuningMenu: true,
+  trayQuickSettings: true,
   activeStrategyId: null,
   discordFake: null,
   gameFake: null
@@ -91,6 +94,32 @@ function persistSettings(next: AppSettings): void {
   }
 }
 
+type SettingsListener = (next: AppSettings) => void
+
+const settingsListeners = new Set<SettingsListener>()
+
+/**
+ * Subscribe to settings saves. The main process uses it to rebuild the tray
+ * menu instantly — without this the tray would only pick up GUI toggles on
+ * the next 15s timer tick (looks "delayed" and double-toggles cancel out).
+ */
+export function onSettingsChanged(fn: SettingsListener): () => void {
+  settingsListeners.add(fn)
+  return () => {
+    settingsListeners.delete(fn)
+  }
+}
+
+function emitSettingsChanged(next: AppSettings): void {
+  for (const fn of [...settingsListeners]) {
+    try {
+      fn(next)
+    } catch {
+      /* a listener must never break saving */
+    }
+  }
+}
+
 export function loadSettings(): AppSettings {
   // One-shot installer choice (deleted on read). An explicit pick on the
   // installer options page wins over stored settings; a silent install
@@ -128,6 +157,7 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   const next = { ...loadSettings(), ...patch }
   persistSettings(next)
   applyAutoLaunch(next.autoLaunch)
+  emitSettingsChanged(next)
   return next
 }
 

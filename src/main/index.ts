@@ -11,7 +11,7 @@ import { ensureDataDirSeeded, getDataDir, getAppLogPath, getBundledAssetsDir, ge
 import { initLogger, info, err, onLog, getBufferedLogs } from './logger'
 import { registerIpcHandlers, listStrategies } from './ipc-handlers'
 import { setupTray, getTrayLabels, destroyTray, type TrayContext } from './tray'
-import { loadSettings, saveSettings } from './settings'
+import { loadSettings, saveSettings, onSettingsChanged } from './settings'
 import {
   getStatus,
   startService,
@@ -32,6 +32,12 @@ let isQuitting = false
 app.on('before-quit', () => {
   isQuitting = true
   destroyTray()
+})
+
+// Any settings save (GUI toggles included) rebuilds the tray menu at once
+// instead of waiting for the 15s timer tick.
+onSettingsChanged(() => {
+  void refreshTray()
 })
 
 function toTrayStatus(s: string): ZapretStatus {
@@ -81,7 +87,10 @@ async function refreshTray(): Promise<void> {
       autoLaunch: settings.autoLaunch,
       minimizeToTray: settings.minimizeToTrayOnClose,
       startMinimized: settings.startMinimizedToTray,
-      version: app.getVersion()
+      version: app.getVersion(),
+      trayStrategyMenu: settings.trayStrategyMenu,
+      trayTuningMenu: settings.trayTuningMenu,
+      trayQuickSettings: settings.trayQuickSettings
     }
     // Labels follow the app language (also refreshed by the 15s timer,
     // so a language switch applies to the tray shortly after).

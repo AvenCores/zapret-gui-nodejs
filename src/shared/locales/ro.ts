@@ -205,5 +205,8 @@ export const ro = {
   'tray.exportLogs': 'Exportă jurnalele',
   'tray.allStrategies': 'Toate strategiile…',
   'settings.trayTitle': 'Tray',
-  'settings.showTrayIcon': 'Afișează pictograma în tray'
+  'settings.showTrayIcon': 'Afișează pictograma în tray',
+  'settings.trayStrategyMenu': 'Submeniul „Strategii”',
+  'settings.trayTuningMenu': 'Submeniurile „Game Filter / IPSet”',
+  'settings.trayQuickSettings': 'Setări rapide în meniu'
 } as const
