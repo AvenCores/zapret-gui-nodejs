@@ -117,13 +117,22 @@ export function ensureNoSandbox(args: string[]): string[] {
 }
 
 /**
- * Display env to forward through `pkexec env ...` (pkexec scrubs everything
- * else, and on Wayland even DISPLAY may be missing — forward what exists).
- * Pure — covered by unit tests.
+ * GUI/session env to forward through `pkexec env ...` (pkexec scrubs
+ * everything else). Display vars for X11/Wayland plus the session bus:
+ * without `DBUS_SESSION_BUS_ADDRESS` the elevated copy cannot register its
+ * tray icon with the user's StatusNotifierWatcher and the icon silently
+ * never appears. Pure — covered by unit tests.
  */
-export function pickDisplayEnv(env: Record<string, string | undefined>): string[] {
+export function pickGuiEnv(env: Record<string, string | undefined>): string[] {
   const out: string[] = []
-  for (const k of ['DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'XAUTHORITY', 'XDG_SESSION_TYPE']) {
+  for (const k of [
+    'DISPLAY',
+    'WAYLAND_DISPLAY',
+    'XDG_RUNTIME_DIR',
+    'XAUTHORITY',
+    'XDG_SESSION_TYPE',
+    'DBUS_SESSION_BUS_ADDRESS'
+  ]) {
     const v = env[k]
     if (typeof v === 'string' && v !== '') out.push(`${k}=${v}`)
   }
@@ -202,7 +211,7 @@ async function relaunchAppAsRootLinux(appPath: string, appArgs: string[]): Promi
     if (commandExists('pkexec')) {
       const r = await run(
         'pkexec',
-        ['/usr/bin/env', ...pickDisplayEnv(process.env), ...target],
+        ['/usr/bin/env', ...pickGuiEnv(process.env), ...target],
         { timeoutMs: 300000 }
       )
       if (r.code === 0) return true

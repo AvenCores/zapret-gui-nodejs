@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import {
   ensureNoSandbox,
-  pickDisplayEnv,
+  pickGuiEnv,
   findGuiTerminal,
   buildTerminalArgs
 } from '../src/main/exec'
@@ -23,10 +23,10 @@ describe('ensureNoSandbox', () => {
   })
 })
 
-describe('pickDisplayEnv', () => {
+describe('pickGuiEnv', () => {
   it('forwards display-related vars for pkexec (Wayland included)', () => {
     expect(
-      pickDisplayEnv({
+      pickGuiEnv({
         DISPLAY: ':0',
         WAYLAND_DISPLAY: 'wayland-0',
         XDG_RUNTIME_DIR: '/run/user/1000',
@@ -43,8 +43,13 @@ describe('pickDisplayEnv', () => {
       'XDG_SESSION_TYPE=wayland'
     ])
   })
+  it('forwards the session bus so the root copy keeps its tray icon', () => {
+    expect(pickGuiEnv({ DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus' })).toEqual([
+      'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus'
+    ])
+  })
   it('skips missing and empty values', () => {
-    expect(pickDisplayEnv({ DISPLAY: '', OTHER: 'y' })).toEqual([])
+    expect(pickGuiEnv({ DISPLAY: '', OTHER: 'y' })).toEqual([])
   })
 })
 

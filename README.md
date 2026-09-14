@@ -178,7 +178,8 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
 * **Сервис/автозапуск**: systemd / OpenRC / runit / s6 / dinit (детект как в `init.sh` по `/proc/1/*` и `/run/*`);
   без известной init-системы работает разовый запуск демона без автозапуска
 * **Права**: повышение через `sudo`/`doas` (в root — напрямую); перезапуск с правами root идёт по цепочке
-  `pkexec` (графический диалог, display-env пробрасывается для Wayland) → терминал (`xdg-terminal-exec`,
+  `pkexec` (графический диалог, пробрасываются display-env для Wayland и `DBUS_SESSION_BUS_ADDRESS`,
+  без которого у root-копии пропадает иконка трея) → терминал (`xdg-terminal-exec`,
   `gnome-terminal`, `ptyxis`, `kgx`, `konsole`, `xfce4-terminal`, …, `$TERMINAL`) с `sudo/doas` → прямой `sudo`;
   elevated-копия всегда стартует с `--no-sandbox` (Chromium под root иначе падает), а если спросить пароль
   негде — приложение показывает ошибку вместо молчания;
