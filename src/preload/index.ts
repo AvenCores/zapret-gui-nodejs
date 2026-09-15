@@ -6,6 +6,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
 import type {
   AppSettings,
+  AppUpdateInfo,
   BypassCheckResult,
   BypassTargetId,
   ConfigTesterEvent,
@@ -109,10 +110,19 @@ const api = {
     ipcRenderer.on(IPC.statusChanged, fn)
     return () => ipcRenderer.removeListener(IPC.statusChanged, fn)
   },
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC.getAppVersion),
+  checkAppUpdates: (): Promise<AppUpdateInfo> => ipcRenderer.invoke(IPC.checkAppUpdates),
+  downloadAppUpdate: (): Promise<boolean> => ipcRenderer.invoke(IPC.downloadAppUpdate),
+  installAppUpdate: (): Promise<boolean> => ipcRenderer.invoke(IPC.installAppUpdate),
   onAppUpdateAvailable: (cb: (version: string) => void): (() => void) => {
     const fn = (_e: unknown, version: string): void => cb(version)
     ipcRenderer.on(IPC.onAppUpdateAvailable, fn)
     return () => ipcRenderer.removeListener(IPC.onAppUpdateAvailable, fn)
+  },
+  onAppUpdateDownloaded: (cb: (version: string) => void): (() => void) => {
+    const fn = (_e: unknown, version: string): void => cb(version)
+    ipcRenderer.on(IPC.onAppUpdateDownloaded, fn)
+    return () => ipcRenderer.removeListener(IPC.onAppUpdateDownloaded, fn)
   }
 }
 

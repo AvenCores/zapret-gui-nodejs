@@ -258,5 +258,16 @@ export const de = {
   'updates.loadReleases': 'Load version list',
   'updates.engineResult': 'Engine {tag}: {count} files updated. Backup: {dir}',
   'updates.engineReleasesFailed': 'Failed to load the releases list',
-  'updates.engineRestartHint': 'Restart the zapret service after updating.'
+  'updates.engineRestartHint': 'Restart the zapret service after updating.',
+  'updates.appTitle': 'Application',
+  'updates.appCurrent': 'Current version',
+  'updates.appRemote': 'Available version',
+  'updates.appAvailable': 'Application update {version} is available! Download it?',
+  'updates.appDownloaded': 'Update {version} is downloaded. Restart the app to install it?',
+  'updates.appUpToDate': 'You have the latest version.',
+  'updates.appDownload': 'Download update',
+  'updates.appDownloading': 'Downloading…',
+  'updates.appInstall': 'Install and restart',
+  'updates.updateTo': 'Update to {tag}',
+  'updates.updateNow': 'Update now',
 } as const

@@ -258,5 +258,16 @@ export const ru = {
   'updates.loadReleases': 'Загрузить список версий',
   'updates.engineResult': 'Движок {tag}: обновлено файлов: {count}. Бэкап: {dir}',
   'updates.engineReleasesFailed': 'Не удалось загрузить список релизов',
-  'updates.engineRestartHint': 'После обновления перезапустите сервис zapret.'
+  'updates.engineRestartHint': 'После обновления перезапустите сервис zapret.',
+  'updates.appTitle': 'Приложение',
+  'updates.appCurrent': 'Текущая версия',
+  'updates.appRemote': 'Доступная версия',
+  'updates.appAvailable': 'Доступно обновление приложения {version}! Скачать?',
+  'updates.appDownloaded': 'Обновление {version} загружено. Перезапустить приложение для установки?',
+  'updates.appUpToDate': 'Установлена последняя версия.',
+  'updates.appDownload': 'Скачать обновление',
+  'updates.appDownloading': 'Загрузка…',
+  'updates.appInstall': 'Установить и перезапустить',
+  'updates.updateTo': 'Обновить до {tag}',
+  'updates.updateNow': 'Обновить сейчас',
 } as const

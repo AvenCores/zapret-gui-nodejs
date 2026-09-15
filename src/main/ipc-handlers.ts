@@ -44,6 +44,7 @@ import {
 import { getDataDir, getBinDir, getListsDir, getStrategiesDir, getUtilsDir, getBundledAssetsDir } from './paths'
 import { listUserLists, readUserList, writeUserList } from './user-lists'
 import { checkBypassTarget } from './bypass-check'
+import { checkAppUpdates, downloadAppUpdate, getAppVersion, installAppUpdate } from './app-updater'
 import type { BypassTargetId } from '../shared/types'
 import { loadSettings, saveSettings } from './settings'
 import { translate } from '../shared/i18n'
@@ -247,6 +248,17 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.checkUpdates, async () => checkZapretUpdates())
+
+  ipcMain.handle(IPC.getAppVersion, async () => getAppVersion())
+  ipcMain.handle(IPC.checkAppUpdates, async () => checkAppUpdates())
+  ipcMain.handle(IPC.downloadAppUpdate, async () => {
+    await downloadAppUpdate()
+    return true
+  })
+  ipcMain.handle(IPC.installAppUpdate, async () => {
+    installAppUpdate()
+    return true
+  })
 
   ipcMain.handle(IPC.updateIPSet, async () => {
     sendLog('updater', 'info', 'Updating IPSet list...')

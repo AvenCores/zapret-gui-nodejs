@@ -1,8 +1,8 @@
-/** Updates page: version check, ipset/strategies refresh. */
+/** Updates page: app / zapret-data / engine version checks with update offers. */
 import React, { useEffect, useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, ProgressBar, Row, Spinner } from '../components/ui'
-import type { DownloadProgress, EngineRelease, EngineVersionInfo, UpdateInfo } from '../../shared/types'
+import type { AppUpdateInfo, DownloadProgress, EngineRelease, EngineVersionInfo, UpdateInfo } from '../../shared/types'
 
 export default function Updates(): React.JSX.Element {
   const { t, setError, status } = useUi()
@@ -21,6 +21,11 @@ export default function Updates(): React.JSX.Element {
   const [releasesLoading, setReleasesLoading] = useState<boolean>(false)
   const [engineResult, setEngineResult] = useState<string | null>(null)
   const [engineBackupDir, setEngineBackupDir] = useState<string | null>(null)
+  const [appCurrent, setAppCurrent] = useState<string>('…')
+  const [appInfo, setAppInfo] = useState<AppUpdateInfo | null>(null)
+  const [appChecking, setAppChecking] = useState<boolean>(false)
+  const [appDownloading, setAppDownloading] = useState<boolean>(false)
+  const [appProgress, setAppProgress] = useState<DownloadProgress | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -32,6 +37,35 @@ export default function Updates(): React.JSX.Element {
         setAutoCheckLoading(false)
       }
     })()
+    void window.zapret.getAppVersion().then(setAppCurrent).catch(() => undefined)
+    // Background auto-check (main process) must be reflected here too:
+    // a new release always re-opens the offer, even without manual check.
+    const offAvailable = window.zapret.onAppUpdateAvailable((v) => {
+      setAppInfo((prev) => ({
+        currentVersion: prev?.currentVersion ?? appCurrent,
+        availableVersion: v,
+        updateAvailable: true,
+        downloaded: false,
+        releasesUrl: prev?.releasesUrl ?? 'https://github.com/AvenCores/zapret-gui-nodejs/releases',
+        checkedAt: new Date().toISOString()
+      }))
+    })
+    const offDownloaded = window.zapret.onAppUpdateDownloaded((v) => {
+      setAppDownloading(false)
+      setAppProgress(null)
+      setAppInfo((prev) => ({
+        currentVersion: prev?.currentVersion ?? appCurrent,
+        availableVersion: v,
+        updateAvailable: true,
+        downloaded: true,
+        releasesUrl: prev?.releasesUrl ?? 'https://github.com/AvenCores/zapret-gui-nodejs/releases',
+        checkedAt: new Date().toISOString()
+      }))
+    })
+    return () => {
+      offAvailable()
+      offDownloaded()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -58,20 +92,6 @@ export default function Updates(): React.JSX.Element {
     return d.toLocaleDateString()
   }
 
-  function loadEngineReleases(): void {
-    setReleasesLoading(true)
-    window.zapret
-      .listEngineReleases(20)
-      .then((list) => {
-        setReleases(list)
-        if (list.length > 0) {
-          setSelectedTag((prev) => prev !== '' ? prev : (engine?.remote ?? list[0].tag))
-        }
-      })
-      .catch(() => setError(t('updates.engineReleasesFailed')))
-      .finally(() => setReleasesLoading(false))
-  }
-
   function checkEngine(): void {
     setCheckingEngine(true)
     window.zapret
@@ -79,20 +99,42 @@ export default function Updates(): React.JSX.Element {
       .then((v) => {
         setEngine(v)
         if (v.remote) setSelectedTag((prev) => prev !== '' ? prev : v.remote as string)
+        // A new engine release must immediately offer a one-click update:
+        // preselect the remote tag and preload the version list.
+        if (v.updateAvailable && v.remote) {
+          setSelectedTag(v.remote)
+          if (releases.length === 0) loadEngineReleases(v.remote)
+        }
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setCheckingEngine(false))
   }
 
-  function updateEngine(): void {
-    if (selectedTag === '') return
+  function loadEngineReleases(presetTag?: string): void {
+    setReleasesLoading(true)
+    window.zapret
+      .listEngineReleases(20)
+      .then((list) => {
+        setReleases(list)
+        if (list.length > 0) {
+          const want = presetTag ?? engine?.remote ?? list[0].tag
+          setSelectedTag((prev) => prev !== '' && !presetTag ? prev : want)
+        }
+      })
+      .catch(() => setError(t('updates.engineReleasesFailed')))
+      .finally(() => setReleasesLoading(false))
+  }
+
+  function updateEngineTo(tag: string): void {
+    if (tag === '') return
+    setSelectedTag(tag)
     setBusyKey('engine')
     setEngineResult(null)
     setEngineBackupDir(null)
     setProgress({ percent: 0, transferred: 0, total: null })
     const off = window.zapret.onDownloadProgress(setProgress)
     window.zapret
-      .updateEngine(selectedTag)
+      .updateEngine(tag)
       .then((r) => {
         setEngineBackupDir(r.backupDir)
         setEngineResult(
@@ -109,6 +151,63 @@ export default function Updates(): React.JSX.Element {
         off()
         setProgress(null)
       })
+  }
+
+  function updateEngine(): void {
+    updateEngineTo(selectedTag)
+  }
+
+  function updateStrategiesNow(): void {
+    setProgress({ percent: 0, transferred: 0, total: null })
+    const off = window.zapret.onDownloadProgress(setProgress)
+    void wrap('strategies', async () => {
+      const r = await window.zapret.updateStrategies()
+      setBackupDir(r.backupDir)
+      setResult(
+        t('updates.strategiesResult')
+          .replace('{count}', String(r.filesUpdated.length))
+          .replace('{tag}', r.tag)
+          .replace('{dir}', r.backupDir)
+      )
+    }).finally(() => {
+      off()
+      setProgress(null)
+    })
+  }
+
+  function checkApp(): void {
+    setAppChecking(true)
+    window.zapret
+      .checkAppUpdates()
+      .then((v) => {
+        setAppInfo(v)
+        setAppCurrent(v.currentVersion)
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setAppChecking(false))
+  }
+
+  function downloadApp(): void {
+    setAppDownloading(true)
+    setAppProgress({ percent: 0, transferred: 0, total: null })
+    const offProgress = window.zapret.onDownloadProgress(setAppProgress)
+    const offDone = window.zapret.onAppUpdateDownloaded(() => {
+      offProgress()
+      offDone()
+    })
+    window.zapret
+      .downloadAppUpdate()
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e))
+        setAppDownloading(false)
+        setAppProgress(null)
+        offProgress()
+        offDone()
+      })
+  }
+
+  function installApp(): void {
+    void window.zapret.installAppUpdate().catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
 
   return (
@@ -134,6 +233,55 @@ export default function Updates(): React.JSX.Element {
         </Row>
       </Card>
 
+      <Card title={t('updates.appTitle')}>
+        <Row label={t('updates.appCurrent')}>
+          <Badge tone="gray">{appInfo?.currentVersion ?? appCurrent}</Badge>
+        </Row>
+        <Row label={t('updates.appRemote')}>
+          <Badge tone={appInfo?.updateAvailable ? 'yellow' : 'gray'}>{appInfo?.availableVersion ?? '…'}</Badge>
+        </Row>
+        {appInfo ? (
+          <p className="py-1 text-sm">
+            {appInfo.downloaded && appInfo.availableVersion ? (
+              <span className="text-amber-700 dark:text-amber-300">
+                ⚠ {t('updates.appDownloaded').replace('{version}', appInfo.availableVersion)}{' '}
+                <a href={appInfo.releasesUrl} target="_blank" rel="noreferrer" className="underline">
+                  {appInfo.releasesUrl}
+                </a>
+              </span>
+            ) : appInfo.updateAvailable && appInfo.availableVersion ? (
+              <span className="text-amber-700 dark:text-amber-300">
+                ⚠ {t('updates.appAvailable').replace('{version}', appInfo.availableVersion)}{' '}
+                <a href={appInfo.releasesUrl} target="_blank" rel="noreferrer" className="underline">
+                  {appInfo.releasesUrl}
+                </a>
+              </span>
+            ) : (
+              <span className="text-emerald-700 dark:text-emerald-300">✓ {t('updates.appUpToDate')}</span>
+            )}
+          </p>
+        ) : null}
+        {appDownloading && appProgress ? (
+          <div className="mt-2">
+            <ProgressBar percent={appProgress.percent} />
+          </div>
+        ) : null}
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Btn disabled={appChecking || appDownloading} onClick={checkApp}>
+            {appChecking ? <Spinner /> : t('action.check')}
+          </Btn>
+          {appInfo?.downloaded ? (
+            <Btn disabled={false} onClick={installApp}>
+              {t('updates.appInstall')}
+            </Btn>
+          ) : appInfo?.updateAvailable ? (
+            <Btn disabled={appDownloading} onClick={downloadApp}>
+              {appDownloading ? <Spinner /> : null} {appDownloading ? t('updates.appDownloading') : t('updates.appDownload')}
+            </Btn>
+          ) : null}
+        </div>
+      </Card>
+
       <Card title={`${t('updates.current')} / ${t('updates.remote')}`}>
         <Row label={t('updates.current')}>
           <Badge tone="gray">{info?.localVersion ?? '…'}</Badge>
@@ -142,7 +290,7 @@ export default function Updates(): React.JSX.Element {
           <Badge tone={info?.updateAvailable ? 'yellow' : 'gray'}>{info?.remoteVersion ?? '…'}</Badge>
         </Row>
         <Row label={t('updates.app')}>
-          <Badge tone="gray">{info?.appVersion ?? '…'}</Badge>
+          <Badge tone="gray">{info?.appVersion ?? appCurrent}</Badge>
         </Row>
         {info ? (
           <p className="py-1 text-sm">
@@ -158,7 +306,7 @@ export default function Updates(): React.JSX.Element {
             )}
           </p>
         ) : null}
-        <div className="mt-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           <Btn
             disabled={checking}
             onClick={() => {
@@ -172,6 +320,11 @@ export default function Updates(): React.JSX.Element {
           >
             {checking ? <Spinner /> : t('action.check')}
           </Btn>
+          {info?.updateAvailable ? (
+            <Btn variant="secondary" disabled={disabled || busyKey !== null} onClick={updateStrategiesNow}>
+              {spin('strategies')} {t('updates.updateNow')}
+            </Btn>
+          ) : null}
         </div>
       </Card>
 
@@ -200,9 +353,14 @@ export default function Updates(): React.JSX.Element {
           <Btn disabled={checkingEngine} onClick={checkEngine}>
             {checkingEngine ? <Spinner /> : t('action.check')}
           </Btn>
-          <Btn variant="secondary" disabled={releasesLoading || busyKey !== null} onClick={loadEngineReleases}>
+          <Btn variant="secondary" disabled={releasesLoading || busyKey !== null} onClick={() => loadEngineReleases()}>
             {releasesLoading ? <Spinner /> : null} {t('updates.loadReleases')}
           </Btn>
+          {engine?.updateAvailable && engine.remote ? (
+            <Btn variant="secondary" disabled={disabled || busyKey !== null} onClick={() => updateEngineTo(engine.remote as string)}>
+              {spin('engine')} {t('updates.updateTo').replace('{tag}', engine.remote)}
+            </Btn>
+          ) : null}
         </div>
         {releases.length > 0 ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">

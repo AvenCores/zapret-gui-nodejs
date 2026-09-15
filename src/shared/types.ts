@@ -124,6 +124,19 @@ export interface EngineVersionInfo {
   checkedAt: string
 }
 
+/** Application self-update state (electron-updater, GitHub releases). */
+export interface AppUpdateInfo {
+  /** Installed version (`app.getVersion()`). */
+  currentVersion: string
+  /** Available version (null when up to date / unreachable). */
+  availableVersion: string | null
+  updateAvailable: boolean
+  /** True when the installer was already downloaded and waits for restart. */
+  downloaded: boolean
+  releasesUrl: string
+  checkedAt: string
+}
+
 /** Progress event for long downloads. */
 export interface DownloadProgress {
   percent: number
@@ -264,6 +277,11 @@ export const IPC = {
   onConfigTesterEvent: 'zapret:on-config-tester-event',
   onDownloadProgress: 'zapret:on-download-progress',
   onAppUpdateAvailable: 'zapret:app-update-available',
+  onAppUpdateDownloaded: 'zapret:app-update-downloaded',
+  getAppVersion: 'zapret:get-app-version',
+  checkAppUpdates: 'zapret:check-app-updates',
+  downloadAppUpdate: 'zapret:download-app-update',
+  installAppUpdate: 'zapret:install-app-update',
   navigate: 'zapret:navigate',
   statusChanged: 'zapret:status-changed'
 } as const

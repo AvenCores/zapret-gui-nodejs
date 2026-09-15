@@ -6,9 +6,9 @@ import { app, BrowserWindow, shell, dialog } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
-import { autoUpdater } from 'electron-updater'
 import { ensureDataDirSeeded, getDataDir, getAppLogPath, getBundledAssetsDir, getListsDir } from './paths'
 import { initLogger, info, err, onLog, getBufferedLogs } from './logger'
+import { setupAutoUpdater } from './app-updater'
 import { registerIpcHandlers, listStrategies } from './ipc-handlers'
 import { setupTray, getTrayLabels, destroyTray, type TrayContext } from './tray'
 import { loadSettings, saveSettings, onSettingsChanged } from './settings'
@@ -404,27 +404,7 @@ function createWindow(): void {
   }
 }
 
-function setupAutoUpdater(): void {
-  if (!app.isPackaged) return
-  autoUpdater.autoDownload = false
-  autoUpdater.on('update-available', (infoUpdate) => {
-    info('updater', `App update available: ${infoUpdate.version}`)
-    try {
-      if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-        mainWindow.webContents.send(IPC.onAppUpdateAvailable, infoUpdate.version)
-      }
-    } catch {
-      /* renderer gone */
-    }
-  })
-  autoUpdater.on('error', (e) => {
-    err('updater', `autoUpdater error: ${String(e).slice(0, 300)}`)
-  })
-  void autoUpdater.checkForUpdates().catch(() => undefined)
-  setInterval(() => {
-    void autoUpdater.checkForUpdates().catch(() => undefined)
-  }, 6 * 60 * 60 * 1000).unref?.()
-}
+
 
 async function firstRunCheck(): Promise<void> {
   // Master-setup hint: no strategy ever installed + no settings choice yet.

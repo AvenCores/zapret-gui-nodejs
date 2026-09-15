@@ -287,6 +287,7 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <AppUpdateBanner />
         <AdminBanner />
         <ErrorBanner />
         <main className="min-h-0 flex-1 overflow-y-auto p-5">{props.children}</main>
@@ -1161,6 +1162,132 @@ function Flag(props: { code: Locale }): React.JSX.Element {
     <svg aria-hidden viewBox="0 0 18 12" className="h-3 w-[18px] shrink-0 overflow-hidden rounded-[2px]">
       {body}
     </svg>
+  )
+}
+
+/**
+ * Global offer to update the app itself. Fires when electron-updater finds
+ * a new release (background auto-check + manual "Check" on Updates page):
+ * shows "Download / Install and restart" instead of a silent log line.
+ */
+function AppUpdateBanner(): React.JSX.Element | null {
+  const { t, setPage } = useUi()
+  const [available, setAvailable] = useState<string | null>(null)
+  const [downloaded, setDownloaded] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
+  const [percent, setPercent] = useState<number | null>(null)
+  const [dismissed, setDismissed] = useState<string | null>(null)
+
+  useEffect(() => {
+    const offAvailable = window.zapret.onAppUpdateAvailable((v) => {
+      setAvailable(v)
+      // A new version (or an explicit re-check) re-opens a dismissed banner.
+      setDismissed(null)
+    })
+    const offDownloaded = window.zapret.onAppUpdateDownloaded((v) => {
+      setDownloaded(v)
+      setDownloading(false)
+      setPercent(null)
+      setDismissed(null)
+    })
+    const offProgress = window.zapret.onDownloadProgress((p) => {
+      // Shared channel (strategies/engine too) — only reflect it while an
+      // app download is in flight to avoid чужой progress.
+      setPercent((prev) => (prev === null ? prev : Math.max(0, Math.min(100, p.percent))))
+    })
+    return () => {
+      offAvailable()
+      offDownloaded()
+      offProgress()
+    }
+  }, [])
+
+  const shown = downloaded ?? available
+  if (!shown || dismissed === shown) return null
+
+  async function download(): Promise<void> {
+    setDownloading(true)
+    setPercent(0)
+    try {
+      await window.zapret.downloadAppUpdate()
+    } catch {
+      setDownloading(false)
+      setPercent(null)
+    }
+  }
+
+  function install(): void {
+    void window.zapret.installAppUpdate().catch(() => undefined)
+  }
+
+  const isDownloaded = downloaded !== null
+
+  return (
+    <div
+      role="alert"
+      className="flex animate-slide-down flex-wrap items-center gap-x-3 gap-y-2 border-b border-sky-500/30 bg-gradient-to-r from-sky-500/20 via-sky-500/10 to-transparent px-4 py-2.5 text-sm"
+    >
+      <span
+        aria-hidden
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-sky-600 dark:text-sky-400"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" x2="12" y1="15" y2="3" />
+        </svg>
+      </span>
+      <span className="min-w-0 flex-1 basis-48 font-medium text-sky-900 dark:text-sky-100">
+        {isDownloaded
+          ? t('updates.appDownloaded').replace('{version}', downloaded as string)
+          : t('updates.appAvailable').replace('{version}', available as string)}
+        {downloading && percent !== null ? ` — ${percent}%` : null}
+      </span>
+      {downloading && percent !== null ? (
+        <span className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-sky-500/20">
+          <span className="block h-full rounded-full bg-sky-500 transition-all" style={{ width: `${percent}%` }} />
+        </span>
+      ) : null}
+      <span className="flex shrink-0 items-center gap-1.5">
+        {isDownloaded ? (
+          <button
+            type="button"
+            onClick={install}
+            className="inline-flex min-h-[32px] items-center gap-2 rounded-lg bg-sky-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-[0.97]"
+          >
+            {t('updates.appInstall')}
+          </button>
+        ) : downloading ? (
+          <span className="inline-flex min-h-[32px] items-center gap-2 px-2 text-sm text-sky-700 dark:text-sky-300">
+            <Spinner /> {t('updates.appDownloading')}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void download()}
+            className="inline-flex min-h-[32px] items-center gap-2 rounded-lg bg-sky-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-[0.97]"
+          >
+            {t('updates.appDownload')}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setPage('updates')}
+          className="inline-flex min-h-[32px] items-center rounded-lg border border-sky-500/40 px-3 py-1.5 text-sm font-medium text-sky-700 transition hover:bg-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-[0.97] dark:text-sky-300"
+        >
+          {t('nav.updates')}
+        </button>
+        <button
+          type="button"
+          onClick={() => setDismissed(shown)}
+          title={t('action.close')}
+          aria-label={t('action.close')}
+          className="rounded-lg p-2 text-sky-700/70 transition hover:bg-sky-500/20 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-95 dark:text-sky-300/70 dark:hover:bg-sky-500/10 dark:hover:text-sky-100"
+        >
+          ✕
+        </button>
+      </span>
+    </div>
   )
 }
 
