@@ -13,6 +13,7 @@ import type {
   GameFilterMode,
   IPSetMode,
   ServiceOwnership,
+  TgProxyStatus,
   TrayPage,
   ZapretStatus
 } from '../shared/types'
@@ -114,6 +115,9 @@ export interface TrayCallbacks {
   onStart: () => void
   onStop: () => void
   onRestart: () => void
+  onTgProxyStart: () => void
+  onTgProxyStop: () => void
+  onTgProxyRestart: () => void
   onNavigate: (page: TrayPage) => void
   onPickStrategy: (id: string) => void
   onGameFilter: (mode: GameFilterMode) => void
@@ -147,6 +151,9 @@ export interface TrayContext {
   autoLaunch: boolean
   minimizeToTray: boolean
   startMinimized: boolean
+  /** Built-in TG proxy state shown in the tray menu + tooltip. */
+  tgProxy: TgProxyStatus
+  tgProxyPort: number
   /** App version for the footer row (`app.getVersion()`). */
   version: string
   /** Menu sections visibility (Settings → Tray). All default to true. */
@@ -194,6 +201,10 @@ export interface TrayLabels {
   openData: string
   exportLogs: string
   version: string
+  tgProxy: string
+  tgRunning: string
+  tgStopped: string
+  tgError: string
 }
 
 /** Build tray labels for a locale (pure — covered by unit tests). */
@@ -232,7 +243,11 @@ export function getTrayLabels(locale: Locale, status: ZapretStatus): TrayLabels 
     relaunchAdmin: t('dashboard.relaunchAdmin'),
     openData: t('tray.openData'),
     exportLogs: t('tray.exportLogs'),
-    version: t('updates.app')
+    version: t('updates.app'),
+    tgProxy: t('tray.tgProxy'),
+    tgRunning: t('tgProxy.statusRunning'),
+    tgStopped: t('tgProxy.statusStopped'),
+    tgError: t('tgProxy.statusError')
   }
 }
 
@@ -267,6 +282,18 @@ export function trayActionsState(
     default:
       return { start: false, stop: false, restart: false }
   }
+}
+
+/** Translated TG-proxy state word for labels/tooltip. Pure. */
+export function tgStatusLabel(labels: TrayLabels, status: TgProxyStatus): string {
+  return status === 'running' ? labels.tgRunning : status === 'error' ? labels.tgError : labels.tgStopped
+}
+
+/** Which TG-proxy actions are enabled in the tray menu. Pure. */
+export function tgProxyActionsState(status: TgProxyStatus): { start: boolean; stop: boolean; restart: boolean } {
+  if (status === 'running') return { start: false, stop: true, restart: true }
+  if (status === 'error') return { start: false, stop: true, restart: true }
+  return { start: true, stop: false, restart: false }
 }
 
 /** Max strategy rows shown directly in the tray submenu (rest via app). */
@@ -306,20 +333,22 @@ export function truncateLabel(s: string, max = 48): string {
 }
 
 /**
- * Tooltip text: status plus the active strategy when known.
- * Windows caps tooltips (~128 chars), so the strategy name is shortened.
+ * Tooltip text: status plus the active strategy when known, plus the
+ * TG-proxy state (`| TG: …`) so the tray icon reflects both services.
+ * Windows caps tooltips (~128 chars), so the result is truncated.
  * Pure — covered by unit tests.
  */
-export function trayTooltip(statusLabel: string, strategyName: string | null): string {
+export function trayTooltip(statusLabel: string, strategyName: string | null, tgStatusLabel: string | null = null): string {
   const base = `Zapret GUI — ${statusLabel}`
-  if (strategyName == null || strategyName.trim() === '') return base
-  return truncateLabel(`${base} · ${strategyName.trim()}`, 127)
+  const withStrategy = strategyName == null || strategyName.trim() === '' ? base : `${base} · ${strategyName.trim()}`
+  if (tgStatusLabel == null || tgStatusLabel.trim() === '') return truncateLabel(withStrategy, 127)
+  return truncateLabel(`${withStrategy} | TG: ${tgStatusLabel.trim()}`, 127)
 }
 
 /** Create the tray icon (idempotent — recreates menu on status change). */
 export function setupTray(status: ZapretStatus, labels: TrayLabels, ctx: TrayContext, cb: TrayCallbacks): Tray {
   const img = nativeImage.createFromPath(iconPath(status))
-  const tooltip = trayTooltip(labels.status, ctx.activeStrategy)
+  const tooltip = trayTooltip(labels.status, ctx.activeStrategy, tgStatusLabel(labels, ctx.tgProxy))
   if (tray) {
     tray.setImage(img)
     tray.setToolTip(tooltip)
@@ -342,6 +371,7 @@ const IPSET_MODES: IPSetMode[] = ['none', 'loaded', 'any']
 
 function buildMenu(status: ZapretStatus, labels: TrayLabels, ctx: TrayContext, cb: TrayCallbacks): Menu {
   const actions = trayActionsState(status, ctx.isAdmin, ctx.ownership)
+  const tgActions = tgProxyActionsState(ctx.tgProxy)
   const strategyName = ctx.activeStrategy ?? labels.none
   const visible = visibleStrategies(ctx.strategies, ctx.activeStrategyId, ctx.activeStrategy)
   const gameLabel = (m: GameFilterMode): string =>
@@ -352,12 +382,21 @@ function buildMenu(status: ZapretStatus, labels: TrayLabels, ctx: TrayContext, c
   return Menu.buildFromTemplate([
     { label: `zapret: ${labels.status}`, enabled: false },
     { label: `${labels.strategy}: ${truncateLabel(strategyName)}`, enabled: false },
+    { label: `${labels.tgProxy} :${ctx.tgProxyPort} — ${tgStatusLabel(labels, ctx.tgProxy)}`, enabled: false },
     { type: 'separator' },
     ...(ctx.trayServiceMenu
       ? [
           { label: labels.start, click: cb.onStart, enabled: actions.start },
           { label: labels.stop, click: cb.onStop, enabled: actions.stop },
           { label: labels.restart, click: cb.onRestart, enabled: actions.restart },
+          {
+            label: labels.tgProxy,
+            submenu: [
+              { label: labels.start, click: cb.onTgProxyStart, enabled: tgActions.start },
+              { label: labels.stop, click: cb.onTgProxyStop, enabled: tgActions.stop },
+              { label: labels.restart, click: cb.onTgProxyRestart, enabled: tgActions.restart }
+            ]
+          },
           { type: 'separator' as const }
         ]
       : []),

@@ -4,9 +4,12 @@ import { useUi } from '../store'
 import { Btn, Card, Row, Spinner } from '../components/ui'
 
 export default function Settings(): React.JSX.Element {
-  const { t, settings, status, applySettings, busy, resetAll, refreshStatus } = useUi()
+  const { t, settings, status, applySettings, busy, resetAll, refreshStatus, tgProxySettings, updateTgProxySettings } =
+    useUi()
   const [resetDone, setResetDone] = useState<string | null>(null)
+  const [portDraft, setPortDraft] = useState<string | null>(null)
   const resetting = busy.reset === true
+  const tgBusy = busy.tgproxy === true || busy['tgproxy-settings'] === true
 
   // Fresh service state on open: the button below is gated on it, and the
   // user may have stopped/started zapret on another tab just before.
@@ -29,6 +32,16 @@ export default function Settings(): React.JSX.Element {
     if (!window.confirm(t('settings.resetConfirm'))) return
     const r = await resetAll()
     if (r) setResetDone(t(r.servicesRemoved ? 'settings.resetDone' : 'settings.resetNoAdmin'))
+  }
+
+  const tgPort = tgProxySettings?.port ?? settings?.tgProxy.port ?? 1443
+
+  function commitPort(): void {
+    if (portDraft === null) return
+    const n = Number.parseInt(portDraft, 10)
+    setPortDraft(null)
+    if (!Number.isFinite(n) || n < 1 || n > 65535 || n === tgPort) return
+    void updateTgProxySettings({ port: n })
   }
 
   return (
@@ -100,6 +113,38 @@ export default function Settings(): React.JSX.Element {
             />
           </Row>
         </Card>
+
+      <Card title={t('tgProxy.title')}>
+        <p className="py-1 text-sm text-slate-600 dark:text-slate-300">{t('tgProxy.desc')}</p>
+        <Row label={t('tgProxy.autoStart')}>
+          <Toggle
+            value={tgProxySettings?.autoStart ?? settings?.tgProxy.autoStart ?? false}
+            onChange={(v) => void updateTgProxySettings({ autoStart: v })}
+          />
+        </Row>
+        <Row label={t('tgProxy.cfFallback')}>
+          <Toggle
+            value={tgProxySettings?.cfProxyEnabled ?? settings?.tgProxy.cfProxyEnabled ?? true}
+            onChange={(v) => void updateTgProxySettings({ cfProxyEnabled: v })}
+          />
+        </Row>
+        <Row label={t('tgProxy.port')}>
+          <input
+            type="number"
+            min={1}
+            max={65535}
+            disabled={tgBusy}
+            value={portDraft ?? String(tgPort)}
+            onChange={(e) => setPortDraft(e.target.value)}
+            onBlur={commitPort}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            }}
+            className="w-28 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-mono text-sm tabular-nums text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+          />
+        </Row>
+        <p className="py-1 text-xs text-slate-500 dark:text-slate-400">{t('tgProxy.restartHint')}</p>
+      </Card>
 
       <Card title={t('settings.resetTitle')}>
         <p className="py-1 text-sm text-slate-600 dark:text-slate-300">{t('settings.resetDesc')}</p>

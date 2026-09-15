@@ -108,3 +108,40 @@ export const CONFLICTING_SERVICES = ['GoodbyeDPI', 'discordfix_zapret', 'winws1'
 
 export const FAKE_DISCORD_ACTIVE = 'ACTIVE_DISCORD_UDP.bin'
 export const FAKE_GAME_ACTIVE = 'ACTIVE_GAME_UDP.bin'
+
+/**
+ * Built-in Telegram MTProto→WebSocket proxy (port of Flowseal/tg-ws-proxy).
+ * Listens on localhost and bridges Telegram Desktop MTProto connections
+ * over TLS WebSocket to Telegram DCs (with CF-proxy / direct-TCP fallback).
+ */
+export const TG_PROXY_DEFAULT_HOST = '127.0.0.1'
+export const TG_PROXY_DEFAULT_PORT = 1443
+export const TG_PROXY_WS_PATH = '/apiws'
+export const TG_PROXY_WS_PATH_TEST = '/apiws_test'
+/** Default target IPs per DC (mirrors upstream `DC_DEFAULT_IPS`). */
+export const TG_PROXY_DC_IPS: Record<number, string> = {
+  1: '149.154.175.50',
+  2: '149.154.167.51',
+  3: '149.154.175.100',
+  4: '149.154.167.91',
+  5: '149.154.171.5'
+}
+/** Test-DC IPs (DCs 10001+ map here after subtracting 10000). */
+export const TG_PROXY_DC_TEST_IPS: Record<number, string> = {
+  1: '149.154.175.10',
+  2: '149.154.167.40',
+  3: '149.154.175.117'
+}
+/**
+ * Direct-TCP fallback targets (mirrors upstream `DC_DEFAULT_IPS`).
+ * DC203 has no WS relay (`kws203.*` does not exist → CF answers 503),
+ * so it is served exclusively by direct TCP to 91.105.192.100.
+ */
+export const TG_PROXY_DC_FALLBACK_IPS: Record<number, string> = {
+  1: '149.154.175.50',
+  2: '149.154.167.51',
+  3: '149.154.175.100',
+  4: '149.154.167.91',
+  5: '149.154.171.5',
+  203: '91.105.192.100'
+}

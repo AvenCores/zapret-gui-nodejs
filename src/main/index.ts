@@ -26,6 +26,9 @@ import { isAdmin, relaunchAppAsAdmin } from './exec'
 import { IPC } from '../shared/types'
 import { translate } from '../shared/i18n'
 import type { GameFilterMode, IPSetMode, TrayPage, ZapretStatus } from '../shared/types'
+import { ensureTgProxySecret } from './ipc-handlers'
+import { getTgProxyStats, getTgProxyStatus, startTgProxy, stopTgProxy } from './tg-proxy'
+import { TG_PROXY_DEFAULT_HOST } from '../shared/constants'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -52,6 +55,13 @@ app.on('before-quit', () => {
     // A foreground/config test spawns winws.exe directly (no service) —
     // without this it keeps running as an orphan after the app exits.
     stopAllTesting()
+  } catch {
+    /* best-effort */
+  }
+  try {
+    // The TG proxy is an in-process listener — close it synchronously-ish
+    // so the port is released before quit.
+    void stopTgProxy().catch(() => undefined)
   } catch {
     /* best-effort */
   }
@@ -108,6 +118,14 @@ async function refreshTray(): Promise<void> {
     } catch {
       /* best-effort */
     }
+    let tgProxy: 'running' | 'stopped' | 'error' = 'stopped'
+    let tgProxyPort = settings.tgProxy.port
+    try {
+      tgProxy = getTgProxyStatus().status
+      tgProxyPort = getTgProxyStats().port
+    } catch {
+      /* best-effort */
+    }
     const ctx: TrayContext = {
       isAdmin: admin,
       ownership: st.ownership,
@@ -120,6 +138,8 @@ async function refreshTray(): Promise<void> {
       autoLaunch: settings.autoLaunch,
       minimizeToTray: settings.minimizeToTrayOnClose,
       startMinimized: settings.startMinimizedToTray,
+      tgProxy,
+      tgProxyPort,
       version: app.getVersion(),
       trayStrategyMenu: settings.trayStrategyMenu,
       trayServiceMenu: settings.trayServiceMenu,
@@ -173,6 +193,7 @@ function notifyRenderer(): void {
   try {
     if (mainWindow && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send(IPC.statusChanged)
+      mainWindow.webContents.send(IPC.tgProxyStatusChanged)
     }
   } catch {
     /* renderer gone */
@@ -255,6 +276,39 @@ async function applyStrategyFromTray(id: string): Promise<void> {
   }
 }
 
+/** Start/stop/restart the built-in TG proxy straight from the tray. */
+async function tgProxyAction(kind: 'start' | 'stop' | 'restart'): Promise<void> {
+  if (serviceBusy) return
+  serviceBusy = true
+  try {
+    if (kind === 'stop') {
+      await stopTgProxy()
+      const s = loadSettings()
+      saveSettings({ tgProxy: { ...s.tgProxy, enabled: false } })
+      info('tg-proxy', 'TG proxy stopped from tray.')
+    } else {
+      const s = ensureTgProxySecret()
+      if (kind === 'restart') await stopTgProxy().catch(() => undefined)
+      const bound = await startTgProxy({
+        port: s.tgProxy.port,
+        host: TG_PROXY_DEFAULT_HOST,
+        secret: s.tgProxy.secret,
+        cfProxyEnabled: s.tgProxy.cfProxyEnabled
+      })
+      saveSettings({ tgProxy: { ...s.tgProxy, enabled: true, port: bound.port } })
+      info('tg-proxy', `TG proxy ${kind} from tray: ${bound.host}:${bound.port}.`)
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    err('tg-proxy', `Tray TG proxy ${kind} failed: ${msg.slice(0, 300)}`)
+    dialog.showErrorBox('Zapret GUI', msg.slice(0, 500))
+  } finally {
+    serviceBusy = false
+    notifyRenderer()
+    await refreshTray()
+  }
+}
+
 function trayCallbacks() {
   return {
     onShow: () => {
@@ -271,6 +325,15 @@ function trayCallbacks() {
     },
     onRestart: () => {
       void serviceAction('restart')
+    },
+    onTgProxyStart: () => {
+      void tgProxyAction('start')
+    },
+    onTgProxyStop: () => {
+      void tgProxyAction('stop')
+    },
+    onTgProxyRestart: () => {
+      void tgProxyAction('restart')
     },
     onNavigate: (page: TrayPage) => {
       navigateTo(page)
@@ -499,6 +562,31 @@ if (!app.requestSingleInstanceLock()) {
     registerIpcHandlers()
     createWindow()
     setupAutoUpdater()
+    // Autostart the built-in TG proxy when enabled (best effort — a busy
+    // port must never break app startup).
+    try {
+      const s = loadSettings()
+      if (s.tgProxy.autoStart) {
+        const withSecret = ensureTgProxySecret()
+        void startTgProxy({
+          port: withSecret.tgProxy.port,
+          host: TG_PROXY_DEFAULT_HOST,
+          secret: withSecret.tgProxy.secret,
+          cfProxyEnabled: withSecret.tgProxy.cfProxyEnabled
+        })
+          .then((bound) => {
+            info('tg-proxy', `Autostarted on ${bound.host}:${bound.port}.`)
+            saveSettings({ tgProxy: { ...withSecret.tgProxy, enabled: true, port: bound.port } })
+            notifyRenderer()
+            void refreshTray()
+          })
+          .catch((e: unknown) => {
+            err('tg-proxy', `Autostart failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}`)
+          })
+      }
+    } catch {
+      /* best-effort */
+    }
     void firstRunCheck().catch(() => undefined)
     void refreshTray()
     setInterval(() => {

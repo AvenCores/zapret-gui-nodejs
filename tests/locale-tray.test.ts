@@ -75,7 +75,11 @@ describe('getTrayLabels', () => {
       relaunchAdmin: 'Перезапустить с правами администратора',
       openData: 'Открыть папку данных',
       exportLogs: 'Экспорт логов',
-      version: 'Версия приложения'
+      version: 'Версия приложения',
+      tgProxy: 'TG-прокси',
+      tgRunning: 'Запущен',
+      tgStopped: 'Остановлен',
+      tgError: 'Ошибка'
     })
   })
 
@@ -114,7 +118,11 @@ describe('getTrayLabels', () => {
       relaunchAdmin: 'Relaunch as administrator',
       openData: 'Open data folder',
       exportLogs: 'Export logs',
-      version: 'App version'
+      version: 'App version',
+      tgProxy: 'TG proxy',
+      tgRunning: 'Running',
+      tgStopped: 'Stopped',
+      tgError: 'Error'
     })
   })
 })

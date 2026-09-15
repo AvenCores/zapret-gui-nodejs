@@ -9,7 +9,7 @@ import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { IPC } from '../shared/types'
-import type { AppSettings, GameFilterMode, IPSetMode, Strategy } from '../shared/types'
+import type { AppSettings, GameFilterMode, IPSetMode, Strategy, TgProxySettings } from '../shared/types'
 import {
   getStatus,
   installStrategy,
@@ -56,11 +56,22 @@ import { WINWS_EXE } from '../shared/constants'
 import { abortActiveChild, runConfigTests } from './config-tester'
 import { win, safeSend } from './window'
 import type { ConfigTestMode } from '../shared/types'
+import {
+  buildTgLink,
+  generateTgSecret,
+  getTgProxyStats,
+  getTgProxyStatus,
+  isValidTgSecret,
+  normalizeTgPort,
+  startTgProxy,
+  stopTgProxy
+} from './tg-proxy'
+import { TG_PROXY_DEFAULT_HOST } from '../shared/constants'
 
 let testProc: ChildProcess | null = null
 let configTesterAbort: AbortController | null = null
 
-function sendLog(source: 'app' | 'winws' | 'updater' | 'diag', level: 'info' | 'warn' | 'error', text: string): void {
+function sendLog(source: 'app' | 'winws' | 'updater' | 'diag' | 'tg-proxy', level: 'info' | 'warn' | 'error', text: string): void {
   const line =
     level === 'error' ? err(source, text) : level === 'warn' ? warn(source, text) : info(source, text)
   safeSend(IPC.onLog, line)
@@ -95,6 +106,21 @@ export function listStrategies(): Strategy[] {
 
 function findStrategy(id: string): Strategy | null {
   return listStrategies().find((s) => s.id === id) ?? null
+}
+
+/**
+ * Ensure a stable MTProto secret exists (generated once, then persisted).
+ * A fresh secret on every start would force the user to reconfigure
+ * Telegram Desktop after each reboot.
+ */
+export function ensureTgProxySecret(): AppSettings {
+  const settings = loadSettings()
+  if (isValidTgSecret(settings.tgProxy.secret)) return settings
+  return saveSettings({ tgProxy: { ...settings.tgProxy, secret: generateTgSecret() } })
+}
+
+function getTgProxyStatusPayload(): { status: 'running' | 'stopped' | 'error'; stats: ReturnType<typeof getTgProxyStats> } {
+  return getTgProxyStatus()
 }
 
 export function registerIpcHandlers(): void {
@@ -427,6 +453,78 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.getSettings, async () => loadSettings())
   ipcMain.handle(IPC.saveSettings, async (_e, patch: Partial<AppSettings>) => saveSettings(patch))
 
+  // -- Built-in Telegram MTProto→WS proxy (src/main/tg-proxy.ts) --
+  ipcMain.handle(IPC.tgProxyStart, async () => {
+    const settings = ensureTgProxySecret()
+    const { port } = settings.tgProxy
+    sendLog('tg-proxy', 'info', `Starting TG proxy on ${TG_PROXY_DEFAULT_HOST}:${port}...`)
+    const bound = await startTgProxy({
+      port,
+      host: TG_PROXY_DEFAULT_HOST,
+      secret: settings.tgProxy.secret,
+      cfProxyEnabled: settings.tgProxy.cfProxyEnabled
+    })
+    saveSettings({ tgProxy: { ...settings.tgProxy, enabled: true, port: bound.port } })
+    sendLog('tg-proxy', 'info', `TG proxy link: ${buildTgLink(bound.host === '0.0.0.0' ? '127.0.0.1' : bound.host, bound.port, settings.tgProxy.secret)}`)
+    safeSend(IPC.tgProxyStatusChanged)
+    return true
+  })
+
+  ipcMain.handle(IPC.tgProxyStop, async () => {
+    await stopTgProxy()
+    const settings = loadSettings()
+    saveSettings({ tgProxy: { ...settings.tgProxy, enabled: false } })
+    sendLog('tg-proxy', 'info', 'TG proxy stopped.')
+    safeSend(IPC.tgProxyStatusChanged)
+    return true
+  })
+
+  ipcMain.handle(IPC.tgProxyRestart, async () => {
+    const settings = ensureTgProxySecret()
+    await stopTgProxy()
+    const bound = await startTgProxy({
+      port: settings.tgProxy.port,
+      host: TG_PROXY_DEFAULT_HOST,
+      secret: settings.tgProxy.secret,
+      cfProxyEnabled: settings.tgProxy.cfProxyEnabled
+    })
+    saveSettings({ tgProxy: { ...settings.tgProxy, enabled: true, port: bound.port } })
+    sendLog('tg-proxy', 'info', `TG proxy restarted on ${bound.host}:${bound.port}.`)
+    safeSend(IPC.tgProxyStatusChanged)
+    return true
+  })
+
+  ipcMain.handle(IPC.tgProxyGetStatus, async () => {
+    const settings = loadSettings()
+    return { ...getTgProxyStatusPayload(), settings: settings.tgProxy }
+  })
+
+  ipcMain.handle(IPC.tgProxyGetStats, async () => getTgProxyStats())
+
+  ipcMain.handle(IPC.tgProxyUpdateSettings, async (_e, patch: Partial<TgProxySettings>) => {    const current = loadSettings().tgProxy
+    const next: TgProxySettings = {
+      enabled: typeof patch.enabled === 'boolean' ? patch.enabled : current.enabled,
+      port: patch.port !== undefined ? normalizeTgPort(patch.port) : current.port,
+      autoStart: typeof patch.autoStart === 'boolean' ? patch.autoStart : current.autoStart,
+      secret: typeof patch.secret === 'string' && isValidTgSecret(patch.secret) ? patch.secret.trim().toLowerCase() : current.secret,
+      cfProxyEnabled: typeof patch.cfProxyEnabled === 'boolean' ? patch.cfProxyEnabled : current.cfProxyEnabled
+    }
+    const saved = saveSettings({ tgProxy: next })
+    sendLog('tg-proxy', 'info', `TG proxy settings: port=${next.port}, autoStart=${next.autoStart ? 'on' : 'off'}, CF fallback=${next.cfProxyEnabled ? 'on' : 'off'}.`)
+    safeSend(IPC.tgProxyStatusChanged)
+    return saved.tgProxy
+  })
+
+  ipcMain.handle(IPC.tgProxyOpenLink, async () => {
+    // The link is built here from our own settings — the renderer never
+    // passes a URL, so a compromised renderer cannot open arbitrary schemes.
+    const settings = ensureTgProxySecret()
+    const link = buildTgLink(TG_PROXY_DEFAULT_HOST, settings.tgProxy.port, settings.tgProxy.secret)
+    await shell.openExternal(link)
+    sendLog('tg-proxy', 'info', 'TG proxy link opened in Telegram.')
+    return true
+  })
+
   ipcMain.handle(IPC.resetAppData, async () => {
     // A foreground winws test holds files in data/bin + lists open — kill it
     // first or the data-dir wipe below fails with EBUSY/EPERM.
@@ -438,6 +536,10 @@ export function registerIpcHandlers(): void {
     }
     configTesterAbort = null
     abortActiveChild()
+    // The TG proxy keeps no data files open, but its `enabled` flag is reset
+    // below — stop it first so state and settings stay consistent.
+    await stopTgProxy()
+    safeSend(IPC.tgProxyStatusChanged)
     sendLog('app', 'warn', 'Resetting app settings and data to defaults...')
     const r = await resetAppData((t) => sendLog('app', 'info', t))
     if (!r.servicesRemoved) {

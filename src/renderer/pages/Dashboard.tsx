@@ -158,6 +158,110 @@ function BypassIcon(props: { id: BypassTargetId }): React.JSX.Element {
   return <CloudIcon />
 }
 
+/** Format bytes for the proxy traffic row (B/KB/MB, one decimal). */
+function formatBytes(n: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = n
+  for (const u of units) {
+    if (Math.abs(v) < 1024 || u === 'TB') return `${v.toFixed(1)} ${u}`
+    v /= 1024
+  }
+  return `${v.toFixed(1)} TB`
+}
+
+/** Built-in Telegram MTProto→WS proxy: status, controls, stats, link. */
+function TgProxyBlock(): React.JSX.Element {
+  const { t, tgProxyStatus, tgProxyStats, tgProxySettings, startTgProxy, stopTgProxy, restartTgProxy, openTgProxyLink, busy, setError } =
+    useUi()
+  const [copied, setCopied] = useState(false)
+  const acting = busy.tgproxy === true
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  const running = tgProxyStatus === 'running'
+  const tone = tgProxyStatus === 'running' ? 'green' : tgProxyStatus === 'error' ? 'red' : 'gray'
+  const statusText =
+    tgProxyStatus === 'running'
+      ? t('tgProxy.statusRunning')
+      : tgProxyStatus === 'error'
+        ? t('tgProxy.statusError')
+        : tgProxyStatus === 'stopped'
+          ? t('tgProxy.statusStopped')
+          : t('status.unknown')
+  const port = tgProxyStats?.port ?? tgProxySettings?.port ?? 1443
+  const host = tgProxyStats?.host ?? '127.0.0.1'
+  const secret = tgProxySettings?.secret ?? ''
+  const link = secret !== '' ? `tg://proxy?server=${host}&port=${port}&secret=dd${secret}` : ''
+
+  async function copyLink(): Promise<void> {
+    if (!link) return
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopied(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <Card title={t('tgProxy.title')}>
+      <p className="py-1 text-sm text-slate-600 dark:text-slate-300">{t('tgProxy.desc')}</p>
+      <Row label={t('tgProxy.title')}>
+        <Badge tone={tone}>
+          <Dot tone={tone} pulse={running} />
+          {statusText}
+        </Badge>
+      </Row>
+      <Row label={t('tgProxy.port')}>
+        <span className="font-mono text-sm tabular-nums text-slate-900 dark:text-slate-100">
+          {host}:{port}
+        </span>
+      </Row>
+      <Row label={t('tgProxy.connections')}>
+        <span className="text-sm tabular-nums text-slate-900 dark:text-slate-100">
+          {tgProxyStats ? tgProxyStats.connectionsActive : '—'}
+        </span>
+      </Row>
+      <Row label={t('tgProxy.traffic')}>
+        <span className="text-sm tabular-nums text-slate-900 dark:text-slate-100">
+          {tgProxyStats ? `↑ ${formatBytes(tgProxyStats.bytesUp)} · ↓ ${formatBytes(tgProxyStats.bytesDown)}` : '—'}
+        </span>
+      </Row>
+      {link !== '' ? (
+        <Row label={t('tgProxy.link')}>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="max-w-[280px] truncate font-mono text-[11px] text-slate-600 dark:text-slate-300" title={link}>
+              {link}
+            </span>
+            <Btn variant="secondary" onClick={() => void copyLink()}>
+              {t('tgProxy.copyLink')}
+            </Btn>
+            <Btn variant="secondary" onClick={() => void openTgProxyLink()} disabled={acting}>
+              {t('tgProxy.openLink')}
+            </Btn>
+          </span>
+        </Row>
+      ) : null}
+      {copied ? <p className="py-1 text-sm text-emerald-700 dark:text-emerald-300">✓ {t('tgProxy.linkCopied')}</p> : null}
+      <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-700/60">
+        <Btn onClick={() => void startTgProxy()} disabled={acting || running}>
+          {acting && !running ? <Spinner /> : t('action.start')}
+        </Btn>
+        <Btn onClick={() => void stopTgProxy()} disabled={acting || !running} variant="secondary">
+          {acting && running ? <Spinner /> : t('action.stop')}
+        </Btn>
+        <Btn onClick={() => void restartTgProxy()} disabled={acting} variant="secondary">
+          {t('action.restart')}
+        </Btn>
+      </div>
+    </Card>
+  )
+}
+
 /** Full-featured hosts block: check upstream, inspect markers, apply, verify. */
 function HostsBlock(): React.JSX.Element {
   const { t, setError, status, hostsCheck: hosts, hostsCheckedAt: checkedAt, setHostsCheck } = useUi()
@@ -519,6 +623,8 @@ export default function Dashboard(): React.JSX.Element {
       </Card>
 
       <HostsBlock />
+
+      <TgProxyBlock />
 
       <BypassTest />
     </div>

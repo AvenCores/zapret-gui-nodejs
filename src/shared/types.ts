@@ -147,9 +147,60 @@ export interface DownloadProgress {
 /** A line of application / winws log streamed to the Logs page. */
 export interface LogLine {
   ts: string
-  source: 'app' | 'winws' | 'updater' | 'diag'
+  source: 'app' | 'winws' | 'updater' | 'diag' | 'tg-proxy'
   level: 'info' | 'warn' | 'error'
   text: string
+}
+
+/** Telegram MTProto→WebSocket proxy status (in-process server). */
+export type TgProxyStatus = 'running' | 'stopped' | 'error'
+
+/** Persisted Telegram proxy settings (`settings.json → tgProxy`). */
+export interface TgProxySettings {
+  /** Desired state: true = should be running (set by Start/Stop). */
+  enabled: boolean
+  /** Local listen port (default 1443). */
+  port: number
+  /** Start the proxy automatically with the app. */
+  autoStart: boolean
+  /** 32-hex MTProto secret shown in the `tg://proxy` link (auto-generated). */
+  secret: string
+  /** Cloudflare-proxy fallback via `kws{dc}.*` domains (default true). */
+  cfProxyEnabled: boolean
+}
+
+/** Live statistics snapshot of the Telegram proxy. */
+export interface TgProxyStats {
+  running: boolean
+  host: string
+  port: number
+  /** Total accepted client connections since start. */
+  connectionsTotal: number
+  /** Currently open client sessions. */
+  connectionsActive: number
+  /** Sessions bridged over WebSocket. */
+  connectionsWs: number
+  /** Sessions that fell back to direct TCP. */
+  connectionsTcpFallback: number
+  /** Sessions that fell back via Cloudflare proxy. */
+  connectionsCf: number
+  /** Rejected handshakes (wrong secret / proto). */
+  connectionsBad: number
+  /** WebSocket handshake/connect errors. */
+  wsErrors: number
+  bytesUp: number
+  bytesDown: number
+  /** ISO timestamp of the current run start (null when stopped). */
+  startedAt: string | null
+  /** Last fatal error text (null when healthy). */
+  lastError: string | null
+}
+
+/** Full proxy status payload for the renderer. */
+export interface TgProxyStatusPayload {
+  status: TgProxyStatus
+  stats: TgProxyStats
+  settings: TgProxySettings
 }
 
 /** App settings persisted to disk (`%APPDATA%/zapret-gui/settings.json`). */
@@ -171,6 +222,7 @@ export interface AppSettings {
   activeStrategyId: string | null
   discordFake: string | null
   gameFake: string | null
+  tgProxy: TgProxySettings
 }
 
 /** Result of comparing the system hosts file with upstream (main process). */
@@ -288,6 +340,14 @@ export const IPC = {
   checkAppUpdates: 'zapret:check-app-updates',
   downloadAppUpdate: 'zapret:download-app-update',
   installAppUpdate: 'zapret:install-app-update',
+  tgProxyStart: 'tg-proxy:start',
+  tgProxyStop: 'tg-proxy:stop',
+  tgProxyRestart: 'tg-proxy:restart',
+  tgProxyGetStatus: 'tg-proxy:get-status',
+  tgProxyGetStats: 'tg-proxy:get-stats',
+  tgProxyUpdateSettings: 'tg-proxy:update-settings',
+  tgProxyOpenLink: 'tg-proxy:open-link',
+  tgProxyStatusChanged: 'tg-proxy:status-changed',
   navigate: 'zapret:navigate',
   statusChanged: 'zapret:status-changed'
 } as const

@@ -6,7 +6,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
 import { getSettingsPath } from './paths'
-import type { AppSettings, AppTheme } from '../shared/types'
+import type { AppSettings, AppTheme, TgProxySettings } from '../shared/types'
+import { TG_PROXY_DEFAULT_PORT } from '../shared/constants'
 import { isSupportedLocale, normalizeLocale, resolveSystemLocale as resolveSystemLocaleImpl, type Locale } from '../shared/i18n'
 
 const BASE_DEFAULTS = {
@@ -23,7 +24,14 @@ const BASE_DEFAULTS = {
   trayQuickSettings: true,
   activeStrategyId: null,
   discordFake: null,
-  gameFake: null
+  gameFake: null,
+  tgProxy: {
+    enabled: false,
+    port: TG_PROXY_DEFAULT_PORT,
+    autoStart: false,
+    secret: '',
+    cfProxyEnabled: true
+  } as TgProxySettings
 } as const
 
 /**
@@ -138,6 +146,7 @@ export function loadSettings(): AppSettings {
     // supported code. Unknown/corrupted values fall back to English.
     merged.locale = normalizeLocale((parsed as Record<string, unknown>).locale ?? merged.locale)
     merged.theme = normalizeTheme((parsed as Record<string, unknown>).theme ?? merged.theme)
+    merged.tgProxy = normalizeTgProxySettings((parsed as Record<string, unknown>).tgProxy)
     // Backward compat: `trayTuningMenu` (one flag for both tuning submenus)
     // migrates to `trayGameFilterMenu` + `trayIPSetMenu`, each independently.
     // Explicit new flags always win over the legacy one.
@@ -166,9 +175,28 @@ export function loadSettings(): AppSettings {
   }
 }
 
+/** Coerce an unknown value to valid TG-proxy settings (fallback defaults). Pure. */
+export function normalizeTgProxySettings(value: unknown): TgProxySettings {
+  const d = BASE_DEFAULTS.tgProxy
+  if (value == null || typeof value !== 'object') {
+    return { ...d }
+  }
+  const raw = value as Record<string, unknown>
+  const portNum = typeof raw.port === 'number' ? Math.floor(raw.port) : Number.parseInt(String(raw.port ?? ''), 10)
+  const secret = typeof raw.secret === 'string' ? raw.secret.trim().toLowerCase().slice(0, 64) : ''
+  return {
+    enabled: raw.enabled === true,
+    port: Number.isFinite(portNum) && portNum >= 1 && portNum <= 65535 ? portNum : d.port,
+    autoStart: raw.autoStart === true,
+    secret: /^[0-9a-f]{32}$/.test(secret) ? secret : '',
+    cfProxyEnabled: raw.cfProxyEnabled === false ? false : true
+  }
+}
+
 export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   if (patch.locale !== undefined) patch = { ...patch, locale: normalizeLocale(patch.locale) }
   if (patch.theme !== undefined) patch = { ...patch, theme: normalizeTheme(patch.theme) }
+  if (patch.tgProxy !== undefined) patch = { ...patch, tgProxy: normalizeTgProxySettings(patch.tgProxy) }
   const next = { ...loadSettings(), ...patch }
   persistSettings(next)
   applyAutoLaunch(next.autoLaunch)

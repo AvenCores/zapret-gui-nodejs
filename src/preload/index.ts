@@ -21,6 +21,9 @@ import type {
   LogLine,
   StatusSnapshot,
   Strategy,
+  TgProxySettings,
+  TgProxyStats,
+  TgProxyStatus,
   TrayPage,
   UpdateInfo,
   UserListMeta
@@ -115,6 +118,20 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.statusChanged, fn)
   },
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC.getAppVersion),
+  startTgProxy: (): Promise<boolean> => ipcRenderer.invoke(IPC.tgProxyStart),
+  stopTgProxy: (): Promise<boolean> => ipcRenderer.invoke(IPC.tgProxyStop),
+  restartTgProxy: (): Promise<boolean> => ipcRenderer.invoke(IPC.tgProxyRestart),
+  getTgProxyStatus: (): Promise<{ status: TgProxyStatus; stats: TgProxyStats; settings: TgProxySettings }> =>
+    ipcRenderer.invoke(IPC.tgProxyGetStatus),
+  getTgProxyStats: (): Promise<TgProxyStats> => ipcRenderer.invoke(IPC.tgProxyGetStats),
+  updateTgProxySettings: (patch: Partial<TgProxySettings>): Promise<TgProxySettings> =>
+    ipcRenderer.invoke(IPC.tgProxyUpdateSettings, patch),
+  openTgProxyLink: (): Promise<boolean> => ipcRenderer.invoke(IPC.tgProxyOpenLink),
+  onTgProxyStatusChanged: (cb: () => void): (() => void) => {
+    const fn = (): void => cb()
+    ipcRenderer.on(IPC.tgProxyStatusChanged, fn)
+    return () => ipcRenderer.removeListener(IPC.tgProxyStatusChanged, fn)
+  },
   checkAppUpdates: (): Promise<AppUpdateInfo> => ipcRenderer.invoke(IPC.checkAppUpdates),
   downloadAppUpdate: (): Promise<boolean> => ipcRenderer.invoke(IPC.downloadAppUpdate),
   installAppUpdate: (): Promise<boolean> => ipcRenderer.invoke(IPC.installAppUpdate),

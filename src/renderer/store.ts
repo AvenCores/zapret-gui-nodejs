@@ -15,7 +15,10 @@ import type {
   HostsCheckResult,
   LogLine,
   StatusSnapshot,
-  Strategy
+  Strategy,
+  TgProxySettings,
+  TgProxyStats,
+  TgProxyStatus
 } from '../shared/types'
 import { translate, type I18nKey, type Locale } from '../shared/i18n'
 
@@ -117,6 +120,16 @@ interface UiState {
   stopConfigTests: () => Promise<void>
   checkBypassOne: (id: BypassTargetId) => Promise<void>
   checkBypassAll: (strategyKey: string) => Promise<void>
+  /** Built-in Telegram MTProto→WS proxy dipslayed on Dashboard/Settings. */
+  tgProxyStatus: TgProxyStatus | 'unknown'
+  tgProxyStats: TgProxyStats | null
+  tgProxySettings: TgProxySettings | null
+  refreshTgProxy: () => Promise<void>
+  startTgProxy: () => Promise<void>
+  stopTgProxy: () => Promise<void>
+  restartTgProxy: () => Promise<void>
+  updateTgProxySettings: (patch: Partial<TgProxySettings>) => Promise<void>
+  openTgProxyLink: () => Promise<void>
 }
 
 async function call<T>(key: string, fn: () => Promise<T>, set: (p: Partial<UiState>) => void, get: () => UiState): Promise<T | null> {
@@ -153,6 +166,9 @@ export const useUi = create<UiState>((set, get) => ({
   bypassChecking: { youtube: false, cloudflare: false, discord: false },
   bypassCheckingAll: false,
   bypassStrategyKey: null,
+  tgProxyStatus: 'unknown',
+  tgProxyStats: null,
+  tgProxySettings: null,
   hostsCheck: null,
   hostsCheckedAt: null,
   setHostsCheck: (hostsCheck, hostsCheckedAt) => set({ hostsCheck, hostsCheckedAt }),
@@ -242,6 +258,11 @@ export const useUi = create<UiState>((set, get) => ({
     if (!logSubscribed) {
       logSubscribed = true
       window.zapret.onLog((line) => get().pushLog(line))
+      // TG proxy start/stop (tray included) notifies here so Dashboard
+      // badges stay fresh without polling.
+      window.zapret.onTgProxyStatusChanged(() => {
+        void get().refreshTgProxy()
+      })
     }
     // Same for config-tester events: a run keeps streaming into the store
     // even when Diagnostics is unmounted (other tab open), and the results
@@ -279,6 +300,7 @@ export const useUi = create<UiState>((set, get) => ({
     }
     await get().refreshStatus()
     await get().refreshStrategies()
+    await get().refreshTgProxy()
   },
 
   refreshStatus: async () => {
@@ -289,6 +311,44 @@ export const useUi = create<UiState>((set, get) => ({
   refreshStrategies: async () => {
     const strategies = await call('strategies', () => window.zapret.listStrategies(), set, get)
     if (strategies) set({ strategies })
+  },
+
+  refreshTgProxy: async () => {
+    try {
+      const res = await window.zapret.getTgProxyStatus()
+      set({ tgProxyStatus: res.status, tgProxyStats: res.stats, tgProxySettings: res.settings })
+    } catch (e) {
+      set({ tgProxyStatus: 'unknown', error: e instanceof Error ? e.message : String(e) })
+    }
+  },
+
+  startTgProxy: async () => {
+    await call('tgproxy', () => window.zapret.startTgProxy(), set, get)
+    await get().refreshTgProxy()
+  },
+
+  stopTgProxy: async () => {
+    await call('tgproxy', () => window.zapret.stopTgProxy(), set, get)
+    await get().refreshTgProxy()
+  },
+
+  restartTgProxy: async () => {
+    await call('tgproxy', () => window.zapret.restartTgProxy(), set, get)
+    await get().refreshTgProxy()
+  },
+
+  openTgProxyLink: async () => {
+    await call('tgproxy', () => window.zapret.openTgProxyLink(), set, get)
+  },
+
+  updateTgProxySettings: async (patch) => {
+    const settings = await call('tgproxy-settings', () => window.zapret.updateTgProxySettings(patch), set, get)
+    if (settings) {
+      set({ tgProxySettings: settings })
+      // Keep the global settings copy in sync (same tgProxy object).
+      const cur = get().settings
+      if (cur) set({ settings: { ...cur, tgProxy: settings } })
+    }
   },
 
   pushLog: (line) =>
@@ -340,7 +400,9 @@ export const useUi = create<UiState>((set, get) => ({
         configRows: [],
         configBest: null,
         configFilePath: null,
-        configCancelled: false
+        configCancelled: false,
+        tgProxyStatus: 'stopped',
+        tgProxyStats: null
       })
       syncThemeClass(r.settings.theme)
       try {
@@ -350,6 +412,7 @@ export const useUi = create<UiState>((set, get) => ({
       }
       await get().refreshStatus()
       await get().refreshStrategies()
+      await get().refreshTgProxy()
       return r
     } catch (e) {
       set({ error: e instanceof Error ? e.message : String(e) })
