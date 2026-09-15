@@ -10,7 +10,7 @@ import { getBinDir } from './paths'
 import { loadLinuxConf } from './linux/config'
 import { detectFirewallBackend, isFirewallActive, listAvailableBackends } from './linux/firewall'
 import { detectInitSystem, queryLinuxServiceState } from './linux/init-system'
-import { getLinuxNfqwsPath, isNfqwsRunning } from './linux/service'
+import { getLinuxNfqwsPath, isNfqwsRunning, checkNfqwsDeps, distroInstallHint } from './linux/service'
 import { canElevateWithoutPassword, isRoot } from './linux/elevate'
 import { LINUX_SERVICE_NAME } from './linux/constants'
 
@@ -70,6 +70,36 @@ async function checkNfqws(dataDir: string): Promise<DiagnosticCheck> {
     detail: present ? `nfqws present (${p})` : `nfqws NOT found in ${p} — download Linux deps first`,
     detailKey: present ? 'diag.detail.nfqwsOk' : 'diag.detail.nfqwsFail',
     ...(present ? {} : { detailParams: { path: p } })
+  }
+}
+
+async function checkNfqwsDepsRow(dataDir: string): Promise<DiagnosticCheck | null> {
+  // Skipped when the binary itself is missing (the nfqws row already fails).
+  const p = getLinuxNfqwsPath(dataDir)
+  try {
+    if (!fs.existsSync(p)) return null
+  } catch {
+    return null
+  }
+  const deps = await checkNfqwsDeps(p).catch(() => ({ ok: true, missing: [] as string[] }))
+  if (deps.ok) {
+    return {
+      id: 'nfqwsDeps',
+      labelKey: 'diag.nfqwsDeps',
+      level: 'ok',
+      detail: 'all shared libraries resolve',
+      detailKey: 'diag.detail.nfqwsDepsOk'
+    }
+  }
+  const list = deps.missing.join(', ')
+  const hint = distroInstallHint()
+  return {
+    id: 'nfqwsDeps',
+    labelKey: 'diag.nfqwsDeps',
+    level: 'fail',
+    detail: `missing shared libraries: ${list} — install them: ${hint}`,
+    detailKey: 'diag.detail.nfqwsDepsFail',
+    detailParams: { list, hint }
   }
 }
 
@@ -187,14 +217,19 @@ function checkLists(dataDir: string): DiagnosticCheck {
 
 /** Run the Linux diagnostics suite. */
 export async function runLinuxDiagnostics(dataDir: string): Promise<DiagnosticCheck[]> {
-  return [
+  const out: DiagnosticCheck[] = [
     await checkElevate(),
     await checkFirewallBackend(),
-    await checkNfqws(dataDir),
+    await checkNfqws(dataDir)
+  ]
+  const deps = await checkNfqwsDepsRow(dataDir).catch(() => null)
+  if (deps) out.push(deps)
+  out.push(
     checkConf(dataDir),
     await checkInitService(),
     await checkFirewallActive(dataDir),
     checkLists(dataDir),
     await checkHostsYoutube()
-  ]
+  )
+  return out
 }

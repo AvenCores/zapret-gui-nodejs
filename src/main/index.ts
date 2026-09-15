@@ -533,6 +533,16 @@ if (!app.requestSingleInstanceLock()) {
       } catch {
         /* best-effort: seeding below reports real failures */
       }
+      // Stale generated runner (`pkill -f nfqws`) assassinates our own
+      // elevated batches — patch to `-x` (user-writable file, no prompt).
+      try {
+        const { migrateStaleRunner } = await import('./linux/service')
+        if (migrateStaleRunner(getDataDir())) {
+          info('app', 'Migrated stale runner pkill to -x (batch self-kill fix).')
+        }
+      } catch {
+        /* best-effort */
+      }
     }
 
     try {
