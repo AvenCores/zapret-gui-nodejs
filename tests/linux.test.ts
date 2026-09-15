@@ -71,7 +71,10 @@ vi.mock('../src/main/linux/elevate', async (importOriginal: () => Promise<typeof
   const orig = await importOriginal()
   return {
     ...orig,
-    runBatch: batchMocks.runBatch
+    runBatch: batchMocks.runBatch,
+    // Deterministic verify path on any CI (otherwise a NOPASSWD Linux
+    // runner would take the journal-context branch = extra runBatch call).
+    canElevateWithoutPassword: async (): Promise<boolean> => false
   }
 })
 
