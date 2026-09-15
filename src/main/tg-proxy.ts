@@ -2359,6 +2359,7 @@ export async function stopTgProxy(): Promise<void> {
     }
   }
   clients.clear()
+  Object.assign(counters, freshCounters())
   const srv = server
   server = null
   running = false

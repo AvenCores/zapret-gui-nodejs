@@ -171,10 +171,11 @@ function formatBytes(n: number): string {
 
 /** Built-in Telegram MTProto→WS proxy: status, controls, stats, link. */
 function TgProxyBlock(): React.JSX.Element {
-  const { t, tgProxyStatus, tgProxyStats, tgProxySettings, tgProxyLink, startTgProxy, stopTgProxy, restartTgProxy, openTgProxyLink, setPage, setSettingsHighlight, busy, setError } =
+  const { t, tgProxyStatus, tgProxyStats, tgProxySettings, tgProxyLink, startTgProxy, stopTgProxy, restartTgProxy, openTgProxyLink, setPage, setSettingsHighlight, busy, setError, refreshTgProxy } =
     useUi()
   const [copied, setCopied] = useState(false)
   const acting = busy.tgproxy === true
+  const running = tgProxyStatus === 'running'
 
   useEffect(() => {
     if (!copied) return
@@ -182,7 +183,17 @@ function TgProxyBlock(): React.JSX.Element {
     return () => clearTimeout(timer)
   }, [copied])
 
-  const running = tgProxyStatus === 'running'
+  // Stats in main (connectionsActive/bytesUp/bytesDown) change continuously
+  // while sessions flow, but main only pushes `tgProxyStatusChanged` on
+  // start/stop/settings — without polling the rows stay stuck at 0.
+  useEffect(() => {
+    if (!running) return
+    const id = setInterval(() => {
+      void refreshTgProxy()
+    }, 2000)
+    return () => clearInterval(id)
+  }, [running, refreshTgProxy])
+
   const tone = tgProxyStatus === 'running' ? 'green' : tgProxyStatus === 'error' ? 'red' : 'gray'
   const statusText =
     tgProxyStatus === 'running'
@@ -243,17 +254,17 @@ function TgProxyBlock(): React.JSX.Element {
       </Row>
       <Row label={t('tgProxy.connections')}>
         <span className="text-sm tabular-nums text-slate-900 dark:text-slate-100">
-          {tgProxyStats ? tgProxyStats.connectionsActive : '—'}
+          {running && tgProxyStats ? tgProxyStats.connectionsActive : '—'}
         </span>
       </Row>
       <Row label={t('tgProxy.traffic')}>
         <span className="text-sm tabular-nums text-slate-900 dark:text-slate-100">
-          {tgProxyStats ? `↑ ${formatBytes(tgProxyStats.bytesUp)} · ↓ ${formatBytes(tgProxyStats.bytesDown)}` : '—'}
+          {running && tgProxyStats ? `↑ ${formatBytes(tgProxyStats.bytesUp)} · ↓ ${formatBytes(tgProxyStats.bytesDown)}` : '—'}
         </span>
       </Row>
       {link !== '' ? (
         <Row label={t('tgProxy.link')}>
-          <Btn variant="secondary" onClick={() => void copyLink()}>
+          <Btn variant="secondary" onClick={() => void copyLink()} disabled={acting || !running}>
             {t('tgProxy.copyLink')}
           </Btn>
         </Row>
@@ -266,13 +277,13 @@ function TgProxyBlock(): React.JSX.Element {
         <Btn onClick={() => void stopTgProxy()} disabled={acting || !running} variant="secondary">
           {acting && running ? <Spinner /> : t('action.stop')}
         </Btn>
-        <Btn onClick={() => void restartTgProxy()} disabled={acting} variant="secondary">
+        <Btn onClick={() => void restartTgProxy()} disabled={acting || !running} variant="secondary">
           {t('action.restart')}
         </Btn>
         {link !== '' ? (
           <>
             <span className="flex-1" />
-            <Btn variant="secondary" onClick={() => void openTgProxyLink()} disabled={acting}>
+            <Btn variant="secondary" onClick={() => void openTgProxyLink()} disabled={acting || !running}>
               {t('tgProxy.openLink')}
             </Btn>
           </>
