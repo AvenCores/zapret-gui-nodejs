@@ -643,6 +643,7 @@ export interface SudoersOpts {
   teePath?: string
   visudoPath?: string
   bashPath?: string
+  journalctlPath?: string
   /** Init-service name (default `zapret_discord_youtube`). */
   serviceName?: string
   /** Absolute runner path for the no-init fallback (`bash <runner> daemon`). */
@@ -676,7 +677,7 @@ export function buildSudoersContent(
     `${safeUser} ALL=(root) NOPASSWD: ${ipt} *`,
     `${safeUser} ALL=(root) NOPASSWD: ${ip6t} *`,
     `${safeUser} ALL=(root) NOPASSWD: ${nfqwsPath} *`,
-    `${safeUser} ALL=(root) NOPASSWD: ${pkill} -f nfqws`,
+    `${safeUser} ALL=(root) NOPASSWD: ${pkill} -x nfqws`,
     ``
   ]
   const rule = (bin: string | undefined, fallback: string, args: string): void => {
@@ -729,6 +730,14 @@ export function buildSudoersContent(
   rule(opts.rmPath, '/usr/bin/rm', `-rf /etc/s6/sv/${svc}`)
   rule(opts.rmPath, '/usr/bin/rm', `-f /etc/dinit.d/${svc}`)
   rule(opts.visudoPath, '/usr/sbin/visudo', `-c -f /etc/sudoers.d/zapret`)
+  // The rules file maintains itself (re-setup overwrites, cleanup removes).
+  rule(opts.teePath, '/usr/bin/tee', '/etc/sudoers.d/zapret')
+  rule(opts.chmodPath, '/usr/bin/chmod', '0440 /etc/sudoers.d/zapret')
+  rule(opts.rmPath, '/usr/bin/rm', '-f /etc/sudoers.d/zapret')
+  // Read-only diagnostics collected on start failures (exact argv — must
+  // match collectUnitFailureContext in ./service).
+  rule(sys, '/usr/bin/systemctl', `status ${svc} --no-pager`)
+  rule(opts.journalctlPath, '/usr/bin/journalctl', `--no-pager -n 40 -u ${svc}`)
   if (opts.runnerPath && opts.runnerPath.startsWith('/')) {
     rule(opts.bashPath, '/usr/bin/bash', `${opts.runnerPath} daemon`)
   }
@@ -760,7 +769,7 @@ export function buildDoasRules(
     `permit nopass ${safeUser} as root cmd ${ipt}`,
     `permit nopass ${safeUser} as root cmd ${ip6t}`,
     `permit nopass ${safeUser} as root cmd ${nfqwsPath}`,
-    `permit nopass ${safeUser} as root cmd pkill args -f nfqws`,
+    `permit nopass ${safeUser} as root cmd pkill args -x nfqws`,
     ``
   ]
   for (const bin of opts.extraBins ?? []) {

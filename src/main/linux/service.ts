@@ -106,10 +106,10 @@ export function getLinuxRunnerPath(dataDir: string): string {
   return path.join(dataDir, LINUX_RUNNER_FILE)
 }
 
-/** `pgrep -f nfqws` check. */
+/** `pgrep -x nfqws` check (`-x`: exact process name — never matches wrappers). */
 export async function isNfqwsRunning(): Promise<boolean> {
   try {
-    const r = await execAsync('pgrep', ['-f', 'nfqws'], 8000)
+    const r = await execAsync('pgrep', ['-x', 'nfqws'], 8000)
     return r.code === 0 && r.stdout.trim().length > 0
   } catch {
     return false
@@ -119,7 +119,7 @@ export async function isNfqwsRunning(): Promise<boolean> {
 /** Absolute path of the running nfqws (`/proc/<pid>/exe`), null when absent. */
 export async function getNfqwsProcessPath(): Promise<string | null> {
   try {
-    const r = await execAsync('pgrep', ['-n', '-f', 'nfqws'], 8000)
+    const r = await execAsync('pgrep', ['-n', '-x', 'nfqws'], 8000)
     const pid = (r.stdout ?? '').trim().split(/\s+/)[0]
     if (!pid || !/^\d+$/.test(pid)) return null
     try {
@@ -132,9 +132,94 @@ export async function getNfqwsProcessPath(): Promise<string | null> {
   }
 }
 
-/** Best-effort `pkill -f nfqws` as a batch step (joins the operation batch — no extra prompt). Pure. */
+/** Best-effort `pkill -x nfqws` as a batch step (joins the operation batch — no extra prompt). Pure. */
 function pkillStep(): BatchStep {
-  return { kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true }
+  // `-x` (exact process name): unlike `-f`, it can never match our own
+  // `pkexec bash -c '...nfqws...'` wrapper and suicide the batch.
+  return { kind: 'exec', file: 'pkill', args: ['-x', 'nfqws'], ignoreFailure: true }
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((res) => setTimeout(res, ms))
+}
+
+/**
+ * Collect `systemctl status` + journal tail for a failed unit (one batch,
+ * silent with NOPASSWD; the caller only invokes this when reads are free).
+ * Never throws — returns '' when nothing could be collected.
+ */
+async function collectUnitFailureContext(serviceName: string): Promise<string> {
+  try {
+    const safe = String(serviceName).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 64) || 'zapret_discord_youtube'
+    const steps: BatchStep[] = [
+      { kind: 'exec', file: 'systemctl', args: ['status', safe, '--no-pager'], ignoreFailure: true }
+    ]
+    try {
+      const j = await execAsync('sh', ['-c', 'command -v journalctl'], 5000)
+      if (j.code === 0) {
+        steps.push({ kind: 'exec', file: 'journalctl', args: ['--no-pager', '-n', '40', '-u', safe], ignoreFailure: true })
+      }
+    } catch {
+      /* journal unavailable (non-systemd loggers) */
+    }
+    const r = await runBatch(steps, { timeoutMs: 30000 })
+    const out = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim()
+    return out ? `\n--- systemctl status + journal ---\n${out.slice(0, 2000)}` : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Verify a start/install actually worked: unit active (when known), nfqws
+ * alive (polled — the daemon fork takes a moment under load), firewall
+ * rules present *when readable without a prompt* (root/NOPASSWD; an
+ * unprivileged `nft list` fails and must not count as "absent").
+ * Throws a detailed error (with unit context) instead of leaving a green
+ * "RUNNING" service with dead workers.
+ */
+async function verifyLinuxRunning(
+  dataDir: string,
+  init: InitSystem,
+  backend: FirewallBackendResolved | null,
+  onLog?: (t: string) => void
+): Promise<void> {
+  void dataDir
+  let alive = await isNfqwsRunning()
+  for (let i = 0; !alive && i < 11; i++) {
+    await sleepMs(500)
+    alive = await isNfqwsRunning()
+  }
+  let unitState: ServiceState = 'UNKNOWN'
+  if (init !== 'unknown') {
+    try {
+      unitState = await queryLinuxServiceState(init)
+    } catch {
+      unitState = 'UNKNOWN'
+    }
+  }
+  // Firewall reads need privileges; without them the check would lie.
+  let fwOk: boolean | null = null
+  const canReadFw = isRoot() || (await canElevateWithoutPassword().catch(() => false))
+  if (canReadFw && backend) {
+    try {
+      fwOk = await isFirewallActive(backend)
+    } catch {
+      fwOk = null
+    }
+  }
+  const serviceOk = init === 'unknown' ? alive : unitState === 'RUNNING'
+  if (serviceOk && alive && fwOk !== false) return
+  const parts: string[] = []
+  if (!serviceOk) parts.push(`service state is ${unitState}`)
+  if (!alive) parts.push('nfqws process is not running')
+  if (fwOk === false) parts.push(`no ${backend} firewall rules detected`)
+  onLog?.(`Start verification failed: ${parts.join('; ')}. Collecting service logs...`)
+  let ctx = ''
+  if (init !== 'unknown' && (isRoot() || (await canElevateWithoutPassword().catch(() => false)))) {
+    ctx = await collectUnitFailureContext(LINUX_SERVICE_NAME)
+  }
+  throw new Error(`Zapret did not start properly (${parts.join('; ')})${ctx}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -268,15 +353,15 @@ export function buildRunnerScript(opts: {
     '',
     'case "${1:-daemon}" in',
     '  daemon)',
-    '    elevate pkill -f nfqws 2>/dev/null || true',
+    '    elevate pkill -x nfqws 2>/dev/null || true',
     '    fw_clear || true',
     '    sleep 1',
-    '    fw_setup',
+    '    fw_setup || echo "zapret-linux-run: firewall setup FAILED (see nft/iptables errors above)" >&2',
     `    cd ${q(opts.binDir)}`,
-    `    elevate "$NFQWS" ${argv}`,
+    `    elevate "$NFQWS" ${argv} || echo "zapret-linux-run: nfqws failed to start (code $?) — check the strategy args" >&2`,
     '    ;;',
     '  kill)',
-    '    elevate pkill -f nfqws 2>/dev/null || true',
+    '    elevate pkill -x nfqws 2>/dev/null || true',
     '    fw_clear || true',
     '    ;;',
     'esac',
@@ -523,11 +608,9 @@ export async function installLinuxStrategy(
     }
     throw new Error(`Firewall setup failed${batchFailWhat(r, steps)}: ${batchOut(r)}`)
   }
-  // Give the daemon a moment, then verify it survived.
-  await new Promise((res) => setTimeout(res, 800))
-  if (!(await isNfqwsRunning())) {
-    throw new Error('nfqws exited immediately after start — check the strategy and firewall rules')
-  }
+  // The batch succeeding only means the commands exited 0 — verify the
+  // daemon actually survived and the service is up.
+  await verifyLinuxRunning(dataDir, init, backend, say)
   say(`Strategy "${strategy.name}" installed and started.`)
 }
 
@@ -540,6 +623,14 @@ export async function startLinuxService(dataDir: string, onLog?: (t: string) => 
     if (!fs.existsSync(runner)) throw new Error('No runner found — apply a strategy first')
     const r = await runBatch([{ kind: 'exec', file: 'bash', args: [runner, 'daemon'] }], { timeoutMs: 60000, onLog })
     if (r.code !== 0) throw new Error(`Start failed: ${batchOut(r).slice(0, 400)}`)
+    let noInitBackend: FirewallBackendResolved | null = null
+    try {
+      const conf = loadLinuxConf(dataDir)
+      noInitBackend = await detectFirewallBackend(conf?.firewall_backend ?? 'auto')
+    } catch {
+      noInitBackend = null
+    }
+    await verifyLinuxRunning(dataDir, init, noInitBackend, onLog)
     onLog?.('nfqws daemon started (no init system).')
     return
   }
@@ -565,6 +656,16 @@ export async function startLinuxService(dataDir: string, onLog?: (t: string) => 
   steps.push(...buildStartSteps(init))
   const r = await runBatch(steps, { timeoutMs: 120000, onLog })
   if (r.code !== 0) throw new Error(`Service start failed${batchFailWhat(r, steps)}: ${batchOut(r)}`)
+  // `systemctl start` returns once the transition begins — verify the
+  // workers actually came up instead of trusting it blindly.
+  let startBackend: FirewallBackendResolved | null = null
+  try {
+    const conf = loadLinuxConf(dataDir)
+    startBackend = await detectFirewallBackend(conf?.firewall_backend ?? 'auto')
+  } catch {
+    startBackend = null
+  }
+  await verifyLinuxRunning(dataDir, init, startBackend, onLog)
   onLog?.('Service started.')
 }
 
@@ -711,8 +812,21 @@ export async function testLinuxStrategy(
       .join('\n')
     if (clean !== '') onOutput?.(stream, clean)
   }
-  const script = `${buildBatchScript(setupSteps)}exec ${[nfqwsPath, ...argv].map(shellQuote).join(' ')}\n`
-  const child = await spawnElevated('bash', ['-c', script], { cwd: binDir })
+  let child: ChildProcess
+  if (isRoot() || (await canElevateWithoutPassword().catch(() => false))) {
+    // Silent path: the setup batch uses individually NOPASSWD-covered
+    // commands (`sudo -n bash -c` as a whole would NOT be covered).
+    const setupRes = await runBatch(setupSteps, { timeoutMs: 120000, onLog })
+    if (setupRes.code !== 0) {
+      throw new Error(`Test firewall setup failed${batchFailWhat(setupRes, setupSteps)}: ${batchOut(setupRes)}`)
+    }
+    child = await spawnElevated(nfqwsPath, argv, { cwd: binDir })
+  } else {
+    // Single-prompt path: setup + `exec nfqws` in one elevated shell, so
+    // stdio keeps streaming to the test console.
+    const script = `${buildBatchScript(setupSteps)}exec ${[nfqwsPath, ...argv].map(shellQuote).join(' ')}\n`
+    child = await spawnElevated('bash', ['-c', script], { cwd: binDir })
+  }
   foregroundProc = child
   foregroundBackend = backend
   child.stdout?.on('data', (d: Buffer) => filterOut('stdout', String(d)))
@@ -752,17 +866,29 @@ export async function getLinuxPermissionsStatus(
   }
   let sudoers = false
   let doas = false
+  // Current rules carry the `-x nfqws` pkill form plus service-management
+  // coverage; older files count as missing so the UI nudges to re-run the
+  // one-time setup.
+  let sudoersContent: string | null = null
   try {
-    sudoers = fs.existsSync(SUDOERS_FILE) && fs.readFileSync(SUDOERS_FILE, 'utf8').includes('Zapret')
+    if (fs.existsSync(SUDOERS_FILE)) sudoersContent = fs.readFileSync(SUDOERS_FILE, 'utf8')
   } catch {
+    sudoersContent = null
+  }
+  if (sudoersContent === null) {
     try {
       // Read-only check that never prompts (background-safe).
       const r = await runQuery('cat', [SUDOERS_FILE], 8000)
-      sudoers = r.code === 0 && r.stdout.includes('Zapret')
+      if (r.code === 0) sudoersContent = r.stdout
     } catch {
-      sudoers = false
+      sudoersContent = null
     }
   }
+  sudoers =
+    sudoersContent !== null &&
+    sudoersContent.includes('Zapret') &&
+    sudoersContent.includes('-x nfqws') &&
+    sudoersContent.includes('systemctl')
   try {
     doas = fs.existsSync('/etc/doas.conf') && fs.readFileSync('/etc/doas.conf', 'utf8').includes('Zapret Discord YouTube')
   } catch {
@@ -794,7 +920,7 @@ export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string)
     whichBin('ip6tables'),
     whichBin('pkill')
   ])
-  const [systemctlPath, rcServicePath, rcUpdatePath, svPath, s6SvcPath, dinitctlPath, mkdirPath, rmPath, chmodPath, teePath, visudoPath, bashPath] =
+  const [systemctlPath, rcServicePath, rcUpdatePath, svPath, s6SvcPath, dinitctlPath, mkdirPath, rmPath, chmodPath, teePath, visudoPath, bashPath, journalctlPath] =
     await Promise.all([
       whichBin('systemctl'),
       whichBin('rc-service'),
@@ -807,7 +933,8 @@ export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string)
       whichBin('chmod'),
       whichBin('tee'),
       whichBin('visudo'),
-      whichBin('bash')
+      whichBin('bash'),
+      whichBin('journalctl')
     ])
   // `true` for the passwordless probe (`doas -n true`); resolved without
   // `command -v` because shells report the builtin instead of a path.
@@ -823,7 +950,7 @@ export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string)
       nftPath,
       iptablesPath: iptPath,
       ip6tablesPath: ip6tPath,
-      extraBins: [truePath, systemctlPath, rcServicePath, rcUpdatePath, svPath, s6SvcPath, dinitctlPath, mkdirPath, rmPath, chmodPath, teePath, bashPath]
+      extraBins: [truePath, systemctlPath, rcServicePath, rcUpdatePath, svPath, s6SvcPath, dinitctlPath, mkdirPath, rmPath, chmodPath, teePath, bashPath, journalctlPath]
     })
     say(`Appending NOPASSWD rules to /etc/doas.conf for ${user} ...`)
     // Single batch = single auth prompt.
@@ -851,6 +978,7 @@ export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string)
     teePath,
     visudoPath,
     bashPath,
+    journalctlPath,
     runnerPath: getLinuxRunnerPath(dataDir),
     extraTeePaths: ['/etc/hosts', '/etc/hosts.zapret-gui.bak']
   })

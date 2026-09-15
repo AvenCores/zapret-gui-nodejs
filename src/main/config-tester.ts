@@ -619,11 +619,11 @@ function killActiveChild(): void {
 async function killWinws(): Promise<void> {
   killActiveChild()
   if (process.platform === 'linux') {
-    await run('pkill', ['-f', 'nfqws'], { timeoutMs: 8000 }).catch(() => ({ stdout: '', stderr: '', code: 1 }))
+    await run('pkill', ['-x', 'nfqws'], { timeoutMs: 8000 }).catch(() => ({ stdout: '', stderr: '', code: 1 }))
     try {
       // Single batched pkill (one prompt at most, silent with NOPASSWD).
       const { runBatch } = await import('./linux/elevate')
-      await runBatch([{ kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true }], {
+      await runBatch([{ kind: 'exec', file: 'pkill', args: ['-x', 'nfqws'], ignoreFailure: true }], {
         timeoutMs: 15000
       }).catch(() => undefined)
     } catch {
@@ -666,7 +666,7 @@ async function waitWinwsReady(
     if (elapsed >= 1200) {
       try {
         if (process.platform === 'linux') {
-          const running = await run('pgrep', ['-f', 'nfqws'], { timeoutMs: 5000 }).then(
+          const running = await run('pgrep', ['-x', 'nfqws'], { timeoutMs: 5000 }).then(
             (r) => r.code === 0 && r.stdout.trim().length > 0
           ).catch(() => false)
           if (running) {
@@ -935,7 +935,7 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
           })
           killActiveChild()
           const preSteps: BatchStep[] = [
-            { kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true },
+            { kind: 'exec', file: 'pkill', args: ['-x', 'nfqws'], ignoreFailure: true },
             ...buildFirewallClearSteps(linuxBackend),
             ...buildFirewallSetupSteps(linuxBackend, { tcp: parsed.tcpPorts, udp: parsed.udpPorts, interface: linuxIface })
           ]
@@ -1046,7 +1046,7 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
           const { buildFirewallClearSteps } = await import('./linux/firewall')
           const { runBatch } = await import('./linux/elevate')
           const postSteps: BatchStep[] = [
-            { kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true },
+            { kind: 'exec', file: 'pkill', args: ['-x', 'nfqws'], ignoreFailure: true },
             ...buildFirewallClearSteps(linuxBackend)
           ]
           await runBatch(postSteps, { timeoutMs: 60000 }).catch(() => undefined)
@@ -1073,7 +1073,7 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
       try {
         const { buildFirewallClearSteps, listAvailableBackends } = await import('./linux/firewall')
         const { runBatch } = await import('./linux/elevate')
-        const finalSteps: BatchStep[] = [{ kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true }]
+        const finalSteps: BatchStep[] = [{ kind: 'exec', file: 'pkill', args: ['-x', 'nfqws'], ignoreFailure: true }]
         for (const b of await listAvailableBackends().catch(() => [] as Array<'nftables' | 'iptables'>)) {
           finalSteps.push(...buildFirewallClearSteps(b))
         }

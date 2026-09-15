@@ -75,6 +75,38 @@ vi.mock('../src/main/linux/elevate', async (importOriginal: () => Promise<typeof
   }
 })
 
+// `pgrep` is faked so `isNfqwsRunning()` answers instantly (found) without
+// root; everything else passes through to the real execFile.
+vi.mock('node:child_process', async (importOriginal: () => Promise<typeof import('node:child_process')>) => {
+  const orig = await importOriginal()
+  type Cb = (error: unknown, stdout: unknown, stderr: unknown) => void
+  const fakeExecFile = (file: unknown, args: unknown, opts?: unknown, callback?: Cb): unknown => {
+    const cb = (typeof opts === 'function' ? (opts as Cb) : callback) as Cb | undefined
+    if (String(file) === 'pgrep') {
+      queueMicrotask(() => cb?.(null, '4242\n', ''))
+      return { on: () => undefined, kill: () => false, unref: () => undefined }
+    }
+    const realOpts = typeof opts === 'function' ? undefined : opts
+    return (orig.execFile as (...a: unknown[]) => unknown)(file, args, realOpts, cb)
+  }
+  return {
+    ...orig,
+    execFile: fakeExecFile as unknown as typeof orig.execFile
+  }
+})
+
+// Firewall reads are faked as present (deterministic post-start verify);
+// pure step builders keep working via spread.
+vi.mock('../src/main/linux/firewall', async (importOriginal: () => Promise<typeof import('../src/main/linux/firewall')>) => {
+  const orig = await importOriginal()
+  return {
+    ...orig,
+    detectFirewallBackend: async (): Promise<'nftables'> => 'nftables',
+    isFirewallActive: async (): Promise<boolean> => true,
+    listAvailableBackends: async (): Promise<Array<'nftables' | 'iptables'>> => []
+  }
+})
+
 describe('platform helpers', () => {
   it('detects linux vs windows', () => {
     expect(isLinuxPlatform('linux')).toBe(true)
@@ -257,11 +289,15 @@ describe('permissions content', () => {
     const content = buildSudoersContent('alice', '/data/bin/nfqws')
     expect(content).toContain('alice ALL=(root) NOPASSWD:')
     expect(content).toContain('/data/bin/nfqws')
-    expect(content).toContain('pkill -f nfqws')
+    // `-x` (exact process name): `-f` would also match our own
+    // `pkexec bash -c '...nfqws...'` wrapper and suicide the batch.
+    expect(content).toContain('pkill -x nfqws')
+    expect(content).not.toContain('pkill -f nfqws')
   })
   it('generates doas rules', () => {
     const rules = buildDoasRules('bob', '/data/bin/nfqws')
     expect(rules).toContain('permit nopass bob as root cmd /data/bin/nfqws')
+    expect(rules).toContain('pkill args -x nfqws')
   })
   it('covers service management for silent per-call elevation (no whole-app root)', () => {
     const content = buildSudoersContent('alice', '/data/bin/nfqws', {
@@ -290,6 +326,16 @@ describe('permissions content', () => {
     expect(content).toContain('/usr/bin/bash /home/alice/.config/zapret-gui/data/zapret-linux-run.sh daemon')
     expect(content).toContain('/usr/bin/tee /etc/hosts')
     expect(content).toContain('/usr/bin/tee /etc/hosts.zapret-gui.bak')
+  })
+  it('covers its own rules file and read-only failure diagnostics', () => {
+    const content = buildSudoersContent('alice', '/data/bin/nfqws', {
+      journalctlPath: '/usr/bin/journalctl'
+    })
+    expect(content).toContain('/usr/bin/tee /etc/sudoers.d/zapret')
+    expect(content).toContain('/usr/bin/chmod 0440 /etc/sudoers.d/zapret')
+    expect(content).toContain('/usr/bin/rm -f /etc/sudoers.d/zapret')
+    expect(content).toContain('/usr/bin/systemctl status zapret_discord_youtube --no-pager')
+    expect(content).toContain('/usr/bin/journalctl --no-pager -n 40 -u zapret_discord_youtube')
   })
   it('emits /usr-merged path variants so sudo string-matching succeeds', () => {
     const content = buildSudoersContent('alice', '/data/bin/nfqws', { systemctlPath: '/usr/bin/systemctl' })
@@ -380,6 +426,12 @@ describe('runner script', () => {  it('embeds daemon/kill modes, firewall setup 
     expect(script).toContain('nft_setup')
     expect(script).toContain('--filter-tcp=80')
     expect(script).toContain('queue num 220')
+    // Failures are echoed to stderr (captured by the systemd journal).
+    expect(script).toContain('zapret-linux-run: firewall setup FAILED')
+    expect(script).toContain('zapret-linux-run: nfqws failed to start')
+    // Exact-name pkill: `-f` would match our own wrapper cmdline.
+    expect(script).toContain('pkill -x nfqws')
+    expect(script).not.toContain('pkill -f nfqws')
   })
 })
 
@@ -440,6 +492,10 @@ describe('startLinuxService self-heal (missing unit, no root)', () => {
     return dir
   }
 
+  /**
+   * `pgrep` is faked file-wide (see the `node:child_process` mock above),
+   * so `isNfqwsRunning()` answers instantly without root.
+   */
   function batchSteps(): BatchStep[] {
     const call = batchMocks.runBatch.mock.calls[0] as unknown[] | undefined
     return (call?.[0] ?? []) as BatchStep[]
@@ -450,7 +506,9 @@ describe('startLinuxService self-heal (missing unit, no root)', () => {
     const dir = makeDataDir(true)
     try {
       const logs: string[] = []
-      await startLinuxService(dir, (t) => logs.push(t))
+      // The mocked unit stays NOT_INSTALLED, so post-start verification
+      // reports it — while proving reinstall composition happened first.
+      await expect(startLinuxService(dir, (t) => logs.push(t))).rejects.toThrow('service state is NOT_INSTALLED')
       // Exactly one elevated batch (i.e. a single auth prompt).
       expect(batchMocks.runBatch).toHaveBeenCalledTimes(1)
       const steps = batchSteps()
@@ -472,11 +530,13 @@ describe('startLinuxService self-heal (missing unit, no root)', () => {
     const { startLinuxService } = await import('../src/main/linux/service')
     const dir = makeDataDir(true)
     try {
-      await startLinuxService(dir)
+      const logs: string[] = []
+      await startLinuxService(dir, (t) => logs.push(t))
       expect(batchMocks.runBatch).toHaveBeenCalledTimes(1)
       const steps = batchSteps()
       expect(steps).toHaveLength(1)
       expect(steps[0]).toMatchObject({ kind: 'exec', file: 'systemctl', args: ['start', 'zapret_discord_youtube'] })
+      expect(logs.join('\n')).toContain('Service started.')
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }
