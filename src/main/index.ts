@@ -122,7 +122,11 @@ async function refreshTray(): Promise<void> {
       startMinimized: settings.startMinimizedToTray,
       version: app.getVersion(),
       trayStrategyMenu: settings.trayStrategyMenu,
-      trayTuningMenu: settings.trayTuningMenu,
+      trayServiceMenu: settings.trayServiceMenu,
+      trayNavigateMenu: settings.trayNavigateMenu,
+      trayGameFilterMenu: settings.trayGameFilterMenu,
+      trayIPSetMenu: settings.trayIPSetMenu,
+      trayToolsMenu: settings.trayToolsMenu,
       trayQuickSettings: settings.trayQuickSettings
     }
     // Labels follow the app language (also refreshed by the 15s timer,

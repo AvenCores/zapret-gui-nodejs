@@ -57,16 +57,40 @@ export default function Settings(): React.JSX.Element {
             onChange={(v) => void applySettings({ startMinimizedToTray: v })}
           />
         </Row>
+        <Row label={t('settings.trayServiceMenu')}>
+          <Toggle
+            value={settings?.trayServiceMenu ?? true}
+            onChange={(v) => void applySettings({ trayServiceMenu: v })}
+          />
+        </Row>
         <Row label={t('settings.trayStrategyMenu')}>
           <Toggle
             value={settings?.trayStrategyMenu ?? true}
             onChange={(v) => void applySettings({ trayStrategyMenu: v })}
           />
         </Row>
-        <Row label={t('settings.trayTuningMenu')}>
+        <Row label={t('settings.trayNavigateMenu')}>
           <Toggle
-            value={settings?.trayTuningMenu ?? true}
-            onChange={(v) => void applySettings({ trayTuningMenu: v })}
+            value={settings?.trayNavigateMenu ?? true}
+            onChange={(v) => void applySettings({ trayNavigateMenu: v })}
+          />
+        </Row>
+        <Row label={t('settings.trayGameFilterMenu')}>
+          <Toggle
+            value={settings?.trayGameFilterMenu ?? true}
+            onChange={(v) => void applySettings({ trayGameFilterMenu: v })}
+          />
+        </Row>
+        <Row label={t('settings.trayIPSetMenu')}>
+          <Toggle
+            value={settings?.trayIPSetMenu ?? true}
+            onChange={(v) => void applySettings({ trayIPSetMenu: v })}
+          />
+        </Row>
+        <Row label={t('settings.trayToolsMenu')}>
+          <Toggle
+            value={settings?.trayToolsMenu ?? true}
+            onChange={(v) => void applySettings({ trayToolsMenu: v })}
           />
         </Row>
           <Row label={t('settings.trayQuickSettings')}>

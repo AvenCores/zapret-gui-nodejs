@@ -15,7 +15,11 @@ const BASE_DEFAULTS = {
   minimizeToTrayOnClose: true,
   showTrayIcon: true,
   trayStrategyMenu: true,
-  trayTuningMenu: true,
+  trayServiceMenu: true,
+  trayNavigateMenu: true,
+  trayGameFilterMenu: true,
+  trayIPSetMenu: true,
+  trayToolsMenu: true,
   trayQuickSettings: true,
   activeStrategyId: null,
   discordFake: null,
@@ -134,6 +138,17 @@ export function loadSettings(): AppSettings {
     // supported code. Unknown/corrupted values fall back to English.
     merged.locale = normalizeLocale((parsed as Record<string, unknown>).locale ?? merged.locale)
     merged.theme = normalizeTheme((parsed as Record<string, unknown>).theme ?? merged.theme)
+    // Backward compat: `trayTuningMenu` (one flag for both tuning submenus)
+    // migrates to `trayGameFilterMenu` + `trayIPSetMenu`, each independently.
+    // Explicit new flags always win over the legacy one.
+    {
+      const raw = parsed as Record<string, unknown>
+      const legacy = raw.trayTuningMenu
+      if (typeof legacy === 'boolean') {
+        if (raw.trayGameFilterMenu === undefined) merged.trayGameFilterMenu = legacy
+        if (raw.trayIPSetMenu === undefined) merged.trayIPSetMenu = legacy
+      }
+    }
     if (hasInstallerChoice) {
       if (installer.locale !== undefined) merged.locale = installer.locale
       if (installer.theme !== undefined) merged.theme = installer.theme

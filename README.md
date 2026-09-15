@@ -86,7 +86,7 @@
 | Фейки (`.bin`) | Стратегии | Списки из `bin/*.bin` (без `ACTIVE_*`), замена `ACTIVE_DISCORD_UDP.bin` / `ACTIVE_GAME_UDP.bin` копией выбранного фейка |
 | Автопроверка обновлений | Обновления | Флаг-файл `utils/check_updates.enabled` |
 | Автозапуск с Windows | Настройки | `app.setLoginItemSettings({ openAtLogin })` |
-| Трей | Настройки | `showTrayIcon`, `minimizeToTrayOnClose`, `startMinimizedToTray`, видимость подменю `trayStrategyMenu` / `trayTuningMenu` / `trayQuickSettings` |
+| Трей | Настройки | `showTrayIcon`, `minimizeToTrayOnClose`, `startMinimizedToTray`, видимость секций `trayServiceMenu` / `trayStrategyMenu` / `trayNavigateMenu` / `trayGameFilterMenu` / `trayIPSetMenu` / `trayToolsMenu` / `trayQuickSettings` |
 | Язык / Тема | Сайдбар + установщик | Сохраняются в `settings.json`, применяются мгновенно (трей перестраивается сразу через `onSettingsChanged` + по таймеру ~15с) |
 
 ## 🔄 Обновления
@@ -166,7 +166,7 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
   * `utils/` — `targets.txt`, результаты `test results/`, флаги `check_updates.enabled` / `game_filter.enabled`
   * `strategies/` — 22 × `*.json`
   * служебные: `_backup/<timestamp>` (снапшоты перед обновлением, хранятся последние 5), `_tmp/`, `tray-icons/` (сгенерированные PNG)
-* Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `showTrayIcon`, `trayStrategyMenu`, `trayTuningMenu`, `trayQuickSettings`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`)
+* Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `showTrayIcon`, `trayServiceMenu`, `trayStrategyMenu`, `trayNavigateMenu`, `trayGameFilterMenu`, `trayIPSetMenu`, `trayToolsMenu`, `trayQuickSettings`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`; старый `trayTuningMenu` мигрирует в `trayGameFilterMenu` + `trayIPSetMenu`)
 * Лог: `%APPDATA%\zapret-gui\app.log`
 * Dev-режим: `bundled-assets` из репозитория, данные в `<repo>/.data`, `userData` изолирован в `zapret-gui-dev` во избежание лока кэша Chromium
 

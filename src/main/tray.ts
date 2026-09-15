@@ -151,7 +151,11 @@ export interface TrayContext {
   version: string
   /** Menu sections visibility (Settings → Tray). All default to true. */
   trayStrategyMenu: boolean
-  trayTuningMenu: boolean
+  trayServiceMenu: boolean
+  trayNavigateMenu: boolean
+  trayGameFilterMenu: boolean
+  trayIPSetMenu: boolean
+  trayToolsMenu: boolean
   trayQuickSettings: boolean
 }
 
@@ -349,10 +353,14 @@ function buildMenu(status: ZapretStatus, labels: TrayLabels, ctx: TrayContext, c
     { label: `zapret: ${labels.status}`, enabled: false },
     { label: `${labels.strategy}: ${truncateLabel(strategyName)}`, enabled: false },
     { type: 'separator' },
-    { label: labels.start, click: cb.onStart, enabled: actions.start },
-    { label: labels.stop, click: cb.onStop, enabled: actions.stop },
-    { label: labels.restart, click: cb.onRestart, enabled: actions.restart },
-    { type: 'separator' },
+    ...(ctx.trayServiceMenu
+      ? [
+          { label: labels.start, click: cb.onStart, enabled: actions.start },
+          { label: labels.stop, click: cb.onStop, enabled: actions.stop },
+          { label: labels.restart, click: cb.onRestart, enabled: actions.restart },
+          { type: 'separator' as const }
+        ]
+      : []),
     ...(ctx.trayStrategyMenu
       ? [
           {
@@ -376,14 +384,18 @@ function buildMenu(status: ZapretStatus, labels: TrayLabels, ctx: TrayContext, c
           }
         ]
       : []),
-    {
-      label: labels.gotoMenu,
-      submenu: NAV_PAGES.map((page) => ({
-        label: labels[page],
-        click: (): void => cb.onNavigate(page)
-      }))
-    },
-    ...(ctx.trayTuningMenu
+    ...(ctx.trayNavigateMenu
+      ? [
+          {
+            label: labels.gotoMenu,
+            submenu: NAV_PAGES.map((page) => ({
+              label: labels[page],
+              click: (): void => cb.onNavigate(page)
+            }))
+          }
+        ]
+      : []),
+    ...(ctx.trayGameFilterMenu
       ? [
           {
             label: truncateLabel(labels.gameFilter, 40),
@@ -394,7 +406,11 @@ function buildMenu(status: ZapretStatus, labels: TrayLabels, ctx: TrayContext, c
               enabled: ctx.isAdmin,
               click: (): void => cb.onGameFilter(m)
             }))
-          },
+          }
+        ]
+      : []),
+    ...(ctx.trayIPSetMenu
+      ? [
           {
             label: labels.ipset,
             submenu: IPSET_MODES.map((m) => ({
@@ -408,9 +424,13 @@ function buildMenu(status: ZapretStatus, labels: TrayLabels, ctx: TrayContext, c
         ]
       : []),
     { type: 'separator' },
-    ...(!ctx.isAdmin ? [{ label: labels.relaunchAdmin, click: cb.onRelaunchAdmin }] : []),
-    { label: labels.openData, click: cb.onOpenData },
-    { label: labels.exportLogs, click: cb.onExportLogs },
+    ...(ctx.trayToolsMenu
+      ? [
+          ...(!ctx.isAdmin ? [{ label: labels.relaunchAdmin, click: cb.onRelaunchAdmin }] : []),
+          { label: labels.openData, click: cb.onOpenData },
+          { label: labels.exportLogs, click: cb.onExportLogs }
+        ]
+      : []),
     ...(ctx.trayQuickSettings
       ? [
           { type: 'separator' as const },

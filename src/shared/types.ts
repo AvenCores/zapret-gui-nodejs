@@ -162,7 +162,11 @@ export interface AppSettings {
   showTrayIcon: boolean
   /** Tray menu sections visibility (toggled from Settings → Tray). */
   trayStrategyMenu: boolean
-  trayTuningMenu: boolean
+  trayServiceMenu: boolean
+  trayNavigateMenu: boolean
+  trayGameFilterMenu: boolean
+  trayIPSetMenu: boolean
+  trayToolsMenu: boolean
   trayQuickSettings: boolean
   activeStrategyId: string | null
   discordFake: string | null
