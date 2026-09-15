@@ -4,7 +4,7 @@ import { useUi } from '../store'
 import { Btn, Card, Row, Spinner } from '../components/ui'
 
 export default function Settings(): React.JSX.Element {
-  const { t, settings, status, applySettings, busy, resetAll, refreshStatus, tgProxySettings, updateTgProxySettings, settingsHighlight, setSettingsHighlight } =
+  const { t, settings, status, applySettings, busy, resetAll, refreshStatus, tgProxySettings, updateTgProxySettings, resetTgProxySettings, settingsHighlight, setSettingsHighlight } =
     useUi()
   const [resetDone, setResetDone] = useState<string | null>(null)
   const [portDraft, setPortDraft] = useState<string | null>(null)
@@ -45,7 +45,35 @@ export default function Settings(): React.JSX.Element {
     if (r) setResetDone(t(r.servicesRemoved ? 'settings.resetDone' : 'settings.resetNoAdmin'))
   }
 
+  async function onResetTgProxy(): Promise<void> {
+    if (!window.confirm(t('tgProxy.resetConfirm'))) return
+    await resetTgProxySettings()
+    // Drop uncommitted input drafts so the fields show the defaults at once.
+    setDrafts({})
+    setPortDraft(null)
+  }
+
   const tgPort = tgProxySettings?.port ?? settings?.tgProxy.port ?? 1443
+  const tg = tgProxySettings ?? settings?.tgProxy ?? null
+  // Text/number drafts committed on blur/Enter (invalid values surface as an
+  // error banner from main instead of silently corrupting settings).
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+
+  function draftFor(key: string, current: string): string {
+    return drafts[key] ?? current
+  }
+
+  function commitDraft(key: string, current: string, commit: (raw: string) => void): void {
+    const raw = drafts[key]
+    if (raw === undefined) return
+    setDrafts((d) => {
+      const next = { ...d }
+      delete next[key]
+      return next
+    })
+    if (raw === current) return
+    commit(raw)
+  }
 
   function commitPort(): void {
     if (portDraft === null) return
@@ -155,7 +183,91 @@ export default function Settings(): React.JSX.Element {
             className="w-28 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-mono text-sm tabular-nums text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           />
         </Row>
+        <Row label={t('tgProxy.host')}>
+          <CommitInput
+            value={draftFor('host', tg?.host ?? '127.0.0.1')}
+            onChange={(v) => setDrafts((d) => ({ ...d, host: v }))}
+            onCommit={(raw) => commitDraft('host', tg?.host ?? '127.0.0.1', (r) => void updateTgProxySettings({ host: r.trim() || '127.0.0.1' }))}
+            disabled={tgBusy}
+            className="w-36"
+          />
+        </Row>
+        <Row label={t('tgProxy.dcIps')}>
+          <CommitInput
+            value={draftFor('dcIps', (tg?.dcIps ?? []).join(', '))}
+            onChange={(v) => setDrafts((d) => ({ ...d, dcIps: v }))}
+            onCommit={(raw) => commitDraft('dcIps', (tg?.dcIps ?? []).join(', '), (r) => void updateTgProxySettings({ dcIps: splitEntries(r) }))}
+            disabled={tgBusy}
+            placeholder="2:149.154.167.220, 4:149.154.167.220"
+            className="w-64"
+          />
+        </Row>
+        <Row label={t('tgProxy.poolSize')}>
+          <CommitInput
+            type="number"
+            min={0}
+            max={32}
+            value={draftFor('poolSize', String(tg?.poolSize ?? 4))}
+            onChange={(v) => setDrafts((d) => ({ ...d, poolSize: v }))}
+            onCommit={(raw) => commitDraft('poolSize', String(tg?.poolSize ?? 4), (r) => void updateTgProxySettings({ poolSize: Number.parseInt(r, 10) }))}
+            disabled={tgBusy}
+            className="w-28"
+          />
+        </Row>
+        <Row label={t('tgProxy.bufferKb')}>
+          <CommitInput
+            type="number"
+            min={4}
+            max={4096}
+            value={draftFor('bufferKb', String(tg?.bufferKb ?? 256))}
+            onChange={(v) => setDrafts((d) => ({ ...d, bufferKb: v }))}
+            onCommit={(raw) => commitDraft('bufferKb', String(tg?.bufferKb ?? 256), (r) => void updateTgProxySettings({ bufferKb: Number.parseInt(r, 10) }))}
+            disabled={tgBusy}
+            className="w-28"
+          />
+        </Row>
+        <Row label={t('tgProxy.cfDomains')}>
+          <CommitInput
+            value={draftFor('cfDomains', (tg?.cfDomains ?? []).join(', '))}
+            onChange={(v) => setDrafts((d) => ({ ...d, cfDomains: v }))}
+            onCommit={(raw) => commitDraft('cfDomains', (tg?.cfDomains ?? []).join(', '), (r) => void updateTgProxySettings({ cfDomains: splitEntries(r) }))}
+            disabled={tgBusy}
+            placeholder="example.com, example.org"
+            className="w-64"
+          />
+        </Row>
+        <Row label={t('tgProxy.workerDomains')}>
+          <CommitInput
+            value={draftFor('workerDomains', (tg?.workerDomains ?? []).join(', '))}
+            onChange={(v) => setDrafts((d) => ({ ...d, workerDomains: v }))}
+            onCommit={(raw) => commitDraft('workerDomains', (tg?.workerDomains ?? []).join(', '), (r) => void updateTgProxySettings({ workerDomains: splitEntries(r) }))}
+            disabled={tgBusy}
+            placeholder="worker.example.workers.dev"
+            className="w-64"
+          />
+        </Row>
+        <Row label={t('tgProxy.fakeTlsDomain')}>
+          <CommitInput
+            value={draftFor('fakeTlsDomain', tg?.fakeTlsDomain ?? '')}
+            onChange={(v) => setDrafts((d) => ({ ...d, fakeTlsDomain: v }))}
+            onCommit={(raw) => commitDraft('fakeTlsDomain', tg?.fakeTlsDomain ?? '', (r) => void updateTgProxySettings({ fakeTlsDomain: r.trim().toLowerCase() }))}
+            disabled={tgBusy}
+            placeholder="example.com"
+            className="w-64"
+          />
+        </Row>
+        <Row label={t('tgProxy.forceTestDc')}>
+          <Toggle value={tg?.forceTestDc ?? false} onChange={(v) => void updateTgProxySettings({ forceTestDc: v })} />
+        </Row>
+        <Row label={t('tgProxy.proxyProtocol')}>
+          <Toggle value={tg?.proxyProtocol ?? false} onChange={(v) => void updateTgProxySettings({ proxyProtocol: v })} />
+        </Row>
         <p className="py-1 text-xs text-slate-500 dark:text-slate-400">{t('tgProxy.restartHint')}</p>
+        <div className="mt-2">
+          <Btn variant="danger" disabled={tgBusy} onClick={() => void onResetTgProxy()}>
+            {t('tgProxy.resetSettings')}
+          </Btn>
+        </div>
       </Card>
       </div>
 
@@ -177,8 +289,46 @@ export default function Settings(): React.JSX.Element {
     )
   }
 
-function Toggle(props: { value: boolean; onChange: (v: boolean) => void }): React.JSX.Element {
+/** Split free-form list input (commas/semicolons/spaces/newlines) into entries. */
+function splitEntries(raw: string): string[] {
+  return raw
+    .replace(/[,;\n\r\t]+/g, ' ')
+    .split(' ')
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+}
+
+/** Text/number input committed on blur/Enter (draft lives in the parent). */
+function CommitInput(props: {
+  value: string
+  onChange: (v: string) => void
+  onCommit: (raw: string) => void
+  disabled?: boolean
+  type?: string
+  min?: number
+  max?: number
+  placeholder?: string
+  className?: string
+}): React.JSX.Element {
   return (
+    <input
+      type={props.type ?? 'text'}
+      min={props.min}
+      max={props.max}
+      disabled={props.disabled}
+      value={props.value}
+      placeholder={props.placeholder}
+      onChange={(e) => props.onChange(e.target.value)}
+      onBlur={(e) => props.onCommit(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+      }}
+      className={`rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-mono text-sm tabular-nums text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 ${props.className ?? 'w-36'}`}
+    />
+  )
+}
+
+function Toggle(props: { value: boolean; onChange: (v: boolean) => void }): React.JSX.Element {  return (
     <button
       onClick={() => props.onChange(!props.value)}
       className={`relative h-6 w-11 rounded-full transition ${props.value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-slate-600'}`}

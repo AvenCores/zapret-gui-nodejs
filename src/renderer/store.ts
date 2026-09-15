@@ -124,11 +124,13 @@ interface UiState {
   tgProxyStatus: TgProxyStatus | 'unknown'
   tgProxyStats: TgProxyStats | null
   tgProxySettings: TgProxySettings | null
+  tgProxyLink: string
   refreshTgProxy: () => Promise<void>
   startTgProxy: () => Promise<void>
   stopTgProxy: () => Promise<void>
   restartTgProxy: () => Promise<void>
   updateTgProxySettings: (patch: Partial<TgProxySettings>) => Promise<void>
+  resetTgProxySettings: () => Promise<void>
   openTgProxyLink: () => Promise<void>
   /** Settings section to scroll-highlight after navigation (e.g. 'tgproxy'). */
   settingsHighlight: string | null
@@ -172,6 +174,7 @@ export const useUi = create<UiState>((set, get) => ({
   tgProxyStatus: 'unknown',
   tgProxyStats: null,
   tgProxySettings: null,
+  tgProxyLink: '',
   settingsHighlight: null,
   setSettingsHighlight: (settingsHighlight) => set({ settingsHighlight }),
   hostsCheck: null,
@@ -321,7 +324,7 @@ export const useUi = create<UiState>((set, get) => ({
   refreshTgProxy: async () => {
     try {
       const res = await window.zapret.getTgProxyStatus()
-      set({ tgProxyStatus: res.status, tgProxyStats: res.stats, tgProxySettings: res.settings })
+      set({ tgProxyStatus: res.status, tgProxyStats: res.stats, tgProxySettings: res.settings, tgProxyLink: res.link ?? '' })
     } catch (e) {
       set({ tgProxyStatus: 'unknown', error: e instanceof Error ? e.message : String(e) })
     }
@@ -351,6 +354,15 @@ export const useUi = create<UiState>((set, get) => ({
     if (settings) {
       set({ tgProxySettings: settings })
       // Keep the global settings copy in sync (same tgProxy object).
+      const cur = get().settings
+      if (cur) set({ settings: { ...cur, tgProxy: settings } })
+    }
+  },
+
+  resetTgProxySettings: async () => {
+    const settings = await call('tgproxy-settings', () => window.zapret.resetTgProxySettings(), set, get)
+    if (settings) {
+      set({ tgProxySettings: settings })
       const cur = get().settings
       if (cur) set({ settings: { ...cur, tgProxy: settings } })
     }
@@ -408,6 +420,7 @@ export const useUi = create<UiState>((set, get) => ({
         configCancelled: false,
         tgProxyStatus: 'stopped',
         tgProxyStats: null,
+        tgProxyLink: '',
         settingsHighlight: null
       })
       syncThemeClass(r.settings.theme)

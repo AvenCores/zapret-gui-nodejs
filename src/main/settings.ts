@@ -7,7 +7,13 @@ import path from 'node:path'
 import { app } from 'electron'
 import { getSettingsPath } from './paths'
 import type { AppSettings, AppTheme, TgProxySettings } from '../shared/types'
-import { TG_PROXY_DEFAULT_PORT } from '../shared/constants'
+import { TG_PROXY_DEFAULT_HOST, TG_PROXY_DEFAULT_PORT } from '../shared/constants'
+import {
+  normalizeDcIpEntries,
+  normalizeDomainEntries,
+  normalizeOptionalDomain,
+  normalizeTgHost
+} from './tg-proxy'
 import { isSupportedLocale, normalizeLocale, resolveSystemLocale as resolveSystemLocaleImpl, type Locale } from '../shared/i18n'
 
 const BASE_DEFAULTS = {
@@ -30,7 +36,16 @@ const BASE_DEFAULTS = {
     port: TG_PROXY_DEFAULT_PORT,
     autoStart: false,
     secret: '',
-    cfProxyEnabled: true
+    cfProxyEnabled: true,
+    host: TG_PROXY_DEFAULT_HOST,
+    dcIps: [],
+    poolSize: 4,
+    bufferKb: 256,
+    cfDomains: [],
+    workerDomains: [],
+    fakeTlsDomain: '',
+    forceTestDc: false,
+    proxyProtocol: false
   } as TgProxySettings
 } as const
 
@@ -179,17 +194,28 @@ export function loadSettings(): AppSettings {
 export function normalizeTgProxySettings(value: unknown): TgProxySettings {
   const d = BASE_DEFAULTS.tgProxy
   if (value == null || typeof value !== 'object') {
-    return { ...d }
+    return { ...d, dcIps: [], cfDomains: [], workerDomains: [] }
   }
   const raw = value as Record<string, unknown>
   const portNum = typeof raw.port === 'number' ? Math.floor(raw.port) : Number.parseInt(String(raw.port ?? ''), 10)
   const secret = typeof raw.secret === 'string' ? raw.secret.trim().toLowerCase().slice(0, 64) : ''
+  const poolNum = typeof raw.poolSize === 'number' ? Math.floor(raw.poolSize) : Number.parseInt(String(raw.poolSize ?? ''), 10)
+  const bufNum = typeof raw.bufferKb === 'number' ? Math.floor(raw.bufferKb) : Number.parseInt(String(raw.bufferKb ?? ''), 10)
   return {
     enabled: raw.enabled === true,
     port: Number.isFinite(portNum) && portNum >= 1 && portNum <= 65535 ? portNum : d.port,
     autoStart: raw.autoStart === true,
     secret: /^[0-9a-f]{32}$/.test(secret) ? secret : '',
-    cfProxyEnabled: raw.cfProxyEnabled === false ? false : true
+    cfProxyEnabled: raw.cfProxyEnabled === false ? false : true,
+    host: normalizeTgHost(raw.host, d.host),
+    dcIps: normalizeDcIpEntries(raw.dcIps),
+    poolSize: Number.isFinite(poolNum) && poolNum >= 0 && poolNum <= 32 ? poolNum : d.poolSize,
+    bufferKb: Number.isFinite(bufNum) && bufNum >= 4 && bufNum <= 4096 ? bufNum : d.bufferKb,
+    cfDomains: normalizeDomainEntries(raw.cfDomains),
+    workerDomains: normalizeDomainEntries(raw.workerDomains),
+    fakeTlsDomain: normalizeOptionalDomain(raw.fakeTlsDomain),
+    forceTestDc: raw.forceTestDc === true,
+    proxyProtocol: raw.proxyProtocol === true
   }
 }
 

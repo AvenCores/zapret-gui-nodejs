@@ -121,11 +121,12 @@ const api = {
   startTgProxy: (): Promise<boolean> => ipcRenderer.invoke(IPC.tgProxyStart),
   stopTgProxy: (): Promise<boolean> => ipcRenderer.invoke(IPC.tgProxyStop),
   restartTgProxy: (): Promise<boolean> => ipcRenderer.invoke(IPC.tgProxyRestart),
-  getTgProxyStatus: (): Promise<{ status: TgProxyStatus; stats: TgProxyStats; settings: TgProxySettings }> =>
+  getTgProxyStatus: (): Promise<{ status: TgProxyStatus; stats: TgProxyStats; settings: TgProxySettings; link: string }> =>
     ipcRenderer.invoke(IPC.tgProxyGetStatus),
   getTgProxyStats: (): Promise<TgProxyStats> => ipcRenderer.invoke(IPC.tgProxyGetStats),
   updateTgProxySettings: (patch: Partial<TgProxySettings>): Promise<TgProxySettings> =>
     ipcRenderer.invoke(IPC.tgProxyUpdateSettings, patch),
+  resetTgProxySettings: (): Promise<TgProxySettings> => ipcRenderer.invoke(IPC.tgProxyResetSettings),
   openTgProxyLink: (): Promise<boolean> => ipcRenderer.invoke(IPC.tgProxyOpenLink),
   onTgProxyStatusChanged: (cb: () => void): (() => void) => {
     const fn = (): void => cb()

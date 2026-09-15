@@ -167,6 +167,24 @@ export interface TgProxySettings {
   secret: string
   /** Cloudflare-proxy fallback via `kws{dc}.*` domains (default true). */
   cfProxyEnabled: boolean
+  /** Listen address (`--host`, default `127.0.0.1`; `0.0.0.0` = LAN). */
+  host: string
+  /** Custom DC targets (`--dc-ip`, e.g. `["2:149.154.167.220"]`; empty = built-in). */
+  dcIps: string[]
+  /** Pre-warmed WS sockets per DC (default 4, 0 = no pooling). */
+  poolSize: number
+  /** Socket buffer hint, KB (`--buf-kb`, default 256). */
+  bufferKb: number
+  /** User CF-proxy domains (override the auto-refreshed pool when non-empty). */
+  cfDomains: string[]
+  /** Cloudflare Worker domains for the worker fallback (tried first). */
+  workerDomains: string[]
+  /** FakeTLS masking domain (`ee`-secrets; empty = disabled). */
+  fakeTlsDomain: string
+  /** Route everything to test DCs (`--force-test-dc`). */
+  forceTestDc: boolean
+  /** Accept a PROXY protocol v1 header (behind nginx/haproxy). */
+  proxyProtocol: boolean
 }
 
 /** Live statistics snapshot of the Telegram proxy. */
@@ -186,6 +204,8 @@ export interface TgProxyStats {
   connectionsCf: number
   /** Rejected handshakes (wrong secret / proto). */
   connectionsBad: number
+  /** Sessions proxied to the masking domain (FakeTLS wrong-secret probes). */
+  connectionsMasked: number
   /** WebSocket handshake/connect errors. */
   wsErrors: number
   bytesUp: number
@@ -201,6 +221,8 @@ export interface TgProxyStatusPayload {
   status: TgProxyStatus
   stats: TgProxyStats
   settings: TgProxySettings
+  /** Ready-to-open `tg://proxy` link (`dd` or `ee` form). */
+  link: string
 }
 
 /** App settings persisted to disk (`%APPDATA%/zapret-gui/settings.json`). */
@@ -346,6 +368,7 @@ export const IPC = {
   tgProxyGetStatus: 'tg-proxy:get-status',
   tgProxyGetStats: 'tg-proxy:get-stats',
   tgProxyUpdateSettings: 'tg-proxy:update-settings',
+  tgProxyResetSettings: 'tg-proxy:reset-settings',
   tgProxyOpenLink: 'tg-proxy:open-link',
   tgProxyStatusChanged: 'tg-proxy:status-changed',
   navigate: 'zapret:navigate',

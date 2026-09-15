@@ -171,7 +171,7 @@ function formatBytes(n: number): string {
 
 /** Built-in Telegram MTProto→WS proxy: status, controls, stats, link. */
 function TgProxyBlock(): React.JSX.Element {
-  const { t, tgProxyStatus, tgProxyStats, tgProxySettings, startTgProxy, stopTgProxy, restartTgProxy, openTgProxyLink, setPage, setSettingsHighlight, busy, setError } =
+  const { t, tgProxyStatus, tgProxyStats, tgProxySettings, tgProxyLink, startTgProxy, stopTgProxy, restartTgProxy, openTgProxyLink, setPage, setSettingsHighlight, busy, setError } =
     useUi()
   const [copied, setCopied] = useState(false)
   const acting = busy.tgproxy === true
@@ -193,9 +193,10 @@ function TgProxyBlock(): React.JSX.Element {
           ? t('tgProxy.statusStopped')
           : t('status.unknown')
   const port = tgProxyStats?.port ?? tgProxySettings?.port ?? 1443
-  const host = tgProxyStats?.host ?? '127.0.0.1'
-  const secret = tgProxySettings?.secret ?? ''
-  const link = secret !== '' ? `tg://proxy?server=${host}&port=${port}&secret=dd${secret}` : ''
+  const host = tgProxyStats?.host ?? tgProxySettings?.host ?? '127.0.0.1'
+  // Canonical link comes from main (covers `dd`/`ee` forms); empty on first
+  // run before the proxy ever started (secret not generated yet).
+  const link = tgProxyLink
 
   async function copyLink(): Promise<void> {
     if (!link) return

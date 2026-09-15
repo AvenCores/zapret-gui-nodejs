@@ -27,8 +27,7 @@ import { IPC } from '../shared/types'
 import { translate } from '../shared/i18n'
 import type { GameFilterMode, IPSetMode, TrayPage, ZapretStatus } from '../shared/types'
 import { ensureTgProxySecret } from './ipc-handlers'
-import { getTgProxyStats, getTgProxyStatus, startTgProxy, stopTgProxy } from './tg-proxy'
-import { TG_PROXY_DEFAULT_HOST } from '../shared/constants'
+import { getTgProxyStats, getTgProxyStatus, startTgProxy, stopTgProxy, tgStartOptsFromSettings } from './tg-proxy'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -289,12 +288,7 @@ async function tgProxyAction(kind: 'start' | 'stop' | 'restart'): Promise<void> 
     } else {
       const s = ensureTgProxySecret()
       if (kind === 'restart') await stopTgProxy().catch(() => undefined)
-      const bound = await startTgProxy({
-        port: s.tgProxy.port,
-        host: TG_PROXY_DEFAULT_HOST,
-        secret: s.tgProxy.secret,
-        cfProxyEnabled: s.tgProxy.cfProxyEnabled
-      })
+      const bound = await startTgProxy(tgStartOptsFromSettings(s.tgProxy))
       saveSettings({ tgProxy: { ...s.tgProxy, enabled: true, port: bound.port } })
       info('tg-proxy', `TG proxy ${kind} from tray: ${bound.host}:${bound.port}.`)
     }
@@ -568,12 +562,7 @@ if (!app.requestSingleInstanceLock()) {
       const s = loadSettings()
       if (s.tgProxy.autoStart) {
         const withSecret = ensureTgProxySecret()
-        void startTgProxy({
-          port: withSecret.tgProxy.port,
-          host: TG_PROXY_DEFAULT_HOST,
-          secret: withSecret.tgProxy.secret,
-          cfProxyEnabled: withSecret.tgProxy.cfProxyEnabled
-        })
+        void startTgProxy(tgStartOptsFromSettings(withSecret.tgProxy))
           .then((bound) => {
             info('tg-proxy', `Autostarted on ${bound.host}:${bound.port}.`)
             saveSettings({ tgProxy: { ...withSecret.tgProxy, enabled: true, port: bound.port } })

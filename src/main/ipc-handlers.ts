@@ -47,7 +47,7 @@ import { listUserLists, readUserList, writeUserList } from './user-lists'
 import { checkBypassTarget } from './bypass-check'
 import { checkAppUpdates, downloadAppUpdate, getAppVersion, installAppUpdate } from './app-updater'
 import type { BypassTargetId } from '../shared/types'
-import { loadSettings, saveSettings } from './settings'
+import { loadSettings, normalizeTgProxySettings, saveSettings } from './settings'
 import { resetAppData } from './app-reset'
 import { translate } from '../shared/i18n'
 import { getBufferedLogs, info, warn, err } from './logger'
@@ -61,10 +61,18 @@ import {
   generateTgSecret,
   getTgProxyStats,
   getTgProxyStatus,
+  isValidDomain,
   isValidTgSecret,
+  normalizeDcIpEntries,
+  normalizeDomainEntries,
+  normalizeOptionalDomain,
+  normalizeTgHost,
   normalizeTgPort,
+  parseDcIpList,
+  parseDomainList,
   startTgProxy,
-  stopTgProxy
+  stopTgProxy,
+  tgStartOptsFromSettings
 } from './tg-proxy'
 import { TG_PROXY_DEFAULT_HOST } from '../shared/constants'
 
@@ -121,6 +129,60 @@ export function ensureTgProxySecret(): AppSettings {
 
 function getTgProxyStatusPayload(): { status: 'running' | 'stopped' | 'error'; stats: ReturnType<typeof getTgProxyStats> } {
   return getTgProxyStatus()
+}
+
+/**
+ * Build the `tg://proxy` link for logs / open-in-Telegram. `bound` is the
+ * actual listen endpoint when the proxy just started (port 0 impossible here
+ * — settings ports are normalized — but bound is still authoritative).
+ */
+function buildTgProxyLink(settings: TgProxySettings, bound: { host: string; port: number } | null): string {
+  const host = (bound?.host ?? settings.host) === '0.0.0.0' ? '127.0.0.1' : (bound?.host ?? settings.host)
+  return buildTgLink(host, bound?.port ?? settings.port, settings.secret, settings.fakeTlsDomain)
+}
+
+/** Strict validators for explicitly-provided setting values (throw → error banner). */
+function validateTgHost(value: unknown): string {
+  const fallback = TG_PROXY_DEFAULT_HOST
+  const s = normalizeTgHost(value, fallback)
+  if (typeof value !== 'string' || s === fallback && value.trim() !== fallback) {
+    throw new Error(`Invalid TG proxy host: ${String(value).slice(0, 80)}`)
+  }
+  return s
+}
+
+function validateDcIpEntries(value: unknown): string[] {
+  const entries = parseDomainList(value)
+  if (entries.length === 0) return []
+  // Throws on the first malformed entry (message lists the culprit).
+  const merged = parseDcIpList(entries)
+  return Object.entries(merged).map(([dc, ip]) => `${dc}:${ip}`)
+}
+
+function validatePoolSize(value: unknown): number {
+  const n = typeof value === 'number' ? Math.floor(value) : Number.parseInt(String(value ?? ''), 10)
+  if (!Number.isFinite(n) || n < 0 || n > 32) throw new Error(`Invalid TG proxy pool size (0–32): ${String(value).slice(0, 20)}`)
+  return n
+}
+
+function validateBufferKb(value: unknown): number {
+  const n = typeof value === 'number' ? Math.floor(value) : Number.parseInt(String(value ?? ''), 10)
+  if (!Number.isFinite(n) || n < 4 || n > 4096) throw new Error(`Invalid TG proxy buffer (4–4096 KB): ${String(value).slice(0, 20)}`)
+  return n
+}
+
+function validateDomainEntries(value: unknown, what: string): string[] {
+  const entries = parseDomainList(value)
+  const bad = entries.filter((d) => !isValidDomain(d))
+  if (bad.length > 0) throw new Error(`Invalid ${what}: ${bad[0].slice(0, 80)}`)
+  return normalizeDomainEntries(entries)
+}
+
+function validateFakeTlsDomain(value: unknown): string {
+  const s = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (s === '') return ''
+  if (!isValidDomain(s)) throw new Error(`Invalid FakeTLS domain: ${s.slice(0, 80)}`)
+  return normalizeOptionalDomain(s)
 }
 
 export function registerIpcHandlers(): void {
@@ -456,16 +518,10 @@ export function registerIpcHandlers(): void {
   // -- Built-in Telegram MTProto→WS proxy (src/main/tg-proxy.ts) --
   ipcMain.handle(IPC.tgProxyStart, async () => {
     const settings = ensureTgProxySecret()
-    const { port } = settings.tgProxy
-    sendLog('tg-proxy', 'info', `Starting TG proxy on ${TG_PROXY_DEFAULT_HOST}:${port}...`)
-    const bound = await startTgProxy({
-      port,
-      host: TG_PROXY_DEFAULT_HOST,
-      secret: settings.tgProxy.secret,
-      cfProxyEnabled: settings.tgProxy.cfProxyEnabled
-    })
+    sendLog('tg-proxy', 'info', `Starting TG proxy on ${settings.tgProxy.host}:${settings.tgProxy.port}...`)
+    const bound = await startTgProxy(tgStartOptsFromSettings(settings.tgProxy))
     saveSettings({ tgProxy: { ...settings.tgProxy, enabled: true, port: bound.port } })
-    sendLog('tg-proxy', 'info', `TG proxy link: ${buildTgLink(bound.host === '0.0.0.0' ? '127.0.0.1' : bound.host, bound.port, settings.tgProxy.secret)}`)
+    sendLog('tg-proxy', 'info', `TG proxy link: ${buildTgProxyLink(settings.tgProxy, bound)}`)
     safeSend(IPC.tgProxyStatusChanged)
     return true
   })
@@ -482,12 +538,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.tgProxyRestart, async () => {
     const settings = ensureTgProxySecret()
     await stopTgProxy()
-    const bound = await startTgProxy({
-      port: settings.tgProxy.port,
-      host: TG_PROXY_DEFAULT_HOST,
-      secret: settings.tgProxy.secret,
-      cfProxyEnabled: settings.tgProxy.cfProxyEnabled
-    })
+    const bound = await startTgProxy(tgStartOptsFromSettings(settings.tgProxy))
     saveSettings({ tgProxy: { ...settings.tgProxy, enabled: true, port: bound.port } })
     sendLog('tg-proxy', 'info', `TG proxy restarted on ${bound.host}:${bound.port}.`)
     safeSend(IPC.tgProxyStatusChanged)
@@ -496,30 +547,56 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.tgProxyGetStatus, async () => {
     const settings = loadSettings()
-    return { ...getTgProxyStatusPayload(), settings: settings.tgProxy }
+    return { ...getTgProxyStatusPayload(), settings: settings.tgProxy, link: buildTgProxyLink(settings.tgProxy, null) }
   })
 
   ipcMain.handle(IPC.tgProxyGetStats, async () => getTgProxyStats())
 
-  ipcMain.handle(IPC.tgProxyUpdateSettings, async (_e, patch: Partial<TgProxySettings>) => {    const current = loadSettings().tgProxy
+  ipcMain.handle(IPC.tgProxyUpdateSettings, async (_e, patch: Partial<TgProxySettings>) => {
+    const current = loadSettings().tgProxy
     const next: TgProxySettings = {
       enabled: typeof patch.enabled === 'boolean' ? patch.enabled : current.enabled,
       port: patch.port !== undefined ? normalizeTgPort(patch.port) : current.port,
       autoStart: typeof patch.autoStart === 'boolean' ? patch.autoStart : current.autoStart,
       secret: typeof patch.secret === 'string' && isValidTgSecret(patch.secret) ? patch.secret.trim().toLowerCase() : current.secret,
-      cfProxyEnabled: typeof patch.cfProxyEnabled === 'boolean' ? patch.cfProxyEnabled : current.cfProxyEnabled
+      cfProxyEnabled: typeof patch.cfProxyEnabled === 'boolean' ? patch.cfProxyEnabled : current.cfProxyEnabled,
+      host: patch.host !== undefined ? validateTgHost(patch.host) : current.host,
+      dcIps: patch.dcIps !== undefined ? validateDcIpEntries(patch.dcIps) : current.dcIps,
+      poolSize: patch.poolSize !== undefined ? validatePoolSize(patch.poolSize) : current.poolSize,
+      bufferKb: patch.bufferKb !== undefined ? validateBufferKb(patch.bufferKb) : current.bufferKb,
+      cfDomains: patch.cfDomains !== undefined ? validateDomainEntries(patch.cfDomains, 'CF domains') : current.cfDomains,
+      workerDomains: patch.workerDomains !== undefined ? validateDomainEntries(patch.workerDomains, 'Worker domains') : current.workerDomains,
+      fakeTlsDomain: patch.fakeTlsDomain !== undefined ? validateFakeTlsDomain(patch.fakeTlsDomain) : current.fakeTlsDomain,
+      forceTestDc: typeof patch.forceTestDc === 'boolean' ? patch.forceTestDc : current.forceTestDc,
+      proxyProtocol: typeof patch.proxyProtocol === 'boolean' ? patch.proxyProtocol : current.proxyProtocol
     }
     const saved = saveSettings({ tgProxy: next })
-    sendLog('tg-proxy', 'info', `TG proxy settings: port=${next.port}, autoStart=${next.autoStart ? 'on' : 'off'}, CF fallback=${next.cfProxyEnabled ? 'on' : 'off'}.`)
+    sendLog('tg-proxy', 'info', `TG proxy settings saved (port=${next.port}, host=${next.host}). Restart the proxy to apply.`)
     safeSend(IPC.tgProxyStatusChanged)
     return saved.tgProxy
   })
 
-  ipcMain.handle(IPC.tgProxyOpenLink, async () => {
-    // The link is built here from our own settings — the renderer never
+  ipcMain.handle(IPC.tgProxyResetSettings, async () => {
+    // Defaults, but keep the stable secret (otherwise Telegram must be
+    // reconfigured) and the running flag (a live proxy is not orphaned —
+    // restart it to apply the defaults).
+    const current = loadSettings().tgProxy
+    const fresh = normalizeTgProxySettings(undefined)
+    const next: TgProxySettings = {
+      ...fresh,
+      secret: isValidTgSecret(current.secret) ? current.secret : generateTgSecret(),
+      enabled: current.enabled
+    }
+    const saved = saveSettings({ tgProxy: next })
+    sendLog('tg-proxy', 'info', 'TG proxy settings reset to defaults. Restart the proxy to apply.')
+    safeSend(IPC.tgProxyStatusChanged)
+    return saved.tgProxy
+  })
+
+  ipcMain.handle(IPC.tgProxyOpenLink, async () => {    // The link is built here from our own settings — the renderer never
     // passes a URL, so a compromised renderer cannot open arbitrary schemes.
     const settings = ensureTgProxySecret()
-    const link = buildTgLink(TG_PROXY_DEFAULT_HOST, settings.tgProxy.port, settings.tgProxy.secret)
+    const link = buildTgProxyLink(settings.tgProxy, null)
     await shell.openExternal(link)
     sendLog('tg-proxy', 'info', 'TG proxy link opened in Telegram.')
     return true

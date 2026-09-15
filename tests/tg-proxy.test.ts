@@ -4,8 +4,11 @@ import crypto from 'node:crypto'
 import net from 'node:net'
 import {
   AesCtr,
+  FakeTlsSession,
   MsgSplitter,
+  buildCfWorkerPath,
   buildCryptoCtx,
+  buildServerHello,
   buildTgLink,
   decodeCfDomain,
   defaultCfProxyDomains,
@@ -14,13 +17,25 @@ import {
   getTgProxyStats,
   getTgProxyStatus,
   isTgProxyRunning,
+  isValidDomain,
   isValidTgSecret,
+  normalizeDcIpEntries,
+  normalizeDomainEntries,
+  normalizeOptionalDomain,
+  normalizeTgHost,
   normalizeTgPort,
   parseDcIpList,
+  parseDomainList,
+  parseProxyV1Line,
   readTcpExactly,
+  readTcpLine,
+  shuffled,
   startTgProxy,
   stopTgProxy,
+  tgStartOptsFromSettings,
   tryHandshake,
+  verifyClientHello,
+  wrapTlsRecords,
   wsDomains
 } from '../src/main/tg-proxy'
 import { getTrayLabels, tgProxyActionsState, tgStatusLabel, trayTooltip } from '../src/main/tray'
@@ -319,8 +334,232 @@ describe('tg-proxy lifecycle (localhost, no upstream)', () => {
   }, 20000)
 })
 
-describe('tray tg-proxy helpers', () => {
-  it('enables Start only when stopped', () => {
+describe('new `--host/--dc-ip/--pool-size` validators', () => {
+  it('normalizes listen hosts', () => {
+    expect(normalizeTgHost('127.0.0.1', 'x')).toBe('127.0.0.1')
+    expect(normalizeTgHost('0.0.0.0', 'x')).toBe('0.0.0.0')
+    expect(normalizeTgHost('', 'fb')).toBe('fb')
+    expect(normalizeTgHost('a b', 'fb')).toBe('fb')
+    expect(normalizeTgHost(undefined, 'fb')).toBe('fb')
+  })
+
+  it('validates domains', () => {
+    expect(isValidDomain('example.com')).toBe(true)
+    expect(isValidDomain('a.b.co.uk')).toBe(true)
+    expect(isValidDomain('nope')).toBe(false)
+    expect(isValidDomain('-bad.com')).toBe(false)
+    expect(isValidDomain('')).toBe(false)
+  })
+
+  it('splits free-form domain lists', () => {
+    expect(parseDomainList('a.com, b.com;c.com d.com\ne.com')).toEqual(['a.com', 'b.com', 'c.com', 'd.com', 'e.com'])
+    expect(parseDomainList(['A.com', 'a.com'])).toEqual(['A.com'])
+    expect(parseDomainList(undefined)).toEqual([])
+  })
+
+  it('keeps only valid DC:IP entries', () => {
+    expect(normalizeDcIpEntries(['2:1.2.3.4', 'junk', '2:5.6.7.8'])).toEqual(['2:5.6.7.8'])
+    expect(normalizeDcIpEntries('4:9.9.9.9')).toEqual(['4:9.9.9.9'])
+    expect(normalizeDcIpEntries(undefined)).toEqual([])
+  })
+
+  it('keeps only valid domains', () => {
+    expect(normalizeDomainEntries(['ok.com', 'bad..com'])).toEqual(['ok.com'])
+    expect(normalizeOptionalDomain('  Example.COM ')).toBe('example.com')
+    expect(normalizeOptionalDomain('')).toBe('')
+    expect(normalizeOptionalDomain('nope')).toBe('')
+  })
+})
+
+describe('PROXY protocol + worker path + ee links', () => {
+  it('parses PROXY v1 headers', () => {
+    expect(parseProxyV1Line('PROXY TCP4 1.2.3.4 5.6.7.8 1234 443')).toBe('1.2.3.4:1234')
+    expect(parseProxyV1Line('PROXY TCP6 ::1 ::2 1 2\r')).toBe('::1:1')
+    expect(parseProxyV1Line('GET / HTTP/1.1')).toBeNull()
+    expect(parseProxyV1Line('PROXY UNKNOWN')).toBeNull()
+    expect(parseProxyV1Line('PROXY UDP4 1.1.1.1 2.2.2.2 1 2')).toBeNull()
+  })
+
+  it('builds worker paths and ee links', () => {
+    expect(buildCfWorkerPath('1.2.3.4', 2)).toBe('/apiws?dst=1.2.3.4&dc=2')
+    const secret = 'a'.repeat(32)
+    expect(buildTgLink('127.0.0.1', 1443, secret)).toBe(`tg://proxy?server=127.0.0.1&port=1443&secret=dd${secret}`)
+    expect(buildTgLink('127.0.0.1', 1443, secret, 'example.com')).toBe(
+      `tg://proxy?server=127.0.0.1&port=1443&secret=ee${secret}${Buffer.from('example.com', 'ascii').toString('hex')}`
+    )
+  })
+
+  it('shuffles without losing elements', () => {
+    const src = [1, 2, 3, 4, 5]
+    const out = shuffled(src)
+    expect([...out].sort()).toEqual(src)
+    expect(out).not.toBe(src)
+  })
+
+  it('maps settings to start options', () => {
+    const opts = tgStartOptsFromSettings({
+      port: 1443,
+      secret: 'b'.repeat(32),
+      cfProxyEnabled: true,
+      host: '127.0.0.1',
+      dcIps: ['2:9.9.9.9', 'junk'],
+      poolSize: 2,
+      bufferKb: 128,
+      cfDomains: ['a.com'],
+      workerDomains: ['w.com'],
+      fakeTlsDomain: 'example.com',
+      forceTestDc: true,
+      proxyProtocol: true
+    })
+    expect(opts.dcIps).toEqual({ 2: '9.9.9.9' })
+    expect(opts.poolSize).toBe(2)
+    expect(opts.highWaterMark).toBe(128 * 1024)
+    expect(opts.fakeTlsDomain).toBe('example.com')
+    expect(opts.forceTestDc).toBe(true)
+    expect(opts.proxyProtocol).toBe(true)
+  })
+
+  it('reads PROXY lines with re-queued rest', async () => {
+    const srv = net.createServer()
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r))
+    const port = (srv.address() as net.AddressInfo).port
+    const serverSide = new Promise<{ line: string; rest: Buffer }>((resolve, reject) => {
+      srv.once('connection', (sock) => {
+        readTcpLine(sock, 3000).then((v) => {
+          sock.destroy()
+          srv.close()
+          resolve(v)
+        }).catch(reject)
+      })
+    })
+    const c = net.connect({ host: '127.0.0.1', port })
+    await new Promise<void>((r) => c.once('connect', r))
+    c.write('PROXY TCP4 1.2.3.4 5.6.7.8 1234 443\r\nEXTRA')
+    const { line, rest } = await serverSide
+    c.destroy()
+    expect(parseProxyV1Line(line)).toBe('1.2.3.4:1234')
+    expect(rest).toEqual(Buffer.from('EXTRA'))
+  }, 15000)
+})
+
+/** Forge a camouflaged ClientHello like an `ee`-secret Telegram client. */
+function craftClientHello(secret: Buffer): { hello: Buffer; random: Buffer; sessionId: Buffer } {
+  const hello = Buffer.concat([Buffer.from([0x16, 0x03, 0x01, 0x00, 0x80]), crypto.randomBytes(128)])
+  hello[5] = 0x01
+  const random = crypto.randomBytes(32)
+  const sessionId = crypto.randomBytes(32)
+  // Assemble the final bytes first (session id included), then MAC over the
+  // random-zeroed image — exactly like a real client does.
+  random.copy(hello, 11, 0, 32)
+  hello[43] = 0x20
+  sessionId.copy(hello, 44, 0, 32)
+  const zeroed = Buffer.from(hello)
+  zeroed.fill(0, 11, 43)
+  const mac = crypto.createHmac('sha256', secret).update(zeroed).digest()
+  mac.copy(random, 0, 0, 28)
+  const ts = Buffer.alloc(4)
+  ts.writeUInt32LE(Math.floor(Date.now() / 1000), 0)
+  for (let i = 0; i < 4; i++) random[28 + i] = ts[i] ^ mac[28 + i]
+  random.copy(hello, 11, 0, 32)
+  return { hello, random, sessionId }
+}
+
+describe('FakeTLS', () => {
+  it('verifies forged hellos and rejects tampered/expired ones', () => {
+    const secret = crypto.randomBytes(16)
+    const { hello, random, sessionId } = craftClientHello(secret)
+    const ok = verifyClientHello(hello, secret)
+    expect(ok).not.toBeNull()
+    expect(ok?.clientRandom).toEqual(random)
+    expect(ok?.sessionId).toEqual(sessionId)
+    expect(verifyClientHello(hello, crypto.randomBytes(16))).toBeNull()
+    const tampered = Buffer.from(hello)
+    tampered[20] ^= 0xff
+    expect(verifyClientHello(tampered, secret)).toBeNull()
+    expect(verifyClientHello(Buffer.alloc(10), secret)).toBeNull()
+  })
+
+  it('builds a well-formed ServerHello', () => {
+    const secret = crypto.randomBytes(16)
+    const { random, sessionId } = craftClientHello(secret)
+    const sh = buildServerHello(secret, random, sessionId)
+    expect(sh[0]).toBe(0x16)
+    expect(sh.subarray(44, 76)).toEqual(sessionId)
+    // CCS frame + one appdata record follow the 127-byte hello.
+    expect(sh[127]).toBe(0x14)
+    expect(sh[133]).toBe(0x17)
+  })
+
+  it('round-trips application-data records over loopback', async () => {
+    const srv = net.createServer()
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r))
+    const port = (srv.address() as net.AddressInfo).port
+    // Server: parse raw TLS records, collect appdata payloads, skip CCS.
+    const serverSide = new Promise<Buffer>((resolve, reject) => {
+      srv.once('connection', (sock) => {
+        const acc: Buffer[] = []
+        let buf = Buffer.alloc(0)
+        sock.on('data', (d: Buffer) => {
+          buf = Buffer.concat([buf, d])
+          for (;;) {
+            if (buf.length < 5) return
+            const rtype = buf[0]
+            const len = buf.readUInt16BE(3)
+            if (buf.length < 5 + len) return
+            const body = Buffer.from(buf.subarray(5, 5 + len))
+            buf = Buffer.from(buf.subarray(5 + len))
+            if (rtype === 0x17) acc.push(body)
+            if (acc.length === 2) {
+              sock.destroy()
+              srv.close()
+              resolve(Buffer.concat(acc))
+              return
+            }
+          }
+        })
+        sock.once('error', reject)
+      })
+    })
+    const sock = net.connect({ host: '127.0.0.1', port })
+    await new Promise<void>((r) => sock.once('connect', r))
+    const session = new FakeTlsSession(sock)
+    const payload = crypto.randomBytes(100)
+    expect(session.write(payload)).toBe(true)
+    expect(session.write(Buffer.from('hi'))).toBe(true)
+    const got = await serverSide
+    session.destroy()
+    expect(got.subarray(0, 100)).toEqual(payload)
+    expect(got.subarray(100).toString()).toBe('hi')
+  }, 15000)
+
+  it('reads records through FakeTlsSession.readExactly', async () => {
+    const srv = net.createServer()
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r))
+    const port = (srv.address() as net.AddressInfo).port
+    const payload = crypto.randomBytes(200)
+    const serverSide = new Promise<void>((resolve, reject) => {
+      srv.once('connection', (sock) => {
+        // Interleave a CCS frame between two appdata records.
+        sock.write(Buffer.concat([wrapTlsRecords(payload.subarray(0, 50)), Buffer.from([0x14, 0x03, 0x03, 0x00, 0x01, 0x01]), wrapTlsRecords(payload.subarray(50))]))
+        sock.once('error', reject)
+        setTimeout(() => {
+          sock.destroy()
+          srv.close()
+          resolve()
+        }, 300)
+      })
+    })
+    const sock = net.connect({ host: '127.0.0.1', port })
+    await new Promise<void>((r) => sock.once('connect', r))
+    const session = new FakeTlsSession(sock)
+    const got = await session.readExactly(200, 5000)
+    session.destroy()
+    await serverSide
+    expect(got).toEqual(payload)
+  }, 15000)
+})
+
+describe('tray tg-proxy helpers', () => {  it('enables Start only when stopped', () => {
     expect(tgProxyActionsState('stopped')).toEqual({ start: true, stop: false, restart: false })
     expect(tgProxyActionsState('running')).toEqual({ start: false, stop: true, restart: true })
     expect(tgProxyActionsState('error')).toEqual({ start: false, stop: true, restart: true })

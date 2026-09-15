@@ -88,9 +88,128 @@ export function isValidTgSecret(secret: string): boolean {
   return /^[0-9a-f]{32}$/.test(secret.trim().toLowerCase())
 }
 
+/**
+ * Validate a DNS hostname for proxy settings (letters/digits/hyphens/dots).
+ * Pure.
+ */
+export function isValidDomain(domain: string): boolean {
+  if (!domain || domain.length > 253 || domain.startsWith('.') || domain.endsWith('.')) return false
+  const labels = domain.split('.')
+  if (labels.length < 2) return false
+  for (const label of labels) {
+    if (!label || label.length > 63 || label.startsWith('-') || label.endsWith('-')) return false
+    if (!/^[A-Za-z0-9-]+$/.test(label)) return false
+  }
+  const tld = labels[labels.length - 1]
+  return tld.length >= 2 && /[A-Za-z]/.test(tld)
+}
+
+/** Coerce a listen-address value (`--host`). Pure. */
+export function normalizeTgHost(value: unknown, fallback: string): string {
+  const s = typeof value === 'string' ? value.trim() : ''
+  if (s.length === 0 || s.length > 253 || /[\s\x00-\x1f\x7f]/.test(s)) return fallback
+  return s
+}
+
+/** Split free-form domain input (spaces/commas/semicolons/newlines). Pure. */
+export function parseDomainList(value: unknown): string[] {
+  const parts: string[] = []
+  const push = (s: string): void => {
+    for (const item of s.replace(/[,;\n\r\t]+/g, ' ').split(' ')) {
+      const t = item.trim()
+      if (t !== '') parts.push(t)
+    }
+  }
+  if (typeof value === 'string') push(value)
+  else if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (typeof entry === 'string') push(entry)
+    }
+  }
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of parts) {
+    const key = item.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(item)
+  }
+  return out
+}
+
+/** Keep only valid, deduplicated `DC:IP` entries (last wins per DC). Pure. */
+export function normalizeDcIpEntries(value: unknown): string[] {
+  const merged: Record<number, string> = {}
+  const order: number[] = []
+  for (const entry of parseDomainList(value)) {
+    try {
+      const parsed = parseDcIpList([entry])
+      for (const [dcStr, ip] of Object.entries(parsed)) {
+        const dc = Number(dcStr)
+        if (!order.includes(dc)) order.push(dc)
+        merged[dc] = ip
+      }
+    } catch {
+      /* drop malformed entries */
+    }
+  }
+  return order.map((dc) => `${dc}:${merged[dc]}`)
+}
+
+/** Keep only valid domains from free-form input. Pure. */
+export function normalizeDomainEntries(value: unknown): string[] {
+  return parseDomainList(value).filter(isValidDomain)
+}
+
+/** Optional domain setting: '' or a valid domain (lowercased). Pure. */
+export function normalizeOptionalDomain(value: unknown): string {
+  const s = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  return s !== '' && isValidDomain(s) ? s : ''
+}
+
 /** `tg://proxy` connect link for the tray/dashboard. Pure. */
-export function buildTgLink(host: string, port: number, secret: string): string {
+export function buildTgLink(host: string, port: number, secret: string, fakeTlsDomain = ''): string {
+  const domain = fakeTlsDomain.trim().toLowerCase()
+  if (domain !== '') {
+    // FakeTLS (`ee`) secret: base secret + hex-encoded masking domain.
+    return `tg://proxy?server=${host}&port=${port}&secret=ee${secret}${Buffer.from(domain, 'ascii').toString('hex')}`
+  }
   return `tg://proxy?server=${host}&port=${port}&secret=dd${secret}`
+}
+
+/**
+ * Parse a PROXY protocol v1 header line (`PROXY TCP4 1.2.3.4 5.6.7.8 123 456`).
+ * Returns a `ip:port` label for logs, or null when the line is not a valid
+ * header (caller then treats the bytes as a regular handshake). Pure.
+ */
+export function parseProxyV1Line(line: string): string | null {
+  const text = line.trim()
+  if (!text.startsWith('PROXY ')) return null
+  const parts = text.split(/\s+/)
+  if (parts.length < 6) return null
+  const proto = parts[1].toUpperCase()
+  if (proto !== 'TCP4' && proto !== 'TCP6') return null
+  const srcIp = parts[2]
+  const srcPort = Number.parseInt(parts[4], 10)
+  if (srcIp.length === 0 || srcIp.length > 64 || !Number.isFinite(srcPort)) return null
+  return `${srcIp}:${srcPort}`
+}
+
+/** CF-Worker upstream path (`/apiws?dst=<ip>&dc=<n>`). Pure. */
+export function buildCfWorkerPath(dst: string, dc: number): string {
+  return `/apiws?${new URLSearchParams({ dst, dc: String(dc) }).toString()}`
+}
+
+/** Fisher–Yates shuffle (copy) for worker-domain rotation. Pure. */
+export function shuffled<T>(items: T[]): T[] {
+  const arr = [...items]
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const tmp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = tmp
+  }
+  return arr
 }
 
 /**
@@ -426,19 +545,53 @@ export class RawWebSocket {
     })
   }
 
-  static async connect(host: string, domain: string, timeoutMs = WS_CONNECT_TIMEOUT_MS, wsPath = TG_PROXY_WS_PATH, sni?: string): Promise<RawWebSocket> {
-    const socket = tls.connect({
-      host,
-      port: 443,
-      servername: sni ?? domain,
-      rejectUnauthorized: false
-    })
-    socket.setNoDelay(true)
-    try {
-      await waitForSocketConnect(socket, Math.min(timeoutMs, 10000))
-    } catch (e) {
-      socket.destroy()
-      throw e
+  static async connect(
+    host: string,
+    domain: string,
+    timeoutMs = WS_CONNECT_TIMEOUT_MS,
+    wsPath = TG_PROXY_WS_PATH,
+    sni?: string,
+    highWaterMark?: number
+  ): Promise<RawWebSocket> {
+    const hwm = highWaterMark !== undefined && Number.isFinite(highWaterMark) && highWaterMark > 0 ? Math.floor(highWaterMark) : 0
+    let socket: tls.TLSSocket
+    if (hwm > 0) {
+      // `--buf-kb`: backing TCP socket with explicit water marks, then TLS
+      // over it (Node has no SO_RCVBUF/SO_SNDBUF API — this is the closest
+      // equivalent controlling kernel↔userspace chunking; the cast is needed
+      // because @types/node omits HWM in SocketConstructorOpts, but the
+      // options reach stream.Duplex at runtime).
+      const hwmOpts = {
+        readableHighWaterMark: hwm,
+        writableHighWaterMark: hwm
+      } as net.SocketConstructorOpts
+      const plain = new net.Socket(hwmOpts)
+      plain.setNoDelay(true)
+      try {
+        await connectPlainSocket(plain, host, 443, Math.min(timeoutMs, 10000))
+        socket = await wrapTlsOverSocket(plain, sni ?? domain, Math.min(timeoutMs, 10000))
+      } catch (e) {
+        try {
+          plain.destroy()
+        } catch {
+          /* ignore */
+        }
+        throw e
+      }
+    } else {
+      socket = tls.connect({
+        host,
+        port: 443,
+        servername: sni ?? domain,
+        rejectUnauthorized: false
+      })
+      socket.setNoDelay(true)
+      try {
+        await waitForSocketConnect(socket, Math.min(timeoutMs, 10000))
+      } catch (e) {
+        socket.destroy()
+        throw e
+      }
     }
     const wsKey = crypto.randomBytes(16).toString('base64')
     const req =
@@ -643,6 +796,76 @@ function waitForSocketConnect(socket: tls.TLSSocket, timeoutMs: number): Promise
   })
 }
 
+/** Connect a plain TCP socket with timeout (for the `--buf-kb` HWM path). */
+function connectPlainSocket(socket: net.Socket, host: string, port: number, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup()
+      try {
+        socket.destroy()
+      } catch {
+        /* ignore */
+      }
+      reject(new WsConnectTimeout())
+    }, timeoutMs)
+    timer.unref?.()
+    const onConnect = (): void => {
+      cleanup()
+      resolve()
+    }
+    const onError = (e: Error): void => {
+      cleanup()
+      reject(e)
+    }
+    const cleanup = (): void => {
+      clearTimeout(timer)
+      socket.removeListener('connect', onConnect)
+      socket.removeListener('error', onError)
+    }
+    socket.once('connect', onConnect)
+    socket.once('error', onError)
+    socket.connect({ host, port })
+  })
+}
+
+/** TLS-wrap an already-connected plain socket (SNI preserved). */
+function wrapTlsOverSocket(plain: net.Socket, servername: string, timeoutMs: number): Promise<tls.TLSSocket> {
+  return new Promise((resolve, reject) => {
+    let tlsSock: tls.TLSSocket
+    try {
+      tlsSock = tls.connect({ socket: plain, servername, rejectUnauthorized: false })
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)))
+      return
+    }
+    const timer = setTimeout(() => {
+      cleanup()
+      try {
+        tlsSock.destroy()
+      } catch {
+        /* ignore */
+      }
+      reject(new WsConnectTimeout())
+    }, timeoutMs)
+    timer.unref?.()
+    const onSecure = (): void => {
+      cleanup()
+      resolve(tlsSock)
+    }
+    const onError = (e: Error): void => {
+      cleanup()
+      reject(e)
+    }
+    const cleanup = (): void => {
+      clearTimeout(timer)
+      tlsSock.removeListener('secureConnect', onSecure)
+      tlsSock.removeListener('error', onError)
+    }
+    tlsSock.once('secureConnect', onSecure)
+    tlsSock.once('error', onError)
+  })
+}
+
 function readHttpHead(socket: tls.TLSSocket, timeoutMs: number): Promise<{ head: string; extra: Buffer }> {
   return new Promise((resolve, reject) => {
     let acc = Buffer.alloc(0)
@@ -730,18 +953,6 @@ export function decodeCfDomain(s: string): string {
 /** Built-in CF-proxy domain pool (decoded). Pure. */
 export function defaultCfProxyDomains(): string[] {
   return CFPROXY_ENC.map(decodeCfDomain)
-}
-
-function isValidDomain(domain: string): boolean {
-  if (!domain || domain.length > 253 || domain.startsWith('.') || domain.endsWith('.')) return false
-  const labels = domain.split('.')
-  if (labels.length < 2) return false
-  for (const label of labels) {
-    if (!label || label.length > 63 || label.startsWith('-') || label.endsWith('-')) return false
-    if (!/^[A-Za-z0-9-]+$/.test(label)) return false
-  }
-  const tld = labels[labels.length - 1]
-  return tld.length >= 2 && /[A-Za-z]/.test(tld)
 }
 
 class CfBalancer {
@@ -843,7 +1054,7 @@ class WsPool {
   put(dc: number, isMedia: boolean, ws: RawWebSocket): void {
     const k = this.key(dc, isMedia)
     const bucket = this.idle.get(k) ?? []
-    if (bucket.length >= WS_POOL_SIZE || ws.closed) {
+    if (activePoolSize <= 0 || bucket.length >= activePoolSize || ws.closed) {
       if (!ws.closed) void ws.close().catch(() => undefined)
       else this.idle.set(k, bucket)
       return
@@ -857,7 +1068,7 @@ class WsPool {
     const k = this.key(dc, isMedia)
     if (this.refilling.has(k)) return
     const bucket = this.idle.get(k)
-    if (bucket && bucket.length >= WS_POOL_SIZE) return
+    if (activePoolSize <= 0 || (bucket && bucket.length >= activePoolSize)) return
     this.refilling.add(k)
     void (async () => {
       try {
@@ -901,13 +1112,388 @@ const wsPool = new WsPool()
 async function connectFirstWs(targetIp: string, domains: string[], wsPath: string, timeoutMs: number): Promise<RawWebSocket | null> {
   for (const domain of domains) {
     try {
-      return await RawWebSocket.connect(targetIp, domain, timeoutMs, wsPath)
+      return await RawWebSocket.connect(targetIp, domain, timeoutMs, wsPath, undefined, activeHwm > 0 ? activeHwm : undefined)
     } catch (e) {
       if (e instanceof WsHandshakeError && e.isRedirect) continue
       return null
     }
   }
   return null
+}
+
+// ---------------------------------------------------------------------------
+// FakeTLS (`ee`-secrets) — mirrors proxy/fake_tls.py
+//
+// With a masking domain configured, Telegram clients derive an `ee`-secret
+// and open with a camouflaged TLS ClientHello. We verify its HMAC +
+// timestamp, answer with a fake ServerHello, then speak obfuscated2 inside
+// TLS application-data records. Probes with a wrong secret (or plain HTTP)
+// are relayed to the masking domain / answered with a 301 redirect, so the
+// listener is indistinguishable from the real site.
+// ---------------------------------------------------------------------------
+
+const TLS_RECORD_HANDSHAKE = 0x16
+const TLS_RECORD_CCS = 0x14
+const TLS_RECORD_APPDATA = 0x17
+const TLS_APPDATA_MAX = 16384
+const FAKE_TLS_TS_TOLERANCE_S = 120
+
+const FAKE_TLS_CCS_FRAME = Buffer.from([0x14, 0x03, 0x03, 0x00, 0x01, 0x01])
+
+/** ServerHello template (offsets mirror `_SH_*_OFF` in fake_tls.py). */
+const FAKE_TLS_SERVER_HELLO_HEX =
+  '160303007a' + // record: handshake, TLS1.2, 122 bytes
+  '02000076' + // hello: server_hello, 118 bytes
+  '0303' + // server version TLS1.2
+  '00'.repeat(32) + // server_random (filled in)
+  '20' + // session id length 32
+  '00'.repeat(32) + // session id (echoed)
+  '1301' + // cipher TLS_AES_128_GCM_SHA256
+  '00' + // compression null
+  '002e' + // extensions length 46
+  '00330024001d0020' + // key_share (x25519) header
+  '00'.repeat(32) + // ephemeral pubkey (random)
+  '002b00020304' // supported_versions (TLS1.3)
+
+export interface FakeTlsHello {
+  clientRandom: Buffer
+  sessionId: Buffer
+  timestamp: number
+}
+
+/**
+ * Verify a camouflaged ClientHello: HMAC-SHA256(secret, zeroed-random hello)
+ * must match the first 28 random bytes, and the xor-embedded timestamp must
+ * be within tolerance. Returns null for foreign probes. Pure.
+ */
+export function verifyClientHello(data: Buffer, secret: Buffer): FakeTlsHello | null {
+  if (data.length < 43 || data[0] !== TLS_RECORD_HANDSHAKE || data[5] !== 0x01) return null
+  const clientRandom = Buffer.from(data.subarray(11, 11 + 32))
+  const zeroed = Buffer.from(data)
+  zeroed.fill(0, 11, 11 + 32)
+  const expected = crypto.createHmac('sha256', secret).update(zeroed).digest()
+  const a = expected.subarray(0, 28)
+  const b = clientRandom.subarray(0, 28)
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null
+  const tsXor = Buffer.alloc(4)
+  for (let i = 0; i < 4; i++) tsXor[i] = clientRandom[28 + i] ^ expected[28 + i]
+  const timestamp = tsXor.readUInt32LE(0)
+  if (Math.abs(Date.now() / 1000 - timestamp) > FAKE_TLS_TS_TOLERANCE_S) return null
+  let sessionId = Buffer.alloc(32, 0)
+  if (data.length >= 44 + 32 && data[43] === 0x20) {
+    sessionId = Buffer.from(data.subarray(44, 44 + 32))
+  }
+  return { clientRandom, sessionId, timestamp }
+}
+
+/** Forge the fake ServerHello + CCS + junk appdata blob. Pure (random). */
+export function buildServerHello(secret: Buffer, clientRandom: Buffer, sessionId: Buffer): Buffer {
+  const sh = Buffer.from(FAKE_TLS_SERVER_HELLO_HEX, 'hex')
+  sessionId.copy(sh, 44, 0, 32)
+  crypto.randomBytes(32).copy(sh, 89, 0, 32)
+  const blobLen = 1900 + Math.floor(Math.random() * 201)
+  const appRecord = Buffer.concat([
+    Buffer.from([TLS_RECORD_APPDATA, 0x03, 0x03]),
+    Buffer.alloc(2),
+    crypto.randomBytes(blobLen)
+  ])
+  appRecord.writeUInt16BE(blobLen, 3)
+  const response = Buffer.concat([sh, FAKE_TLS_CCS_FRAME, appRecord])
+  const serverRandom = crypto.createHmac('sha256', secret).update(Buffer.concat([clientRandom, response])).digest()
+  serverRandom.copy(sh, 11, 0, 32)
+  return Buffer.concat([sh, FAKE_TLS_CCS_FRAME, appRecord])
+}
+
+/** Split payload into TLS application-data records (≤16KB each). Pure. */
+export function wrapTlsRecords(data: Buffer): Buffer {
+  const parts: Buffer[] = []
+  for (let offset = 0; offset < data.length; offset += TLS_APPDATA_MAX) {
+    const chunk = data.subarray(offset, offset + TLS_APPDATA_MAX)
+    const head = Buffer.from([TLS_RECORD_APPDATA, 0x03, 0x03, 0, 0])
+    head.writeUInt16BE(chunk.length, 3)
+    parts.push(head, Buffer.from(chunk))
+  }
+  return Buffer.concat(parts)
+}
+
+/** Drain helper: resolve once the socket flushes. */
+function waitDrain(socket: net.Socket): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      socket.once('drain', () => resolve())
+    } catch {
+      resolve()
+    }
+  })
+}
+
+/**
+ * Totally-ordered byte reader over a socket (buffered, pause-aware).
+ * Unlike `readTcpExactly`, it never detaches: safe for the record loop.
+ */
+class SocketReader {
+  private buf: Buffer = Buffer.alloc(0)
+  private waiters: Array<{ n: number; resolve: (d: Buffer) => void; reject: (e: Error) => void }> = []
+  private failed: Error | null = null
+
+  constructor(private readonly socket: net.Socket) {
+    socket.on('data', (d: Buffer) => {
+      this.buf = Buffer.concat([this.buf, d])
+      this.pump()
+    })
+    socket.once('close', () => this.fail(new Error('socket closed')))
+    socket.once('error', (e: Error) => this.fail(e))
+  }
+
+  readExactly(n: number): Promise<Buffer> {
+    if (this.failed) return Promise.reject(this.failed)
+    if (this.buf.length >= n) {
+      const out = Buffer.from(this.buf.subarray(0, n))
+      this.buf = Buffer.from(this.buf.subarray(n))
+      return Promise.resolve(out)
+    }
+    return new Promise<Buffer>((resolve, reject) => {
+      this.waiters.push({ n, resolve, reject })
+    })
+  }
+
+  private pump(): void {
+    while (this.waiters.length > 0) {
+      const w = this.waiters[0]
+      if (this.buf.length < w.n) break
+      this.waiters.shift()
+      const out = Buffer.from(this.buf.subarray(0, w.n))
+      this.buf = Buffer.from(this.buf.subarray(w.n))
+      w.resolve(out)
+    }
+  }
+
+  private fail(e: Error): void {
+    if (this.failed) return
+    this.failed = e
+    const pending = this.waiters
+    this.waiters = []
+    for (const w of pending) w.reject(e)
+  }
+}
+
+/**
+ * TLS-record session over a plain socket (mirrors `FakeTlsStream`).
+ * Presents the same surface the bridge pumps need (`on`/`once`/
+ * `removeListener`/`write`/`destroy`/`destroyed`/`resume`/`pause`), emitting
+ * decrypted application-data payloads as `data`.
+ */
+export class FakeTlsSession {
+  private readonly reader: SocketReader
+  private readonly listeners = new Map<string, Set<(...args: any[]) => void>>()
+  destroyed = false
+
+  constructor(private readonly socket: net.Socket) {
+    this.reader = new SocketReader(socket)
+    socket.once('close', () => this.emitLocal('close'))
+    socket.once('error', (e: Error) => this.emitLocal('error', e))
+    socket.once('end', () => this.emitLocal('end'))
+  }
+
+  /** Start the record-read loop (call once, after the handshake). */
+  start(): void {
+    void this.recordLoop().catch(() => undefined)
+  }
+
+  /**
+   * Read exactly n decrypted bytes (handshake phase, before `start()`).
+   * Overall timeout → throws.
+   */
+  async readExactly(n: number, timeoutMs: number): Promise<Buffer> {
+    const deadline = Date.now() + timeoutMs
+    let acc = Buffer.alloc(0)
+    while (acc.length < n) {
+      const left = deadline - Date.now()
+      if (left <= 0) throw new Error('fake-tls read timed out')
+      const payload = await this.readRecordPayload(left)
+      if (payload === null) throw new Error('fake-tls unexpected record')
+      acc = Buffer.concat([acc, payload])
+    }
+    return acc.subarray(0, n)
+  }
+
+  /** Next application-data payload, or null on close/unexpected record. */
+  private async readRecordPayload(timeoutMs: number): Promise<Buffer | null> {
+    const rec = await this.withTimeout(this.readRecord(), timeoutMs)
+    return rec
+  }
+
+  private async readRecord(): Promise<Buffer | null> {
+    for (;;) {
+      const hdr = await this.reader.readExactly(5)
+      const rtype = hdr[0]
+      const recLen = hdr.readUInt16BE(3)
+      if (rtype === TLS_RECORD_CCS) {
+        if (recLen > 0) await this.reader.readExactly(recLen)
+        continue
+      }
+      if (rtype !== TLS_RECORD_APPDATA) return null
+      if (recLen === 0) continue
+      return this.reader.readExactly(recLen)
+    }
+  }
+
+  private withTimeout<T>(p: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('fake-tls read timed out')), Math.max(1, timeoutMs))
+      timer.unref?.()
+      p.then(
+        (v) => {
+          clearTimeout(timer)
+          resolve(v)
+        },
+        (e: unknown) => {
+          clearTimeout(timer)
+          reject(e instanceof Error ? e : new Error(String(e)))
+        }
+      )
+    })
+  }
+
+  private async recordLoop(): Promise<void> {
+    try {
+      for (;;) {
+        if (this.destroyed) break
+        const payload = await this.readRecord()
+        if (payload === null) break
+        if (payload.length > 0) this.emitLocal('data', payload)
+      }
+    } catch {
+      /* socket closed — terminate */
+    }
+  }
+
+  write(data: Buffer): boolean {
+    try {
+      return this.socket.write(wrapTlsRecords(Buffer.from(data)))
+    } catch {
+      return false
+    }
+  }
+
+  destroy(): void {
+    this.destroyed = true
+    try {
+      this.socket.destroy()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  resume(): net.Socket {
+    try {
+      this.socket.resume()
+    } catch {
+      /* ignore */
+    }
+    return this.socket
+  }
+
+  pause(): net.Socket {
+    try {
+      this.socket.pause()
+    } catch {
+      /* ignore */
+    }
+    return this.socket
+  }
+
+  on(event: string, listener: (...args: any[]) => void): this {
+    this.addLocal(event, listener)
+    return this
+  }
+
+  once(event: string, listener: (...args: any[]) => void): this {
+    const wrapper = (...args: unknown[]): void => {
+      this.removeListener(event, wrapper)
+      listener(...args)
+    }
+    this.addLocal(event, wrapper)
+    return this
+  }
+
+  removeListener(event: string, listener: (...args: any[]) => void): this {
+    this.listeners.get(event)?.delete(listener)
+    return this
+  }
+
+  private addLocal(event: string, listener: (...args: any[]) => void): void {
+    let set = this.listeners.get(event)
+    if (!set) {
+      set = new Set()
+      this.listeners.set(event, set)
+    }
+    set.add(listener)
+  }
+
+  private emitLocal(event: string, ...args: unknown[]): void {
+    const set = this.listeners.get(event)
+    if (!set) return
+    for (const fn of [...set]) {
+      try {
+        fn(...args)
+      } catch {
+        /* listener must never break the loop */
+      }
+    }
+  }
+}
+
+/**
+ * Relay a wrong-secret probe to the real masking domain (`:443`),
+ * prefixing the already-read ClientHello (mirrors `proxy_to_masking_domain`).
+ */
+export async function proxyToMaskingDomain(client: net.Socket, initialData: Buffer, domain: string, label: string): Promise<void> {
+  counters.masked += 1
+  let upstream: net.Socket
+  try {
+    upstream = await connectTcp(domain, 443, TCP_FALLBACK_TIMEOUT_MS)
+  } catch (e) {
+    warn('tg-proxy', `[${label}] masking: cannot connect to masking domain:443: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
+    return
+  }
+  info('tg-proxy', `[${label}] masking relay to :443`)
+  try {
+    if (initialData.length > 0) {
+      upstream.write(Buffer.from(initialData))
+    }
+    const relay = (src: net.Socket, dst: net.Socket): Promise<void> =>
+      new Promise((resolve) => {
+        const onData = (chunk: Buffer): void => {
+          try {
+            if (!dst.destroyed) dst.write(chunk)
+          } catch {
+            resolve()
+          }
+        }
+        const done = (): void => {
+          src.removeListener('data', onData)
+          resolve()
+        }
+        // Domain names stay out of the logs (mirrors DomainCensorFilter).
+        src.on('data', onData)
+        src.once('close', done)
+        src.once('error', done)
+      })
+    try {
+      client.resume()
+    } catch {
+      /* ignore */
+    }
+    await Promise.race([relay(client, upstream), relay(upstream, client)])
+  } finally {
+    try {
+      upstream.destroy()
+    } catch {
+      /* ignore */
+    }
+    destroyClient(client)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -920,6 +1506,61 @@ export interface TgProxyStartOptions {
   /** 32-hex secret. */
   secret: string
   cfProxyEnabled?: boolean
+  /** Custom WS target table (merged over built-ins). */
+  dcIps?: Record<number, string>
+  /** Pre-warmed WS sockets per DC (0 = no pooling). */
+  poolSize?: number
+  /** Socket buffer hint in bytes (highWaterMark for outbound sockets). */
+  highWaterMark?: number
+  /** User CF-proxy domains (override the auto pool when non-empty). */
+  cfDomains?: string[]
+  /** Cloudflare Worker domains for the worker fallback. */
+  workerDomains?: string[]
+  /** FakeTLS masking domain ('' = disabled). */
+  fakeTlsDomain?: string
+  /** Route everything to test DCs. */
+  forceTestDc?: boolean
+  /** Accept a PROXY protocol v1 header. */
+  proxyProtocol?: boolean
+}
+
+/**
+ * Build start options from persisted settings (single mapping used by
+ * IPC handlers, tray actions and autostart). Pure.
+ */
+export function tgStartOptsFromSettings(s: {
+  port: number
+  secret: string
+  cfProxyEnabled: boolean
+  host: string
+  dcIps: string[]
+  poolSize: number
+  bufferKb: number
+  cfDomains: string[]
+  workerDomains: string[]
+  fakeTlsDomain: string
+  forceTestDc: boolean
+  proxyProtocol: boolean
+}): TgProxyStartOptions {
+  let custom: Record<number, string> = {}
+  for (const entry of normalizeDcIpEntries(s.dcIps)) {
+    const sep = entry.indexOf(':')
+    custom[Number(entry.slice(0, sep))] = entry.slice(sep + 1)
+  }
+  return {
+    port: s.port,
+    host: s.host,
+    secret: s.secret,
+    cfProxyEnabled: s.cfProxyEnabled,
+    dcIps: custom,
+    poolSize: s.poolSize,
+    highWaterMark: s.bufferKb * 1024,
+    cfDomains: [...s.cfDomains],
+    workerDomains: [...s.workerDomains],
+    fakeTlsDomain: s.fakeTlsDomain,
+    forceTestDc: s.forceTestDc,
+    proxyProtocol: s.proxyProtocol
+  }
 }
 
 interface Counters {
@@ -929,13 +1570,14 @@ interface Counters {
   tcpFallback: number
   cf: number
   bad: number
+  masked: number
   wsErrors: number
   bytesUp: number
   bytesDown: number
 }
 
 function freshCounters(): Counters {
-  return { total: 0, active: 0, ws: 0, tcpFallback: 0, cf: 0, bad: 0, wsErrors: 0, bytesUp: 0, bytesDown: 0 }
+  return { total: 0, active: 0, ws: 0, tcpFallback: 0, cf: 0, bad: 0, masked: 0, wsErrors: 0, bytesUp: 0, bytesDown: 0 }
 }
 
 let server: net.Server | null = null
@@ -946,6 +1588,13 @@ let startedAt: string | null = null
 let lastError: string | null = null
 let activeSecret = ''
 let cfEnabled = true
+let activeDcIps: Record<number, string> = {}
+let activePoolSize = WS_POOL_SIZE
+let activeHwm = 0
+let activeWorkerDomains: string[] = []
+let activeFakeTlsDomain = ''
+let activeForceTestDc = false
+let activeProxyProtocol = false
 let cfRefreshTimer: NodeJS.Timeout | null = null
 const counters: Counters = freshCounters()
 const clients = new Set<net.Socket>()
@@ -1012,6 +1661,58 @@ export function readTcpExactly(socket: net.Socket, n: number, timeoutMs: number)
   })
 }
 
+/**
+ * Read one `\\n`-terminated line (PROXY protocol header), returning the line
+ * plus any bytes already read past it (re-queued via `unshift`).
+ * The socket is left PAUSED like in {@link readTcpExactly}.
+ */
+export function readTcpLine(socket: net.Socket, timeoutMs: number, maxLen = 512): Promise<{ line: string; rest: Buffer }> {
+  return new Promise((resolve, reject) => {
+    let acc = Buffer.alloc(0)
+    const timer = setTimeout(() => {
+      cleanup()
+      reject(new Error('proxy protocol header timed out'))
+    }, timeoutMs)
+    timer.unref?.()
+    const onData = (d: Buffer): void => {
+      acc = Buffer.concat([acc, d])
+      const idx = acc.indexOf('\n')
+      if (idx >= 0) {
+        cleanup()
+        const line = acc.subarray(0, idx).toString('ascii')
+        const rest = Buffer.from(acc.subarray(idx + 1))
+        if (rest.length > 0) socket.unshift(rest)
+        resolve({ line, rest })
+      } else if (acc.length > maxLen) {
+        cleanup()
+        reject(new Error('proxy protocol header too long'))
+      }
+    }
+    const onError = (e: Error): void => {
+      cleanup()
+      reject(e)
+    }
+    const onClose = (): void => {
+      cleanup()
+      reject(new Error('client disconnected'))
+    }
+    const cleanup = (): void => {
+      clearTimeout(timer)
+      socket.removeListener('data', onData)
+      socket.removeListener('error', onError)
+      socket.removeListener('close', onClose)
+      try {
+        socket.pause()
+      } catch {
+        /* ignore */
+      }
+    }
+    socket.on('data', onData)
+    socket.once('error', onError)
+    socket.once('close', onClose)
+  })
+}
+
 function destroyClient(socket: net.Socket): void {
   clients.delete(socket)
   try {
@@ -1021,8 +1722,23 @@ function destroyClient(socket: net.Socket): void {
   }
 }
 
+/**
+ * Minimal socket surface used by the bridge pumps — satisfied by both
+ * `net.Socket` (plain MTProto) and {@link FakeTlsSession} (`ee`-secrets).
+ */
+export interface BridgeSocket {
+  on(event: string, listener: (...args: any[]) => void): unknown
+  once(event: string, listener: (...args: any[]) => void): unknown
+  removeListener(event: string, listener: (...args: any[]) => void): unknown
+  write(data: Buffer): boolean
+  destroy(): unknown
+  resume(): unknown
+  pause(): unknown
+  readonly destroyed: boolean
+}
+
 /** TCP(client) → WS(telegram) with re-encryption + packet splitting. */
-async function pumpTcpToWs(client: net.Socket, ws: RawWebSocket, ctx: CryptoCtx, splitter: MsgSplitter | null, label: string): Promise<string | null> {
+async function pumpTcpToWs(client: BridgeSocket, ws: RawWebSocket, ctx: CryptoCtx, splitter: MsgSplitter | null, label: string): Promise<string | null> {
   let chain: Promise<void> = Promise.resolve()
   let failure: string | null = null
   const done = new Promise<string | null>((resolve) => {
@@ -1080,7 +1796,7 @@ async function pumpTcpToWs(client: net.Socket, ws: RawWebSocket, ctx: CryptoCtx,
 }
 
 /** WS(telegram) → TCP(client) with re-encryption. */
-async function pumpWsToTcp(client: net.Socket, ws: RawWebSocket, ctx: CryptoCtx): Promise<string | null> {
+async function pumpWsToTcp(client: BridgeSocket, ws: RawWebSocket, ctx: CryptoCtx): Promise<string | null> {
   try {
     for (;;) {
       const data = await ws.recv()
@@ -1092,7 +1808,12 @@ async function pumpWsToTcp(client: net.Socket, ws: RawWebSocket, ctx: CryptoCtx)
       } catch (e) {
         return `crypto: ${e instanceof Error ? e.message : String(e)}`
       }
-      const ok = client.write(out)
+      let ok = true
+      try {
+        ok = client.destroyed ? false : client.write(out)
+      } catch {
+        return 'client: write failed'
+      }
       if (!ok) {
         await new Promise<void>((resolve) => client.once('drain', () => resolve()))
       }
@@ -1104,16 +1825,25 @@ async function pumpWsToTcp(client: net.Socket, ws: RawWebSocket, ctx: CryptoCtx)
 }
 
 /** Bidirectional bridge with session summary logging. */
-async function bridgeWs(client: net.Socket, ws: RawWebSocket, ctx: CryptoCtx, splitter: MsgSplitter | null, label: string, dc: number, isMedia: boolean): Promise<void> {
+async function bridgeWs(
+  io: BridgeSocket,
+  ws: RawWebSocket,
+  ctx: CryptoCtx,
+  splitter: MsgSplitter | null,
+  label: string,
+  dc: number,
+  isMedia: boolean,
+  teardown: () => void
+): Promise<void> {
   const dcTag = `DC${dc}${isMedia ? 'm' : ''}`
   const up0 = counters.bytesUp
   const down0 = counters.bytesDown
   const t0 = Date.now()
   // Listeners attach synchronously inside the pumps (same tick), so resuming
   // here cannot lose data — buffered bytes are redelivered on resume.
-  const pumps = Promise.all([pumpTcpToWs(client, ws, ctx, splitter, label), pumpWsToTcp(client, ws, ctx)])
+  const pumps = Promise.all([pumpTcpToWs(io, ws, ctx, splitter, label), pumpWsToTcp(io, ws, ctx)])
   try {
-    client.resume()
+    io.resume()
   } catch {
     /* ignore */
   }
@@ -1126,12 +1856,16 @@ async function bridgeWs(client: net.Socket, ws: RawWebSocket, ctx: CryptoCtx, sp
   } catch {
     /* ignore */
   }
-  destroyClient(client)
+  try {
+    teardown()
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Bidirectional TCP↔TCP bridge with re-encryption (direct fallback). */
-async function bridgeTcp(client: net.Socket, remote: net.Socket, ctx: CryptoCtx): Promise<void> {
-  const forward = (src: net.Socket, dst: net.Socket, isUp: boolean): Promise<void> =>
+async function bridgeTcp(io: BridgeSocket, remote: net.Socket, ctx: CryptoCtx, teardown: () => void): Promise<void> {
+  const forward = (src: BridgeSocket, dst: BridgeSocket, isUp: boolean): Promise<void> =>
     new Promise((resolve) => {
       const onData = (chunk: Buffer): void => {
         let out: Buffer
@@ -1145,7 +1879,11 @@ async function bridgeTcp(client: net.Socket, remote: net.Socket, ctx: CryptoCtx)
         }
         if (isUp) counters.bytesUp += chunk.length
         else counters.bytesDown += chunk.length
-        if (!dst.destroyed) dst.write(out)
+        try {
+          if (!dst.destroyed) dst.write(out)
+        } catch {
+          resolve()
+        }
       }
       const done = (): void => {
         src.removeListener('data', onData)
@@ -1155,11 +1893,11 @@ async function bridgeTcp(client: net.Socket, remote: net.Socket, ctx: CryptoCtx)
       src.once('close', done)
       src.once('error', done)
     })
-  const both = Promise.race([forward(client, remote, true), forward(remote, client, false)])
+  const both = Promise.race([forward(io, remote, true), forward(remote, io, false)])
   // `forward` attached synchronously above — resume now to redeliver anything
   // buffered while the TCP dial was in flight (see readTcpExactly).
   try {
-    client.resume()
+    io.resume()
     remote.resume()
   } catch {
     /* ignore */
@@ -1170,12 +1908,23 @@ async function bridgeTcp(client: net.Socket, remote: net.Socket, ctx: CryptoCtx)
   } catch {
     /* ignore */
   }
-  destroyClient(client)
+  try {
+    teardown()
+  } catch {
+    /* ignore */
+  }
 }
 
-function connectTcp(host: string, port: number, timeoutMs: number): Promise<net.Socket> {
+function connectTcp(host: string, port: number, timeoutMs: number, highWaterMark = 0): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
-    const s = net.connect({ host, port })
+    // See RawWebSocket.connect: HWM options are cast (same @types gap).
+    const s =
+      highWaterMark > 0
+        ? new net.Socket({
+            readableHighWaterMark: highWaterMark,
+            writableHighWaterMark: highWaterMark
+          } as net.SocketConstructorOpts)
+        : new net.Socket()
     s.setNoDelay(true)
     const timer = setTimeout(() => {
       s.destroy()
@@ -1190,20 +1939,21 @@ function connectTcp(host: string, port: number, timeoutMs: number): Promise<net.
       clearTimeout(timer)
       reject(e)
     })
+    s.connect({ host, port })
   })
 }
 
-async function cfProxyFallback(client: net.Socket, relayInit: Buffer, ctx: CryptoCtx, splitter: MsgSplitter | null, label: string, dc: number, isMedia: boolean): Promise<boolean> {
+async function cfProxyFallback(io: BridgeSocket, relayInit: Buffer, ctx: CryptoCtx, splitter: MsgSplitter | null, label: string, dc: number, isMedia: boolean, teardown: () => void): Promise<boolean> {
   const mediaTag = isMedia ? ' media' : ''
   info('tg-proxy', `[${label}] DC${dc}${mediaTag} -> trying CF proxy`)
   for (const base of balancer.getDomainsForDc(dc)) {
     const domain = `kws${dc}.${base}`
     try {
-      const ws = await RawWebSocket.connect(domain, domain, CF_CONNECT_TIMEOUT_MS, TG_PROXY_WS_PATH)
+      const ws = await RawWebSocket.connect(domain, domain, CF_CONNECT_TIMEOUT_MS, TG_PROXY_WS_PATH, undefined, activeHwm > 0 ? activeHwm : undefined)
       if (balancer.updateDomainForDc(dc, base)) info('tg-proxy', `[${label}] Switched active CF domain`)
       counters.cf += 1
       await ws.send(Buffer.from(relayInit))
-      void bridgeWs(client, ws, ctx, splitter, label, dc, isMedia).catch(() => undefined)
+      void bridgeWs(io, ws, ctx, splitter, label, dc, isMedia, teardown).catch(() => undefined)
       return true
     } catch (e) {
       warn('tg-proxy', `[${label}] DC${dc}${mediaTag} CF proxy failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
@@ -1212,14 +1962,46 @@ async function cfProxyFallback(client: net.Socket, relayInit: Buffer, ctx: Crypt
   return false
 }
 
-async function tcpFallback(client: net.Socket, relayInit: Buffer, ctx: CryptoCtx, label: string, dc: number, isMedia: boolean, dst: string): Promise<boolean> {
+/**
+ * Cloudflare Worker fallback (`--cfproxy-worker-domain`): the worker relays
+ * to `dst` itself, so we open WS straight to the worker with
+ * `/apiws?dst=<ip>&dc=<n>` (mirrors `_cfproxy_worker_fallback`, no splitting).
+ */
+async function cfWorkerFallback(
+  io: BridgeSocket,
+  relayInit: Buffer,
+  ctx: CryptoCtx,
+  label: string,
+  dc: number,
+  isMedia: boolean,
+  fallbackDst: string,
+  teardown: () => void
+): Promise<boolean> {
+  const mediaTag = isMedia ? ' media' : ''
+  const path = buildCfWorkerPath(fallbackDst, dc)
+  for (const workerDomain of shuffled(activeWorkerDomains)) {
+    info('tg-proxy', `[${label}] DC${dc}${mediaTag} -> trying CF worker ${workerDomain} for ${fallbackDst}`)
+    try {
+      const ws = await RawWebSocket.connect(workerDomain, workerDomain, CF_CONNECT_TIMEOUT_MS, path, undefined, activeHwm > 0 ? activeHwm : undefined)
+      counters.cf += 1
+      await ws.send(Buffer.from(relayInit))
+      void bridgeWs(io, ws, ctx, null, label, dc, isMedia, teardown).catch(() => undefined)
+      return true
+    } catch (e) {
+      warn('tg-proxy', `[${label}] DC${dc}${mediaTag} CF worker failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
+    }
+  }
+  return false
+}
+
+async function tcpFallback(io: BridgeSocket, relayInit: Buffer, ctx: CryptoCtx, label: string, dc: number, isMedia: boolean, dst: string, teardown: () => void): Promise<boolean> {
   const mediaTag = isMedia ? ' media' : ''
   info('tg-proxy', `[${label}] DC${dc}${mediaTag} -> TCP fallback to ${dst}:443`)
   try {
-    const remote = await connectTcp(dst, 443, TCP_FALLBACK_TIMEOUT_MS)
+    const remote = await connectTcp(dst, 443, TCP_FALLBACK_TIMEOUT_MS, activeHwm)
     counters.tcpFallback += 1
     remote.write(Buffer.from(relayInit))
-    void bridgeTcp(client, remote, ctx).catch(() => undefined)
+    void bridgeTcp(io, remote, ctx, teardown).catch(() => undefined)
     return true
   } catch (e) {
     warn('tg-proxy', `[${label}] TCP fallback to ${dst}:443 failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
@@ -1227,15 +2009,29 @@ async function tcpFallback(client: net.Socket, relayInit: Buffer, ctx: CryptoCtx
   }
 }
 
-/** Fallback chain: CF-proxy → direct TCP (mirrors `do_fallback`). */
-async function doFallback(client: net.Socket, relayInit: Buffer, ctx: CryptoCtx, splitter: MsgSplitter | null, label: string, dc: number, isTestDc: boolean, isMedia: boolean): Promise<boolean> {
+/** Fallback chain: CF-worker → CF-proxy → direct TCP (mirrors `do_fallback`). */
+async function doFallback(
+  io: BridgeSocket,
+  client: net.Socket,
+  relayInit: Buffer,
+  ctx: CryptoCtx,
+  splitter: MsgSplitter | null,
+  label: string,
+  dc: number,
+  isTestDc: boolean,
+  isMedia: boolean
+): Promise<boolean> {
+  const teardown = (): void => destroyClient(client)
   const ipTable = isTestDc ? TG_PROXY_DC_TEST_IPS : TG_PROXY_DC_FALLBACK_IPS
   const dst = ipTable[dc]
+  if (activeWorkerDomains.length > 0 && dst) {
+    if (await cfWorkerFallback(io, relayInit, ctx, label, dc, isMedia, dst, teardown)) return true
+  }
   if (cfEnabled && !isTestDc) {
-    if (await cfProxyFallback(client, relayInit, ctx, splitter, label, dc, isMedia)) return true
+    if (await cfProxyFallback(io, relayInit, ctx, splitter, label, dc, isMedia, teardown)) return true
   }
   if (dst) {
-    if (await tcpFallback(client, relayInit, ctx, label, dc, isMedia, dst)) return true
+    if (await tcpFallback(io, relayInit, ctx, label, dc, isMedia, dst, teardown)) return true
   }
   return false
 }
@@ -1243,18 +2039,76 @@ async function doFallback(client: net.Socket, relayInit: Buffer, ctx: CryptoCtx,
 async function handleClient(client: net.Socket, secret: Buffer): Promise<void> {
   counters.total += 1
   counters.active += 1
-  const peer = `${client.remoteAddress ?? '?'}:${client.remotePort ?? '?'}`
+  let label = `${client.remoteAddress ?? '?'}:${client.remotePort ?? '?'}`
   client.setNoDelay(true)
+  const teardown = (): void => destroyClient(client)
   // Bad handshakes linger (drain) so scanners hang; everything else is
   // destroyed in `finally` (bridges already cleaned up — destroy is idempotent).
   let linger = false
   try {
-    const handshake = await readTcpExactly(client, HANDSHAKE_LEN, CLIENT_INIT_TIMEOUT_MS).catch(() => null)
-    if (!handshake) return
+    if (activeProxyProtocol) {
+      // Behind nginx/haproxy: consume the `PROXY TCP4/6 ...` line first.
+      try {
+        const { line } = await readTcpLine(client, CLIENT_INIT_TIMEOUT_MS)
+        const parsed = parseProxyV1Line(line)
+        if (parsed) {
+          label = parsed
+          info('tg-proxy', `[${label}] PROXY protocol header accepted`)
+        }
+      } catch {
+        return
+      }
+    }
+
+    let handshake: Buffer | null = null
+    // IO surface for the bridges: plain socket, or a FakeTLS record session.
+    let io: BridgeSocket = client
+    if (activeFakeTlsDomain !== '') {
+      const first = await readTcpExactly(client, 1, CLIENT_INIT_TIMEOUT_MS).catch(() => null)
+      if (!first) return
+      if (first[0] === TLS_RECORD_HANDSHAKE) {
+        const rest = await readTcpExactly(client, 4, CLIENT_INIT_TIMEOUT_MS).catch(() => null)
+        if (!rest) return
+        const recLen = rest.readUInt16BE(2)
+        const body = await readTcpExactly(client, recLen, CLIENT_INIT_TIMEOUT_MS).catch(() => null)
+        if (!body) return
+        const hello = Buffer.concat([first, rest, body])
+        const verified = verifyClientHello(hello, secret)
+        if (!verified) {
+          // Foreign probe — relay to the masking domain like the real site.
+          linger = true
+          await proxyToMaskingDomain(client, hello, activeFakeTlsDomain, label)
+          return
+        }
+        info('tg-proxy', `[${label}] FakeTLS handshake accepted`)
+        const session = new FakeTlsSession(client)
+        client.write(buildServerHello(secret, verified.clientRandom, verified.sessionId))
+        await waitDrain(client)
+        session.start()
+        handshake = await session.readExactly(HANDSHAKE_LEN, CLIENT_INIT_TIMEOUT_MS).catch(() => null)
+        if (!handshake) return
+        io = session
+      } else {
+        // Plain HTTP against a masking listener → redirect to the real site.
+        linger = true
+        try {
+          client.write(
+            `HTTP/1.1 301 Moved Permanently\r\nLocation: https://${activeFakeTlsDomain}/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`
+          )
+          await waitDrain(client)
+        } catch {
+          /* ignore */
+        }
+        return
+      }
+    } else {
+      handshake = await readTcpExactly(client, HANDSHAKE_LEN, CLIENT_INIT_TIMEOUT_MS).catch(() => null)
+      if (!handshake) return
+    }
     const parsed = tryHandshake(handshake, secret)
     if (!parsed) {
       counters.bad += 1
-      warn('tg-proxy', `[${peer}] bad handshake (wrong secret or proto)`)
+      warn('tg-proxy', `[${label}] bad handshake (wrong secret or proto)`)
       // Drain like upstream so scanners hang instead of learning anything.
       linger = true
       client.resume()
@@ -1264,8 +2118,11 @@ async function handleClient(client: net.Socket, secret: Buffer): Promise<void> {
       return
     }
     let dc = parsed.dcId
-    const isTestDc = dc >= 10000
-    if (isTestDc) dc -= 10000
+    const isTestDc = activeForceTestDc || dc >= 10000
+    if (dc >= 10000) {
+      info('tg-proxy', `[${label}] test DC${dc} -> DC${dc - 10000}`)
+      dc -= 10000
+    }
     const protoInt =
       parsed.protoTag.equals(PROTO_TAG_ABRIDGED)
         ? PROTO_ABRIDGED_INT
@@ -1277,23 +2134,24 @@ async function handleClient(client: net.Socket, secret: Buffer): Promise<void> {
     const ctx = buildCryptoCtx(parsed.prekeyIv, secret, relayInit)
     const mediaTag = parsed.isMedia ? ' media' : ''
     const dcKey = `${dc}${isTestDc ? 't' : ''}${parsed.isMedia ? 'm' : ''}`
-    const target = TG_PROXY_DC_IPS[dc]
+    // Custom `--dc-ip` targets override the built-ins (warmup included).
+    const target = activeDcIps[dc] ?? TG_PROXY_DC_IPS[dc]
     const wsPath = isTestDc ? TG_PROXY_WS_PATH_TEST : TG_PROXY_WS_PATH
     const now = Date.now()
     let ws: RawWebSocket | null = null
 
     // Unknown DC, blacklisted WS or a cooling-down IP → straight to fallback.
     if (target === undefined) {
-      info('tg-proxy', `[${peer}] DC${dc} not in config -> fallback`)
+      info('tg-proxy', `[${label}] DC${dc} not in config -> fallback`)
     } else if (wsBlacklist.has(dcKey)) {
-      info('tg-proxy', `[${peer}] DC${dc}${mediaTag} WS blacklisted -> fallback`)
+      info('tg-proxy', `[${label}] DC${dc}${mediaTag} WS blacklisted -> fallback`)
     } else if (!isTestDc && now < (ipFailUntil.get(target) ?? 0) && cfEnabled) {
       ws = wsPool.get(dc, parsed.isMedia)
-      if (ws) info('tg-proxy', `[${peer}] DC${dc}${mediaTag} WS IP cooling down, pool hit -> using WS`)
-      else info('tg-proxy', `[${peer}] DC${dc}${mediaTag} WS IP cooling down -> fallback`)
+      if (ws) info('tg-proxy', `[${label}] DC${dc}${mediaTag} WS IP cooling down, pool hit -> using WS`)
+      else info('tg-proxy', `[${label}] DC${dc}${mediaTag} WS IP cooling down -> fallback`)
     } else if (!isTestDc) {
       ws = wsPool.get(dc, parsed.isMedia)
-      if (ws) info('tg-proxy', `[${peer}] DC${dc}${mediaTag} -> pool hit via ${target}`)
+      if (ws) info('tg-proxy', `[${label}] DC${dc}${mediaTag} -> pool hit via ${target}`)
     }
 
     if (target !== undefined && !wsBlacklist.has(dcKey) && ws === null && (isTestDc || now >= (ipFailUntil.get(target) ?? 0) || !cfEnabled)) {
@@ -1304,27 +2162,27 @@ async function handleClient(client: net.Socket, secret: Buffer): Promise<void> {
       let allRedirects = true
       if (!isTestDc) {
         for (const domain of domains) {
-          info('tg-proxy', `[${peer}] DC${dc}${mediaTag} -> wss://${domain}${wsPath} via ${target}`)
+          info('tg-proxy', `[${label}] DC${dc}${mediaTag} -> wss://${domain}${wsPath} via ${target}`)
           try {
-            ws = await RawWebSocket.connect(target, domain, timeout, wsPath)
+            ws = await RawWebSocket.connect(target, domain, timeout, wsPath, undefined, activeHwm > 0 ? activeHwm : undefined)
             allRedirects = false
             break
           } catch (e) {
             if (e instanceof WsHandshakeError && e.isRedirect) {
               counters.wsErrors += 1
               failedRedirect = true
-              warn('tg-proxy', `[${peer}] DC${dc}${mediaTag} got ${e.statusCode} from relay -> ${e.location ?? '?'}`.slice(0, 300))
+              warn('tg-proxy', `[${label}] DC${dc}${mediaTag} got ${e.statusCode} from relay -> ${e.location ?? '?'}`.slice(0, 300))
               continue
             }
             if (e instanceof WsConnectTimeout) {
               counters.wsErrors += 1
               timedOut = true
-              warn('tg-proxy', `[${peer}] DC${dc}${mediaTag} WS connect timed out via ${target}`)
+              warn('tg-proxy', `[${label}] DC${dc}${mediaTag} WS connect timed out via ${target}`)
               break
             }
             counters.wsErrors += 1
             allRedirects = false
-            warn('tg-proxy', `[${peer}] DC${dc}${mediaTag} WS connect failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
+            warn('tg-proxy', `[${label}] DC${dc}${mediaTag} WS connect failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
           }
         }
       } else {
@@ -1334,14 +2192,14 @@ async function handleClient(client: net.Socket, secret: Buffer): Promise<void> {
       if (ws === null && !isTestDc) {
         if (timedOut && target) {
           ipFailUntil.set(target, now + IP_FAIL_COOLDOWN_MS)
-          info('tg-proxy', `[${peer}] DC${dc}${mediaTag} WS to ${target} timed out, cooldown 3600s`)
+          info('tg-proxy', `[${label}] DC${dc}${mediaTag} WS to ${target} timed out, cooldown 3600s`)
         }
         if (failedRedirect && allRedirects) {
           wsBlacklist.add(dcKey)
-          warn('tg-proxy', `[${peer}] DC${dc}${mediaTag} blacklisted for WS (all redirects)`)
+          warn('tg-proxy', `[${label}] DC${dc}${mediaTag} blacklisted for WS (all redirects)`)
         } else {
           dcFailUntil.set(dcKey, now + DC_FAIL_COOLDOWN_MS)
-          info('tg-proxy', `[${peer}] DC${dc}${mediaTag} WS failed, cooldown 60s`)
+          info('tg-proxy', `[${label}] DC${dc}${mediaTag} WS failed, cooldown 60s`)
         }
       }
       if (ws !== null && target) ipFailUntil.delete(target)
@@ -1354,12 +2212,12 @@ async function handleClient(client: net.Socket, secret: Buffer): Promise<void> {
       } catch {
         splitter = null
       }
-      const ok = await doFallback(client, relayInit, ctx, splitter, peer, dc, isTestDc, parsed.isMedia)
+      const ok = await doFallback(io, client, relayInit, ctx, splitter, label, dc, isTestDc, parsed.isMedia)
       if (!ok) {
-        warn('tg-proxy', `[${peer}] DC${dc}${mediaTag} no fallback available`)
+        warn('tg-proxy', `[${label}] DC${dc}${mediaTag} no fallback available`)
         return
       }
-      info('tg-proxy', `[${peer}] DC${dc}${mediaTag} fallback closed`)
+      info('tg-proxy', `[${label}] DC${dc}${mediaTag} fallback closed`)
       return
     }
 
@@ -1372,9 +2230,9 @@ async function handleClient(client: net.Socket, secret: Buffer): Promise<void> {
       splitter = null
     }
     await ws.send(Buffer.from(relayInit))
-    await bridgeWs(client, ws, ctx, splitter, peer, dc, parsed.isMedia)
+    await bridgeWs(io, ws, ctx, splitter, label, dc, parsed.isMedia, teardown)
   } catch (e) {
-    err('tg-proxy', `[${peer}] unexpected: ${e instanceof Error ? e.message : String(e)}`.slice(0, 500))
+    err('tg-proxy', `[${label}] unexpected: ${e instanceof Error ? e.message : String(e)}`.slice(0, 500))
   } finally {
     counters.active = Math.max(0, counters.active - 1)
     if (!linger) {
@@ -1407,13 +2265,31 @@ export async function startTgProxy(opts: TgProxyStartOptions): Promise<{ host: s
   }
   const secret = Buffer.from(secretHex, 'hex')
   cfEnabled = opts.cfProxyEnabled !== false
+  activeDcIps = { ...(opts.dcIps ?? {}) }
+  activePoolSize = opts.poolSize === undefined ? WS_POOL_SIZE : Math.max(0, Math.min(32, Math.floor(opts.poolSize)))
+  activeHwm = opts.highWaterMark !== undefined && opts.highWaterMark > 0 ? Math.floor(opts.highWaterMark) : 0
+  activeWorkerDomains = [...(opts.workerDomains ?? [])]
+  activeFakeTlsDomain = (opts.fakeTlsDomain ?? '').trim().toLowerCase()
+  activeForceTestDc = opts.forceTestDc === true
+  activeProxyProtocol = opts.proxyProtocol === true
   Object.assign(counters, freshCounters())
   wsBlacklist.clear()
   dcFailUntil.clear()
   ipFailUntil.clear()
+  wsPool.clear()
 
-  balancer.updateDomainsList(defaultCfProxyDomains())
-  if (cfEnabled) {
+  const userCfDomains = [...(opts.cfDomains ?? [])]
+  if (userCfDomains.length > 0) {
+    // User domains win over the auto-refreshed pool (mirrors config.py).
+    balancer.updateDomainsList(userCfDomains)
+    if (cfRefreshTimer) {
+      clearInterval(cfRefreshTimer)
+      cfRefreshTimer = null
+    }
+  } else {
+    balancer.updateDomainsList(defaultCfProxyDomains())
+  }
+  if (cfEnabled && userCfDomains.length === 0) {
     void refreshCfProxyDomains().catch(() => undefined)
     if (cfRefreshTimer) clearInterval(cfRefreshTimer)
     cfRefreshTimer = setInterval(() => {
@@ -1451,11 +2327,17 @@ export async function startTgProxy(opts: TgProxyStartOptions): Promise<{ host: s
   startedAt = new Date().toISOString()
   lastError = null
   activeSecret = secretHex
-  info('tg-proxy', `Listening on ${listenHost}:${listenPort} (secret ${secretHex.slice(0, 6)}…). Connect: ${buildTgLink(listenHost === '0.0.0.0' ? '127.0.0.1' : listenHost, listenPort, secretHex)}`)
-  info('tg-proxy', `Target DCs: ${Object.entries(TG_PROXY_DC_IPS).map(([dc, ip]) => `DC${dc}:${ip}`).join(', ')}. CF fallback: ${cfEnabled ? 'on' : 'off'}`)
+  const linkHost = listenHost === '0.0.0.0' ? '127.0.0.1' : listenHost
+  info('tg-proxy', `Listening on ${listenHost}:${listenPort} (secret ${secretHex.slice(0, 6)}…). Connect: ${buildTgLink(linkHost, listenPort, secretHex, activeFakeTlsDomain)}`)
+  info(
+    'tg-proxy',
+    `Target DCs: ${Object.entries({ ...TG_PROXY_DC_IPS, ...activeDcIps }).map(([dc, ip]) => `DC${dc}:${ip}`).join(', ')}. ` +
+      `CF fallback: ${cfEnabled ? 'on' : 'off'}${activeFakeTlsDomain !== '' ? `, FakeTLS: ${activeFakeTlsDomain}` : ''}` +
+      `${activeForceTestDc ? ', force-test-dc' : ''}${activeProxyProtocol ? ', proxy-protocol' : ''}`
+  )
   // Pre-warm idle WS sockets in the background (best effort, never blocks).
   try {
-    wsPool.warmup({ ...TG_PROXY_DC_IPS })
+    wsPool.warmup({ ...TG_PROXY_DC_IPS, ...activeDcIps })
   } catch {
     /* ignore */
   }
@@ -1513,6 +2395,7 @@ export function getTgProxyStats(): TgProxyStats {
     connectionsTcpFallback: counters.tcpFallback,
     connectionsCf: counters.cf,
     connectionsBad: counters.bad,
+    connectionsMasked: counters.masked,
     wsErrors: counters.wsErrors,
     bytesUp: counters.bytesUp,
     bytesDown: counters.bytesDown,

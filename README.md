@@ -48,7 +48,7 @@
 | Стратегии | Все 22 стратегии из upstream, установка службой Windows, тестовый запуск в foreground-режиме с живым выводом, поиск, бейджи desync-методов, импорт своих `.bat`, удаление импортированных + тюнинг поверх стратегии: Game Filter, режим IPSet, активные `.bin`-фейки Discord/Game |
 | Списки | Редактор пользовательских `*-user.txt` (`list-general-user.txt`, `list-exclude-user.txt`, `ipset-exclude-user.txt` + любые новые `*-user.txt`): счётчик записей, добавление, дедупликация, сортировка, лимит 2 МБ |
 | Обновления | Версия zapret-данных, IPSet, стратегии (снапшот ветки), движок `bol-van/zapret` (выбор тега, allowlist бинарей в `bin/`), автообновление приложения (`electron-updater`) |
-| Настройки | Автозапуск с Windows + рядом опция «Запускаться свёрнутым в трей», поведение трея: иконка в трее, сворачивание при закрытии, пункты меню стратегий/тюнинга/быстрых настроек; секция Telegram-прокси (автозапуск прокси, CF-fallback, порт); флаг автопроверки обновлений — на странице Обновлений |
+| Настройки | Автозапуск с Windows + рядом опция «Запускаться свёрнутым в трей», поведение трея: иконка в трее, сворачивание при закрытии, пункты меню стратегий/тюнинга/быстрых настроек; секция Telegram-прокси (автозапуск прокси, CF-fallback, порт, адрес, IP дата-центров, пул, буфер, CF/Worker-домены, FakeTLS, тестовые DC, PROXY-протокол); флаг автопроверки обновлений — на странице Обновлений |
 | Диагностика | 17 проверок + инструменты: очистка кэша Discord, удаление конфликтующих сервисов, встроенные тесты стратегий (standard/dpi) + встроенная секция Логи (живой поток, фильтр, экспорт; отдельная страница `logs` оставлена как legacy-алиас на диагностику) |
 | Прочее | 28 языков с автоопределением языка ОС и fallback на английский, тёмная/светлая/авто тема, иконка трея с цветом статуса, мастер первого запуска, флаги языков в сайдбаре, выбор языка и темы на странице установщика |
 
@@ -115,10 +115,16 @@ TypeScript-порт [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-pro
 
 Управление и состояние:
 
-* Дашборд: блок «Telegram-прокси», Настройки: автозапуск прокси / CF-fallback / порт
-* `settings.json → tgProxy`: `{ enabled, port, autoStart, secret, cfProxyEnabled }`
+* Дашборд: блок «Telegram-прокси», Настройки: автозапуск прокси / CF-fallback / порт /
+  адрес / IP дата-центров / пул WS / буфер сокета / свои CF-домены / Worker-домены /
+  FakeTLS-домен / тестовые DC / PROXY-протокол + кнопка сброса к дефолтам
+  (secret и запущенное состояние сохраняются)
+* `settings.json → tgProxy`: `{ enabled, port, autoStart, secret, cfProxyEnabled, host, dcIps, poolSize, bufferKb, cfDomains, workerDomains, fakeTlsDomain, forceTestDc, proxyProtocol }`
   (secret из 32 hex генерируется один раз и хранится — иначе Telegram пришлось бы
   перенастраивать после каждого перезапуска)
+* Свои CF-домены при задании вытесняют авто-пул с GitHub; Worker-домены пробуются первыми
+  (`/apiws?dst=<ip>&dc=<n>`); FakeTLS-домен включает `ee`-секреты с маскировкой под SNI
+  (чужие пробы уходят на настоящий `:443` маскирующего домена, plain-HTTP — в 301 редирект)
 * Автозапуск прокси при старте приложения (`tgProxy.autoStart`), graceful stop при выходе/сбросе
 * Логи идут через общий логгер с источником `tg-proxy`
 * IPC-каналы `tg-proxy:start` / `stop` / `restart` / `get-status` / `get-stats` / `update-settings` / `open-link`
@@ -128,7 +134,9 @@ TypeScript-порт [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-pro
 * Клиентский сокет ставится на `pause()` на время dial upstream и `resume()` при старте моста:
   сокет без `data`-слушателя во flowing-режиме Node.js **молча теряет** пайплайнированные байты —
   без этого все сессии висели с `^0.0B v0.0B` до idle-таймаута
-* Вне скоупа v1: FakeTLS (`ee`-секреты), PROXY-protocol, CF-Worker fallback
+* Вне скоупа остаются только `--verbose` / `--log-file`: всё и так идёт в общий `app.log`
+  (у shared-логгера нет debug-уровня), а `--buf-kb` применён как `highWaterMark`
+  исходящих сокетов (у Node нет API для `SO_RCVBUF`/`SO_SNDBUF`)
 
 ## 🔄 Обновления
 
@@ -207,7 +215,7 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
   * `utils/` — `targets.txt`, результаты `test results/`, флаги `check_updates.enabled` / `game_filter.enabled`
   * `strategies/` — 22 × `*.json`
   * служебные: `_backup/<timestamp>` (снапшоты перед обновлением, хранятся последние 5), `_tmp/`, `tray-icons/` (сгенерированные PNG)
-* Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `showTrayIcon`, `trayServiceMenu`, `trayStrategyMenu`, `trayNavigateMenu`, `trayGameFilterMenu`, `trayIPSetMenu`, `trayToolsMenu`, `trayQuickSettings`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`, `tgProxy: { enabled, port, autoStart, secret, cfProxyEnabled }`; старый `trayTuningMenu` мигрирует в `trayGameFilterMenu` + `trayIPSetMenu`)
+* Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `showTrayIcon`, `trayServiceMenu`, `trayStrategyMenu`, `trayNavigateMenu`, `trayGameFilterMenu`, `trayIPSetMenu`, `trayToolsMenu`, `trayQuickSettings`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`, `tgProxy: { enabled, port, autoStart, secret, cfProxyEnabled, host, dcIps, poolSize, bufferKb, cfDomains, workerDomains, fakeTlsDomain, forceTestDc, proxyProtocol }`; старый `trayTuningMenu` мигрирует в `trayGameFilterMenu` + `trayIPSetMenu`)
 * Лог: `%APPDATA%\zapret-gui\app.log`
 * Dev-режим: `bundled-assets` из репозитория, данные в `<repo>/.data`, `userData` изолирован в `zapret-gui-dev` во избежание лока кэша Chromium
 
@@ -243,7 +251,7 @@ npm run preview              # electron-vite preview
 `npm run generate:strategies` автоматически выполняется перед каждой сборкой.
 В CI `bundled-assets/` уже закоммичен, скрипт только идемпотентно пересинхронизирует JSON-конфиги.
 
-Тесты (vitest, 16 файлов + `setup.ts`): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `paths-win7`, `config-tester`, `installer-update`, `settings-notify`, `status-dot`, `user-lists`, `tg-proxy` (25 тестов: handshake roundtrip по схеме obfuscated2, relay-init, `MsgSplitter`, pause/resume dial-gap регрессия, lifecycle на свободном порту).
+Тесты (vitest, 16 файлов + `setup.ts`): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `paths-win7`, `config-tester`, `installer-update`, `settings-notify`, `status-dot`, `user-lists`, `tg-proxy` (39 тестов: handshake roundtrip по схеме obfuscated2, relay-init, `MsgSplitter`, pause/resume dial-gap регрессия, lifecycle на свободном порту, валидаторы host/DC/domain, PROXY-строка, worker-путь, ee-ссылки, FakeTLS verify/hello/record layer).
 
 CI (`.github/workflows/`): `build.yml` + `release.yml`.
 
