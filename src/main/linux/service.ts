@@ -19,6 +19,7 @@ import type { ServiceState, StatusSnapshot, Strategy } from '../../shared/types'
 import {
   ANY_INTERFACE,
   LINUX_RUNNER_FILE,
+  LINUX_RUNNER_LOG_FILE,
   LINUX_SERVICE_NAME,
   NFQWS_BIN,
   SUDOERS_FILE,
@@ -107,6 +108,29 @@ export function getLinuxNfqwsPath(dataDir: string): string {
 
 export function getLinuxRunnerPath(dataDir: string): string {
   return path.join(dataDir, LINUX_RUNNER_FILE)
+}
+
+/** Runner-owned log file (daemon/kill output, world-readable). */
+export function getLinuxRunnerLogPath(dataDir: string): string {
+  return path.join(dataDir, LINUX_RUNNER_LOG_FILE)
+}
+
+/**
+ * Tail of the runner log (last ~40 lines). The runner runs as root but the
+ * file stays world-readable, so failure diagnostics need no privileges and
+ * no extra auth prompt — on any init system, not just systemd/journal.
+ * Never throws (null when absent/unreadable, e.g. a stale pre-log runner).
+ */
+export function readRunnerLogTail(dataDir: string, maxLines = 40): string | null {
+  try {
+    const p = getLinuxRunnerLogPath(dataDir)
+    const content = fs.readFileSync(p, 'utf8')
+    const lines = content.split('\n')
+    const tail = lines.slice(Math.max(0, lines.length - maxLines)).join('\n').trim()
+    return tail ? tail.slice(-4000) : null
+  } catch {
+    return null
+  }
 }
 
 /** `pgrep -x nfqws` check (`-x`: exact process name — never matches wrappers). */
@@ -257,8 +281,14 @@ async function verifyLinuxRunning(
   if (init !== 'unknown' && (isRoot() || (await canElevateWithoutPassword().catch(() => false)))) {
     ctx = await collectUnitFailureContext(LINUX_SERVICE_NAME)
   }
+  // Runner log tail needs no privileges at all (world-readable file).
+  const runLog = readRunnerLogTail(dataDir)
+  const runLogText =
+    runLog !== null
+      ? `\n--- zapret-linux-run.log tail ---\n${runLog}`
+      : '\n(runner log not found — apply the strategy again to refresh zapret-linux-run.sh)'
   const forensicsText = forensics.length > 0 ? `\n--- diagnosis ---\n${forensics.join('\n').slice(0, 1200)}` : ''
-  throw new Error(`Zapret did not start properly (${parts.join('; ')})${forensicsText}${ctx}`)
+  throw new Error(`Zapret did not start properly (${parts.join('; ')})${forensicsText}${runLogText}${ctx}`)
 }
 
 /** `/proc/<pid>/cmdline` as a readable string (world-readable). Never throws. */
@@ -316,6 +346,8 @@ export function buildRunnerScript(opts: {
   interface: string
   firewallBackend: FirewallBackendResolved
   nfqwsArgv: string[]
+  /** Absolute path of the runner-owned log file (daemon/kill output). */
+  logPath: string
 }): string {
   const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
   const argv = opts.nfqwsArgv.map(q).join(' ')
@@ -328,12 +360,21 @@ export function buildRunnerScript(opts: {
     `UDP_PORTS=${q(opts.udpPorts)}`,
     `IFACE=${q(opts.interface)}`,
     `BACKEND=${q(opts.firewallBackend)}`,
+    `RUN_LOG=${q(opts.logPath)}`,
     '',
     'elevate() {',
     '  if [ "$(id -u)" -eq 0 ]; then "$@"; return $?; fi',
     '  if command -v sudo >/dev/null 2>&1; then sudo "$@"; return $?; fi',
     '  if command -v doas >/dev/null 2>&1; then doas "$@"; return $?; fi',
     '  "$@";',
+    '}',
+    '',
+    '# Mirror stdout/stderr into the runner log (readable by the app without',
+    '# root, on every init system). Falls back to /dev/null when unwritable.',
+    'log_start() {',
+    '  if [ "${1:-}" = truncate ]; then : > "$RUN_LOG" 2>/dev/null || RUN_LOG=/dev/null; fi',
+    '  exec >>"$RUN_LOG" 2>&1 || exit 1',
+    '  echo "zapret-linux-run: $1 at $(date -u +%FT%TZ) (uid=$(id -u))"',
     '}',
     '',
     'nft_setup() {',
@@ -403,6 +444,7 @@ export function buildRunnerScript(opts: {
     '',
     'case "${1:-daemon}" in',
     '  daemon)',
+    '    log_start truncate',
     '    elevate pkill -x nfqws 2>/dev/null || true',
     '    fw_clear || true',
     '    sleep 1',
@@ -411,6 +453,7 @@ export function buildRunnerScript(opts: {
     `    elevate "$NFQWS" ${argv} || echo "zapret-linux-run: nfqws failed to start (code $?) — check the strategy args" >&2`,
     '    ;;',
     '  kill)',
+    '    log_start kill',
     '    elevate pkill -x nfqws 2>/dev/null || true',
     '    fw_clear || true',
     '    ;;',
@@ -613,7 +656,8 @@ export async function installLinuxStrategy(
       udpPorts: parsed.udpPorts,
       interface: conf.interface,
       firewallBackend: backend,
-      nfqwsArgv
+      nfqwsArgv,
+      logPath: getLinuxRunnerLogPath(dataDir)
     })
   )
   say(`Runner written: ${runner}`)

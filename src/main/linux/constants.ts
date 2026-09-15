@@ -43,6 +43,8 @@ export const BIN_LINUX_DIR = 'bin-linux'
 export const NFQWS_BIN = 'nfqws'
 export const LINUX_CONF_FILE = 'conf.env'
 export const LINUX_RUNNER_FILE = 'zapret-linux-run.sh'
+/** Runner-owned log (daemon/kill output). Read by the app without privileges. */
+export const LINUX_RUNNER_LOG_FILE = 'zapret-linux-run.log'
 
 export const SUDOERS_FILE = '/etc/sudoers.d/zapret'
 export const DOAS_CONF = '/etc/doas.conf'

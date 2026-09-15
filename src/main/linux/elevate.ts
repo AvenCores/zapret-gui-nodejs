@@ -285,6 +285,8 @@ export type BatchStep =
 export interface BatchResult extends ExecResult {
   /** Index of the first fatal failed step, null when the batch succeeded. */
   failedStep: number | null
+  /** Terminating signal when the batch process was killed (e.g. SIGTERM = dismissed/killed externally). */
+  signal?: string | null
 }
 
 export interface RunBatchOpts {
@@ -407,21 +409,63 @@ export class BatchMarkerFilter {
  * - no elevation tools at all: best-effort direct run.
  * Empty step list resolves successfully without spawning anything (and
  * without prompting). Never rejects except for the no-prompt guidance case.
+ *
+ * Batches are globally serialized (FIFO mutex): two user operations can
+ * never hold two `pkexec` prompts at once — overlapping prompts make the
+ * polkit agent drop/replace dialogs, which looks like "the password prompt
+ * vanishes after a few seconds". Every batch execution is bounded by
+ * `timeoutMs`, so the lock always releases.
  */
 export async function runBatch(steps: BatchStep[], opts: RunBatchOpts = {}): Promise<BatchResult> {
   const timeoutMs = opts.timeoutMs ?? 120000
   if (steps.length === 0) return { stdout: '', stderr: '', code: 0, failedStep: null }
-  if (isRoot()) return runBatchSequential(steps, null, opts, timeoutMs)
-  const sudoish = sudoishCmd()
-  if (sudoish !== '' && (await isPasswordless(sudoish))) {
-    return runBatchSequential(steps, sudoish, opts, timeoutMs)
-  }
-  if (hasBinary('pkexec')) {
-    return runBatchScripted(steps, opts, timeoutMs)
-  }
-  if (sudoish !== '') throw new Error(noAuthMessage())
-  return runBatchSequential(steps, null, opts, timeoutMs)
+  return privLock(async () => {
+    if (isRoot()) return runBatchSequential(steps, null, opts, timeoutMs)
+    const sudoish = sudoishCmd()
+    if (sudoish !== '' && (await isPasswordless(sudoish))) {
+      return runBatchSequential(steps, sudoish, opts, timeoutMs)
+    }
+    if (hasBinary('pkexec')) {
+      return runBatchScripted(steps, opts, timeoutMs)
+    }
+    if (sudoish !== '') throw new Error(noAuthMessage())
+    return runBatchSequential(steps, null, opts, timeoutMs)
+  }, opts.onLog)
 }
+
+/**
+ * Global FIFO mutex for privileged batches. Exported for unit tests.
+ * A holder that throws still releases the lock for the next waiter.
+ */
+export function createPrivLock(): <T>(fn: () => Promise<T>, onLog?: (line: string) => void) => Promise<T> {
+  let tail: Promise<unknown> = Promise.resolve()
+  let depth = 0
+  return async <T>(fn: () => Promise<T>, onLog?: (line: string) => void): Promise<T> => {
+    const waitFor = tail
+    let release!: () => void
+    tail = new Promise<void>((res) => {
+      release = res
+    })
+    const waited = depth > 0
+    depth += 1
+    try {
+      if (waited) {
+        try {
+          onLog?.('Waiting for the previous privileged operation to finish...')
+        } catch {
+          /* a log callback must never break the lock */
+        }
+      }
+      await waitFor
+      return await fn()
+    } finally {
+      depth -= 1
+      release()
+    }
+  }
+}
+
+const privLock = createPrivLock()
 
 /** Sequential executor: direct (root / no tools) or `sudo -n` per step. */
 async function runBatchSequential(
@@ -498,13 +542,15 @@ function runBatchScripted(steps: BatchStep[], opts: RunBatchOpts, timeoutMs: num
     }
     let stdout = ''
     let stderr = ''
+    let signal: string | null = null
     const timer = setTimeout(() => {
       try {
         child.kill('SIGKILL')
       } catch {
         /* ignore */
       }
-      done({ stdout, stderr: `${stderr}${filter.flush()}Timed out after ${timeoutMs}ms`, code: 1, failedStep })
+      signal = 'SIGKILL'
+      done({ stdout, stderr: `${stderr}${filter.flush()}Timed out after ${timeoutMs}ms`, code: 1, failedStep, signal })
     }, timeoutMs)
     if (timer.unref) timer.unref()
     child.stdout?.on('data', (d: Buffer) => {
@@ -515,11 +561,15 @@ function runBatchScripted(steps: BatchStep[], opts: RunBatchOpts, timeoutMs: num
     })
     child.on('error', (e: Error) => {
       clearTimeout(timer)
-      done({ stdout, stderr: `${stderr}${filter.flush()}${e.message}`, code: 1, failedStep })
+      done({ stdout, stderr: `${stderr}${filter.flush()}${e.message}`, code: 1, failedStep, signal })
     })
-    child.on('close', (code) => {
+    child.on('close', (code, sig) => {
       clearTimeout(timer)
-      done({ stdout, stderr: stderr + filter.flush(), code: code ?? 1, failedStep })
+      if (sig) signal = String(sig)
+      // A signal death (SIGTERM/SIGHUP on the pkexec client) means the auth
+      // dialog was dismissed externally — say so instead of a cryptic code.
+      const sigNote = signal ? `\n(process terminated by signal ${signal})` : ''
+      done({ stdout, stderr: `${stderr}${filter.flush()}${sigNote}`, code: code ?? 1, failedStep, signal })
     })
   })
 }

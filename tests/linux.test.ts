@@ -37,6 +37,7 @@ import {
   BatchMarkerFilter,
   batchStepLabel,
   buildBatchScript,
+  createPrivLock,
   type BatchStep
 } from '../src/main/linux/elevate'
 import { mapPlatformDir } from '../src/main/linux/download'
@@ -449,7 +450,8 @@ describe('runner script', () => {  it('embeds daemon/kill modes, firewall setup 
       udpPorts: '443',
       interface: 'eth0',
       firewallBackend: 'nftables',
-      nfqwsArgv: ['--daemon', '--dpi-desync-fwmark=0x40000000', '--qnum=220', '--filter-tcp=80']
+      nfqwsArgv: ['--daemon', '--dpi-desync-fwmark=0x40000000', '--qnum=220', '--filter-tcp=80'],
+      logPath: '/data/zapret-linux-run.log'
     })
     expect(script).toContain('daemon)')
     expect(script).toContain('kill)')
@@ -463,6 +465,27 @@ describe('runner script', () => {  it('embeds daemon/kill modes, firewall setup 
     // Exact-name pkill: `-f` would match our own wrapper cmdline.
     expect(script).toContain('pkill -x nfqws')
     expect(script).not.toContain('pkill -f nfqws')
+    // Runner-owned log: mirrored stdout/stderr, readable without root.
+    expect(script).toContain(`RUN_LOG='/data/zapret-linux-run.log'`)
+    expect(script).toContain('log_start truncate')
+    expect(script).toContain('exec >>"$RUN_LOG" 2>&1')
+  })
+
+  it('reads the runner log tail without privileges (null when absent)', async () => {
+    const { readRunnerLogTail, getLinuxRunnerLogPath } = await import('../src/main/linux/service')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-runlog-'))
+    try {
+      expect(readRunnerLogTail(dir)).toBeNull()
+      expect(getLinuxRunnerLogPath(dir)).toBe(path.join(dir, 'zapret-linux-run.log'))
+      const lines = Array.from({ length: 100 }, (_, i) => `line ${i}`).join('\n')
+      fs.writeFileSync(getLinuxRunnerLogPath(dir), lines, 'utf8')
+      const tail = readRunnerLogTail(dir)
+      expect(tail).not.toBeNull()
+      expect(tail).toContain('line 99')
+      expect(tail).not.toContain('line 0\n')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
@@ -586,6 +609,55 @@ describe('startLinuxService self-heal (missing unit, no root)', () => {
 })
 
 describe('privilege batching (one auth prompt per operation)', () => {
+  it('serializes batches through the priv lock (never two prompts at once)', async () => {
+    const lock = createPrivLock()
+    const order: string[] = []
+    const gate = (): Promise<void> => new Promise((res) => setTimeout(res, 20))
+    const a = lock(async () => {
+      order.push('a-start')
+      await gate()
+      order.push('a-end')
+      return 'a'
+    })
+    const b = lock(async () => {
+      order.push('b-start')
+      await gate()
+      order.push('b-end')
+      return 'b'
+    })
+    await expect(Promise.all([a, b])).resolves.toEqual(['a', 'b'])
+    expect(order).toEqual(['a-start', 'a-end', 'b-start', 'b-end'])
+  })
+
+  it('releases the priv lock when the holder throws', async () => {
+    const lock = createPrivLock()
+    await expect(
+      lock(async () => {
+        throw new Error('boom')
+      })
+    ).rejects.toThrow('boom')
+    await expect(lock(async () => 'next')).resolves.toBe('next')
+  })
+
+  it('notifies waiters via onLog without breaking the lock when it throws', async () => {
+    const lock = createPrivLock()
+    const lines: string[] = []
+    const gate = (): Promise<void> => new Promise((res) => setTimeout(res, 20))
+    const a = lock(async () => {
+      await gate()
+      return 'a'
+    })
+    const b = lock(
+      async () => 'b',
+      (l) => {
+        lines.push(l)
+        throw new Error('log boom')
+      }
+    )
+    await expect(Promise.all([a, b])).resolves.toEqual(['a', 'b'])
+    expect(lines).toHaveLength(1)
+  })
+
   it('labels steps for logs by default', () => {
     expect(batchStepLabel({ kind: 'exec', file: 'nft', args: ['list', 'tables'] })).toBe('nft list tables')
     expect(batchStepLabel({ kind: 'write', dest: '/etc/hosts', content: 'x', mode: '0644' })).toBe('write /etc/hosts')

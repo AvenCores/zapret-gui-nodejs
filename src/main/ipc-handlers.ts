@@ -53,6 +53,28 @@ import type { ConfigTestMode } from '../shared/types'
 let testProc: ChildProcess | null = null
 let configTesterAbort: AbortController | null = null
 
+/**
+ * Only one mutating service operation at a time (install/remove/start/stop/
+ * permissions/test). A second concurrent call would stack a second `pkexec`
+ * prompt on top of the first — polkit agents drop/replace the earlier
+ * dialog, which looks like "the password prompt vanishes after a few
+ * seconds". Reject immediately with a clear message instead.
+ * (Longer-lived safety net: `runBatch` additionally serializes batches.)
+ */
+let serviceOpBusy = false
+
+async function guardServiceOp<T>(fn: () => Promise<T>): Promise<T> {
+  if (serviceOpBusy) {
+    throw new Error('Another service operation is already in progress — wait for its password prompt to finish')
+  }
+  serviceOpBusy = true
+  try {
+    return await fn()
+  } finally {
+    serviceOpBusy = false
+  }
+}
+
 function win(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null
 }
@@ -111,30 +133,38 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.listStrategies, async () => listStrategies())
 
   ipcMain.handle(IPC.installStrategy, async (_e, strategyId: string) => {
-    const s = findStrategy(strategyId)
-    if (!s) throw new Error(`Strategy not found: ${strategyId}`)
-    sendLog('app', 'info', `Installing strategy "${s.name}"...`)
-    await installStrategy(s, getDataDir(), (t) => sendLog('app', 'info', t))
-    saveSettings({ activeStrategyId: s.id })
-    return true
+    return guardServiceOp(async () => {
+      const s = findStrategy(strategyId)
+      if (!s) throw new Error(`Strategy not found: ${strategyId}`)
+      sendLog('app', 'info', `Installing strategy "${s.name}"...`)
+      await installStrategy(s, getDataDir(), (t) => sendLog('app', 'info', t))
+      saveSettings({ activeStrategyId: s.id })
+      return true
+    })
   })
 
   ipcMain.handle(IPC.removeServices, async () => {
-    sendLog('app', 'info', 'Removing services...')
-    await removeServices((t) => sendLog('app', 'info', t))
-    return true
+    return guardServiceOp(async () => {
+      sendLog('app', 'info', 'Removing services...')
+      await removeServices((t) => sendLog('app', 'info', t))
+      return true
+    })
   })
 
   ipcMain.handle(IPC.startService, async () => {
-    await startService((t) => sendLog('app', 'info', t))
-    sendLog('app', 'info', 'Service started.')
-    return true
+    return guardServiceOp(async () => {
+      await startService((t) => sendLog('app', 'info', t))
+      sendLog('app', 'info', 'Service started.')
+      return true
+    })
   })
 
   ipcMain.handle(IPC.stopService, async () => {
-    await stopService()
-    sendLog('app', 'info', 'Service stopped.')
-    return true
+    return guardServiceOp(async () => {
+      await stopService()
+      sendLog('app', 'info', 'Service stopped.')
+      return true
+    })
   })
 
   ipcMain.handle(IPC.importStrategy, async () => {
@@ -172,56 +202,59 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.testStrategy, async (_e, strategyId: string) => {
-    stopTestInternal()
-    const s = findStrategy(strategyId)
-    if (!s) throw new Error(`Strategy not found: ${strategyId}`)
-    if (process.platform === 'linux') {
-      const { testLinuxStrategy } = await import('./linux/service')
-      const proc = await testLinuxStrategy(
-        s,
-        getDataDir(),
-        (t) => sendLog('winws', 'info', t),
-        (stream, text) => safeSend(IPC.onTestOutput, { stream, text })
-      )
-      testProc = proc as unknown as ChildProcess
-      proc.on('error', (e: Error) => {
+    // Guarded too: test start prompts once (merged setup+spawn batch).
+    return guardServiceOp(async () => {
+      stopTestInternal()
+      const s = findStrategy(strategyId)
+      if (!s) throw new Error(`Strategy not found: ${strategyId}`)
+      if (process.platform === 'linux') {
+        const { testLinuxStrategy } = await import('./linux/service')
+        const proc = await testLinuxStrategy(
+          s,
+          getDataDir(),
+          (t) => sendLog('winws', 'info', t),
+          (stream, text) => safeSend(IPC.onTestOutput, { stream, text })
+        )
+        testProc = proc as unknown as ChildProcess
+        proc.on('error', (e: Error) => {
+          sendLog('winws', 'error', `Test process failed to start: ${String(e).slice(0, 300)}`)
+          if (testProc === (proc as unknown as ChildProcess)) testProc = null
+          safeSend(IPC.onTestOutput, { stream: 'exit', text: '1' })
+        })
+        proc.on('exit', (code: number | null) => {
+          sendLog('winws', 'info', `Test process exited with code ${code}`)
+          if (testProc === (proc as unknown as ChildProcess)) testProc = null
+          safeSend(IPC.onTestOutput, { stream: 'exit', text: String(code ?? '') })
+        })
+        return true
+      }
+      const { tcp, udp } = resolveGameFilterPorts(getDataDir())
+      // Direct spawn (no shell): strip the .bat-era quotes, otherwise winws
+      // receives literal `"` inside argv and fails to open list/bin files.
+      const args = materializeArgsForSpawn(s.args, { binDir: getBinDir(), listsDir: getListsDir(), gameTcp: tcp, gameUdp: udp })
+      const exe = path.join(getBinDir(), WINWS_EXE)
+      if (!fs.existsSync(exe)) throw new Error(`winws.exe not found in ${getBinDir()}`)
+      sendLog('winws', 'info', `Starting foreground test: winws.exe ${args.map(quoteArg).join(' ')}`)
+      const proc = spawnLong(exe, args, getBinDir())
+      testProc = proc
+      proc.stdout?.on('data', (d: Buffer) => safeSend(IPC.onTestOutput, { stream: 'stdout', text: String(d) }))
+      proc.stderr?.on('data', (d: Buffer) => safeSend(IPC.onTestOutput, { stream: 'stderr', text: String(d) }))
+      proc.on('error', (e) => {
+        // ENOENT (missing winws.exe / AV quarantine) otherwise throws an
+        // unhandled 'error' event and crashes the main process.
         sendLog('winws', 'error', `Test process failed to start: ${String(e).slice(0, 300)}`)
-        if (testProc === (proc as unknown as ChildProcess)) testProc = null
+        if (testProc === proc) testProc = null
         safeSend(IPC.onTestOutput, { stream: 'exit', text: '1' })
       })
-      proc.on('exit', (code: number | null) => {
+      proc.on('exit', (code) => {
         sendLog('winws', 'info', `Test process exited with code ${code}`)
-        if (testProc === (proc as unknown as ChildProcess)) testProc = null
+        // Only clear our own reference: a newer test may already be running
+        // (stopTestInternal kills without waiting for 'exit').
+        if (testProc === proc) testProc = null
         safeSend(IPC.onTestOutput, { stream: 'exit', text: String(code ?? '') })
       })
       return true
-    }
-    const { tcp, udp } = resolveGameFilterPorts(getDataDir())
-    // Direct spawn (no shell): strip the .bat-era quotes, otherwise winws
-    // receives literal `"` inside argv and fails to open list/bin files.
-    const args = materializeArgsForSpawn(s.args, { binDir: getBinDir(), listsDir: getListsDir(), gameTcp: tcp, gameUdp: udp })
-    const exe = path.join(getBinDir(), WINWS_EXE)
-    if (!fs.existsSync(exe)) throw new Error(`winws.exe not found in ${getBinDir()}`)
-    sendLog('winws', 'info', `Starting foreground test: winws.exe ${args.map(quoteArg).join(' ')}`)
-    const proc = spawnLong(exe, args, getBinDir())
-    testProc = proc
-    proc.stdout?.on('data', (d: Buffer) => safeSend(IPC.onTestOutput, { stream: 'stdout', text: String(d) }))
-    proc.stderr?.on('data', (d: Buffer) => safeSend(IPC.onTestOutput, { stream: 'stderr', text: String(d) }))
-    proc.on('error', (e) => {
-      // ENOENT (missing winws.exe / AV quarantine) otherwise throws an
-      // unhandled 'error' event and crashes the main process.
-      sendLog('winws', 'error', `Test process failed to start: ${String(e).slice(0, 300)}`)
-      if (testProc === proc) testProc = null
-      safeSend(IPC.onTestOutput, { stream: 'exit', text: '1' })
     })
-    proc.on('exit', (code) => {
-      sendLog('winws', 'info', `Test process exited with code ${code}`)
-      // Only clear our own reference: a newer test may already be running
-      // (stopTestInternal kills without waiting for 'exit').
-      if (testProc === proc) testProc = null
-      safeSend(IPC.onTestOutput, { stream: 'exit', text: String(code ?? '') })
-    })
-    return true
   })
 
   ipcMain.handle(IPC.stopTest, async () => {
@@ -310,18 +343,20 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.updateHosts, async () => checkHosts())
   ipcMain.handle(IPC.applyHosts, async (_e, remoteContent: string) => {
-    if (!(await isAdmin())) {
-      throw new Error(
-        process.platform === 'linux'
-          ? 'No privilege escalation tool found (install sudo/doas or polkit/pkexec) — cannot update /etc/hosts.'
-          : 'Administrator rights are required to update the system hosts file. Click "Restart as administrator" and retry.'
-      )
-    }
-    // On Linux the write itself elevates per call (single prompt at most)
-    // while the app keeps running as the user (see strategy-updater).
-    await applyHosts(remoteContent)
-    sendLog('app', 'info', 'System Hosts updated (backup: hosts.zapret-gui.bak).')
-    return true
+    return guardServiceOp(async () => {
+      if (!(await isAdmin())) {
+        throw new Error(
+          process.platform === 'linux'
+            ? 'No privilege escalation tool found (install sudo/doas or polkit/pkexec) — cannot update /etc/hosts.'
+            : 'Administrator rights are required to update the system hosts file. Click "Restart as administrator" and retry.'
+        )
+      }
+      // On Linux the write itself elevates (single batched prompt at most)
+      // while the app keeps running as the user (see strategy-updater).
+      await applyHosts(remoteContent)
+      sendLog('app', 'info', 'System Hosts updated (backup: hosts.zapret-gui.bak).')
+      return true
+    })
   })
 
   ipcMain.handle(IPC.updateStrategies, async () => {
@@ -523,11 +558,13 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.setupPermissions, async () => {
-    if (process.platform !== 'linux') throw new Error('Permissions setup is Linux-only')
-    const { setupLinuxPermissions } = await import('./linux/service')
-    sendLog('app', 'info', 'Configuring passwordless sudo/doas (NOPASSWD)...')
-    await setupLinuxPermissions(getDataDir(), (t) => sendLog('app', 'info', t))
-    return true
+    return guardServiceOp(async () => {
+      if (process.platform !== 'linux') throw new Error('Permissions setup is Linux-only')
+      const { setupLinuxPermissions } = await import('./linux/service')
+      sendLog('app', 'info', 'Configuring passwordless sudo/doas (NOPASSWD)...')
+      await setupLinuxPermissions(getDataDir(), (t) => sendLog('app', 'info', t))
+      return true
+    })
   })
 
   ipcMain.handle(IPC.downloadEngineDeps, async (_e, version?: string) => {
