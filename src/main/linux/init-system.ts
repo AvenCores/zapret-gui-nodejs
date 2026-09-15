@@ -93,6 +93,11 @@ export function buildSystemdUnit(opts: { runnerPath: string; workDir: string; de
     // nfqws/NFQUEUE needs no outbound connectivity, only the local stack.
     'After=network.target',
     'Wants=network.target',
+    // Stop a crash-loop from churning forever (a broken strategy used to
+    // restart every 2s indefinitely): after 3 quick failures the unit stays
+    // failed until the next manual start instead of spamming the journal.
+    'StartLimitIntervalSec=30',
+    'StartLimitBurst=3',
     '',
     '[Service]',
     'Type=simple',

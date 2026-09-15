@@ -170,7 +170,8 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
   Стратегии те же `.bat`
   (25 × JSON, включая кастомные `general_nix1`, `general_SIMPLE_FAKE`, `minecraft_hypixel_etc` из `custom-strategies/`)
 * **Применение стратегии**: парсинг `.bat` → `--wf-tcp/--wf-udp` уходят в файрвол, `--filter-* … --new` блоки уходят в
-  `nfqws --daemon --dpi-desync-fwmark=0x40000000 --qnum=220 …`; пишется `conf.env`
+  `nfqws --dpi-desync-fwmark=0x40000000 --qnum=220 …` foreground через `exec` в раннере
+  ( supervised main-процесс для `Type=simple`; прямой старт в install-батче — с `--daemon`); пишется `conf.env`
   (`interface`, `gamefiltertcp/udp`, `strategy`, `firewall_backend`) + генерируется `zapret-linux-run.sh` (`daemon`/`kill`)
 * **Файрвол**: авто-детект (сначала nftables, потом iptables), выбор вручную во вкладке «Стратегии»
   (карточка «Интерфейс / Бэкенд файрвола»), правила повторяют `00-nftables.sh` / `01-iptables.sh`
