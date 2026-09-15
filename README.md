@@ -23,6 +23,8 @@
 
 > Только Windows 10/11 x64. Требуются права администратора
 > (драйвер WinDivert + служба `zapret` + файл hosts).
+> 
+<img width="1609" height="926" alt="1" src="https://github.com/user-attachments/assets/61a5c4b8-09a3-4abd-aa03-9eb04209beb7" />
 
 ## ✨ Возможности (паритет с `service.bat`)
 
