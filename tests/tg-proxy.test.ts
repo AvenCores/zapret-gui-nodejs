@@ -267,10 +267,20 @@ describe('readTcpExactly pipelining (dial-gap regression)', () => {
   }, 15000)
 })
 
-describe('tg-proxy lifecycle (localhost, no upstream)', () => {  it('starts on an ephemeral port, counts bad handshakes, stops cleanly', async () => {
+describe('tg-proxy lifecycle (localhost, no upstream)', () => {
+  /** Ask the OS for a free port (port 0 is remapped to 1443 by normalize). */
+  async function getFreePort(): Promise<number> {
+    const s = net.createServer()
+    await new Promise<void>((r) => s.listen(0, '127.0.0.1', r))
+    const port = (s.address() as net.AddressInfo).port
+    await new Promise<void>((r) => s.close(() => r()))
+    return port
+  }
+
+  it('starts on an ephemeral port, counts bad handshakes, stops cleanly', async () => {
     const secret = generateTgSecret()
     expect(isTgProxyRunning()).toBe(false)
-    const bound = await startTgProxy({ port: 0, secret, cfProxyEnabled: false })
+    const bound = await startTgProxy({ port: await getFreePort(), secret, cfProxyEnabled: false })
     expect(isTgProxyRunning()).toBe(true)
     expect(bound.port).toBeGreaterThan(0)
     expect(getTgProxyStatus().status).toBe('running')
@@ -299,7 +309,7 @@ describe('tg-proxy lifecycle (localhost, no upstream)', () => {  it('starts on a
   it('rejects invalid secrets and busy ports', async () => {
     await expect(startTgProxy({ port: 1443, secret: 'short' })).rejects.toThrow()
     const secret = generateTgSecret()
-    const first = await startTgProxy({ port: 0, secret, cfProxyEnabled: false })
+    const first = await startTgProxy({ port: await getFreePort(), secret, cfProxyEnabled: false })
     // Same host+port → idempotent.
     await expect(startTgProxy({ port: first.port, secret, cfProxyEnabled: false })).resolves.toEqual({
       host: '127.0.0.1',

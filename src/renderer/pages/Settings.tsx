@@ -52,6 +52,12 @@ export default function Settings(): React.JSX.Element {
         <Row label={t('settings.autoLaunch')}>
           <Toggle value={settings?.autoLaunch ?? false} onChange={(v) => void applySettings({ autoLaunch: v })} />
         </Row>
+        <Row label={t('settings.startMinimized')}>
+          <Toggle
+            value={settings?.startMinimizedToTray ?? false}
+            onChange={(v) => void applySettings({ startMinimizedToTray: v })}
+          />
+        </Row>
       </Card>
 
       <Card title={t('settings.trayTitle')}>
@@ -62,12 +68,6 @@ export default function Settings(): React.JSX.Element {
           <Toggle
             value={settings?.minimizeToTrayOnClose ?? true}
             onChange={(v) => void applySettings({ minimizeToTrayOnClose: v })}
-          />
-        </Row>
-        <Row label={t('settings.startMinimized')}>
-          <Toggle
-            value={settings?.startMinimizedToTray ?? false}
-            onChange={(v) => void applySettings({ startMinimizedToTray: v })}
           />
         </Row>
         <Row label={t('settings.trayServiceMenu')}>
