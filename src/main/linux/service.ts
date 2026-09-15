@@ -575,6 +575,74 @@ function writeRunner(dataDir: string, content: string): string {
   return p
 }
 
+/**
+ * Rebuild the runner from the stored conf.env + strategy JSON (same derivation
+ * as installLinuxStrategy, but without touching the service). Used by the
+ * start self-heal so a stale runner (pre-logging template, old args) is
+ * refreshed without forcing the user through a full Apply. Returns the
+ * runner path, or null when it cannot be derived (then Apply is required).
+ * Never throws.
+ */
+export async function rebuildRunnerFromConf(dataDir: string): Promise<string | null> {
+  try {
+    const conf = loadLinuxConf(dataDir)
+    if (!conf?.strategy) return null
+    const nfqwsPath = getLinuxNfqwsPath(dataDir)
+    if (!fs.existsSync(nfqwsPath)) return null
+    const stratDir = path.join(dataDir, 'strategies')
+    let files: string[] = []
+    try {
+      files = fs.readdirSync(stratDir).filter((f) => f.toLowerCase().endsWith('.json'))
+    } catch {
+      return null
+    }
+    let match: Strategy | null = null
+    for (const f of files) {
+      try {
+        const s = JSON.parse(fs.readFileSync(path.join(stratDir, f), 'utf8')) as Partial<Strategy>
+        if (
+          typeof s.fileName === 'string' &&
+          typeof s.id === 'string' &&
+          Array.isArray(s.args) &&
+          (s.fileName === conf.strategy || s.name === conf.strategy || `${s.id}.bat` === conf.strategy)
+        ) {
+          match = s as Strategy
+          break
+        }
+      } catch {
+        /* skip broken file */
+      }
+    }
+    if (!match) return null
+    const binDir = getLinuxBinDir(dataDir)
+    const listsDir = path.join(dataDir, 'lists')
+    const parsed = parseStrategyArgsForLinux(match.args, {
+      useGameFilterTcp: conf.gamefiltertcp,
+      useGameFilterUdp: conf.gamefilterudp,
+      binDir,
+      listsDir
+    })
+    const backend = await detectFirewallBackend(conf.firewall_backend ?? 'auto')
+    const nfqwsArgv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: true })
+    return writeRunner(
+      dataDir,
+      buildRunnerScript({
+        nfqwsPath,
+        binDir,
+        listsDir,
+        tcpPorts: parsed.tcpPorts,
+        udpPorts: parsed.udpPorts,
+        interface: conf.interface,
+        firewallBackend: backend,
+        nfqwsArgv,
+        logPath: getLinuxRunnerLogPath(dataDir)
+      })
+    )
+  } catch {
+    return null
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Status
 // ---------------------------------------------------------------------------
@@ -821,6 +889,18 @@ export async function installLinuxStrategy(
 /** Start the init service (or foreground daemon when no init). Single auth prompt. */
 export async function startLinuxService(dataDir: string, onLog?: (t: string) => void): Promise<void> {
   const init = await detectInitSystem().catch(() => 'unknown' as InitSystem)
+  // Fail fast (zero prompts): a missing binary or unloadable shared
+  // libraries would otherwise only die in a restart loop after start.
+  const nfqwsPath = getLinuxNfqwsPath(dataDir)
+  if (!fs.existsSync(nfqwsPath)) {
+    throw new Error(`nfqws not found in ${getLinuxBinDir(dataDir)} — download Linux dependencies or apply a strategy first`)
+  }
+  const startDeps = await checkNfqwsDeps(nfqwsPath)
+  if (!startDeps.ok) {
+    throw new Error(
+      `nfqws cannot start — missing shared libraries: ${startDeps.missing.join(', ')}. Install them: ${distroInstallHint()}`
+    )
+  }
   if (init === 'unknown') {
     // No init: re-run the stored runner daemon directly (one batch).
     const runner = getLinuxRunnerPath(dataDir)
@@ -871,6 +951,22 @@ export async function startLinuxService(dataDir: string, onLog?: (t: string) => 
   if (needReinstall) {
     if (!fs.existsSync(runner)) {
       throw new Error('Service is not installed — apply a strategy on the Strategies tab first')
+    }
+    // Refresh a stale runner (pre-logging template) from the stored
+    // strategy so failures stay diagnosable — no full Apply needed.
+    // Falls back to the stored runner when it cannot be derived.
+    let runnerFresh = false
+    try {
+      runnerFresh = fs.readFileSync(runner, 'utf8').includes('RUN_LOG=')
+    } catch {
+      runnerFresh = false
+    }
+    if (!runnerFresh) {
+      onLog?.('Runner is outdated, rebuilding from the stored strategy...')
+      const rebuilt = await rebuildRunnerFromConf(dataDir).catch(() => null)
+      if (!rebuilt) {
+        onLog?.('Could not rebuild the runner — continuing with the stored one (consider applying the strategy again).')
+      }
     }
     if (unitState === 'NOT_INSTALLED') {
       onLog?.(`Service unit is missing, reinstalling ${init} service (${LINUX_SERVICE_NAME})...`)
