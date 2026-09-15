@@ -38,7 +38,7 @@
 > Только Windows 10/11 x64. Требуются права администратора
 > (драйвер WinDivert + служба `zapret` + файл hosts).
 > 
-<img width="1609" height="926" alt="1" src="https://i.ibb.co/TqcvSgGD/1.png" />
+<img width="1609" height="926" alt="1" src="https://i.ibb.co/6JYnxWSc/1.png" />
 
 ## ✨ Возможности
 
