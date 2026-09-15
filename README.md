@@ -15,6 +15,19 @@
 
 # 🚀 Zapret GUI
 
+<p align="center">
+  <a href="https://github.com/AvenCores/zapret-gui-nodejs"><img src="https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54" alt="Python"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge" alt="GPL-3.0 License"></a>
+  <a href="https://github.com/AvenCores/zapret-gui-nodejs/releases/latest"><img src="https://img.shields.io/github/v/release/AvenCores/zapret-gui-nodejs?style=for-the-badge" alt="Latest release"></a>
+  <a href="https://github.com/AvenCores/zapret-gui-nodejs/stargazers"><img src="https://img.shields.io/github/stars/AvenCores/zapret-gui-nodejs?style=for-the-badge" alt="GitHub stars"></a>
+  <img src="https://img.shields.io/github/forks/AvenCores/zapret-gui-nodejs?style=for-the-badge" alt="GitHub forks">
+  <a href="https://github.com/AvenCores/zapret-gui-nodejs/watchers">
+  <img src="https://img.shields.io/github/watchers/AvenCores/zapret-gui-nodejs?style=for-the-badge" alt="GitHub Watchers"></a>
+  <a href="https://github.com/AvenCores/zapret-gui-nodejs/releases"><img src="https://img.shields.io/github/downloads/AvenCores/zapret-gui-nodejs/total?style=for-the-badge" alt="Downloads"></a>
+  <a href="https://github.com/AvenCores/zapret-gui-nodejs/pulls"><img src="https://img.shields.io/github/issues-pr/AvenCores/zapret-gui-nodejs?style=for-the-badge" alt="GitHub pull requests"></a>
+  <a href="https://github.com/AvenCores/zapret-gui-nodejs/issues"><img src="https://img.shields.io/github/issues/AvenCores/zapret-gui-nodejs?style=for-the-badge" alt="GitHub issues"></a>
+</p>
+
 Десктопный GUI для [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube)
 — обход DPI-блокировок Discord / YouTube / Telegram через `winws.exe` + WinDivert.
 
