@@ -776,6 +776,41 @@ describe('privilege batching (one auth prompt per operation)', () => {
 })
 
 describe('nfqws shared-library deps (Fedora root cause)', () => {
+  it('keeps short output intact but preserves the failure tail', async () => {
+    const { tailText } = await import('../src/main/linux/elevate')
+    expect(tailText('  short output  ')).toBe('short output')
+    const long = `${'banner\n'.repeat(200)}real error: cannot open /x\n`
+    const cut = tailText(long, 1200, 200)
+    expect(cut).toContain('real error: cannot open /x')
+    expect(cut).toContain('chars skipped')
+    expect(cut.length).toBeLessThan(long.length)
+  })
+  it('extracts absolute file refs from nfqws argv (skips numbers/keywords)', async () => {
+    const { extractNfqwsFileRefs, missingFiles } = await import('../src/main/linux/service')
+    expect(
+      extractNfqwsFileRefs([
+        '--daemon',
+        '--filter-tcp=80',
+        '--hostlist=/d/lists/list-general.txt',
+        '--dpi-desync-fake-tls=/d/bin/fake.bin',
+        '--qnum',
+        '220',
+        '--hostlist-exclude',
+        '/d/lists/list-exclude.txt',
+        '--dpi-desync=fake,multisplit'
+      ])
+    ).toEqual(['/d/lists/list-general.txt', '/d/bin/fake.bin', '/d/lists/list-exclude.txt'])
+    expect(extractNfqwsFileRefs(['--hostlist=C:\\lists\\a.txt', '--filter-udp=443'])).toEqual([])
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-missing-'))
+    try {
+      const present = path.join(dir, 'a.txt')
+      fs.writeFileSync(present, 'x', 'utf8')
+      expect(missingFiles([present, path.join(dir, 'nope.txt')])).toEqual([path.join(dir, 'nope.txt')])
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('parses ldd missing libraries', async () => {
     const { parseLddMissing, distroInstallHintFor } = await import('../src/main/linux/service')
     expect(

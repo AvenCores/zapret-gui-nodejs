@@ -930,6 +930,16 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
       const args = isLinux
         ? await buildLinuxTesterArgs(s, { binDir, listsDir, gameTcp: tcp, gameUdp: udp })
         : materializeArgsForSpawn(s.args, { binDir, listsDir, gameTcp: tcp, gameUdp: udp })
+      if (isLinux) {
+        // Fail fast per strategy: missing list/fake files would only die
+        // inside the daemon with a confusing log.
+        const { extractNfqwsFileRefs, missingFiles } = await import('./linux/service')
+        const missingRefs = missingFiles(extractNfqwsFileRefs(args))
+        if (missingRefs.length > 0) {
+          emit({ kind: 'log', level: 'error', text: `Strategy references missing files, skipping ${s.name}: ${missingRefs.join(', ').slice(0, 200)}` })
+          continue
+        }
+      }
       if (isLinux && linuxBackend) {
         // One batch (single prompt at most): drop the previous strategy's
         // daemon, clear stale rules, set up this strategy's rules.

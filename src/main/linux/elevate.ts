@@ -623,9 +623,22 @@ export async function spawnElevated(
   throw new Error(noAuthMessage())
 }
 
-/** Combined batch output, trimmed for error messages. Pure. */
+/**
+ * Trim process output for error messages keeping the TAIL: banners and
+ * progress noise live at the head, the actual failure reason prints last.
+ * Returns the whole text when short, otherwise head + skipped-marker + tail.
+ * Pure — covered by unit tests.
+ */
+export function tailText(text: string, maxTotal = 1200, head = 200): string {
+  const t = String(text ?? '').trim()
+  if (t.length <= maxTotal) return t
+  const tailLen = Math.max(0, maxTotal - head)
+  return `${t.slice(0, head)}\n…[${t.length - maxTotal} chars skipped]…\n${t.slice(-tailLen)}`
+}
+
+/** Combined batch output for error messages (tail-preserving). Pure. */
 export function batchOut(r: BatchResult): string {
-  return `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim().slice(0, 300)
+  return tailText(`${r.stdout ?? ''}\n${r.stderr ?? ''}`, 1200, 200)
 }
 
 /** ` at "<step label>"` suffix for batch failures. Pure. */

@@ -232,6 +232,40 @@ export function distroInstallHint(): string {
   }
 }
 
+/**
+ * Absolute file paths referenced by nfqws argv (`--key=/path.ext` and
+ * `--key /path.ext` forms). Only list/binary-ish extensions — numbers,
+ * IPs and keywords are skipped. Pure — covered by unit tests.
+ */
+export function extractNfqwsFileRefs(argv: string[]): string[] {
+  const out: string[] = []
+  const push = (v: string): void => {
+    const clean = String(v ?? '').trim().replace(/^"|"$/g, '')
+    if (/^\/[^*?]*\.(txt|bin|dat|hosts|list)$/i.test(clean) && !out.includes(clean)) out.push(clean)
+  }
+  for (let i = 0; i < argv.length; i++) {
+    const tok = String(argv[i] ?? '')
+    const eq = tok.match(/^--[A-Za-z0-9_-]+=(.+)$/)
+    if (eq?.[1]) {
+      push(eq[1])
+      continue
+    }
+    if (/^--[A-Za-z0-9_-]+$/.test(tok) && i + 1 < argv.length) push(argv[i + 1] as string)
+  }
+  return out
+}
+
+/** Subset of paths that do not exist on disk. Never throws. */
+export function missingFiles(paths: string[]): string[] {
+  return paths.filter((p) => {
+    try {
+      return !fs.existsSync(p)
+    } catch {
+      return true
+    }
+  })
+}
+
 const STALE_PKFILL_PATTERN = 'pkill -f nfqws'
 
 /**
@@ -821,6 +855,14 @@ export async function installLinuxStrategy(
   const backend = await detectFirewallBackend(conf.firewall_backend)
   say(`Firewall backend: ${backend} (requested: ${conf.firewall_backend})`)
   const nfqwsArgv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: true })
+  // Fail fast (zero prompts): a strategy pointing at missing list/fake
+  // files would only die inside the daemon with a truncated log.
+  const missingRefs = missingFiles(extractNfqwsFileRefs(nfqwsArgv))
+  if (missingRefs.length > 0) {
+    throw new Error(
+      `Strategy references missing files:\n${missingRefs.join('\n')}\nUpdate the lists or re-download the dependencies, then retry.`
+    )
+  }
 
   saveLinuxConf(dataDir, conf)
   say(`Configuration saved to conf.env (strategy=${conf.strategy}, iface=${conf.interface})`)
@@ -873,7 +915,7 @@ export async function installLinuxStrategy(
   const r = await runBatch(steps, { timeoutMs: 180000, onLog: say })
   if (r.code !== 0) {
     if (r.failedStep !== null && r.failedStep === nfqwsIdx) {
-      throw new Error(`nfqws failed to start: ${batchOut(r).slice(0, 500)}`)
+      throw new Error(`nfqws failed to start: ${batchOut(r)}`)
     }
     if (r.failedStep !== null && installFromIdx >= 0 && r.failedStep >= installFromIdx) {
       throw new Error(`Service install failed${batchFailWhat(r, steps)}: ${batchOut(r)}`)
@@ -906,7 +948,7 @@ export async function startLinuxService(dataDir: string, onLog?: (t: string) => 
     const runner = getLinuxRunnerPath(dataDir)
     if (!fs.existsSync(runner)) throw new Error('No runner found — apply a strategy first')
     const r = await runBatch([{ kind: 'exec', file: 'bash', args: [runner, 'daemon'] }], { timeoutMs: 60000, onLog })
-    if (r.code !== 0) throw new Error(`Start failed: ${batchOut(r).slice(0, 400)}`)
+    if (r.code !== 0) throw new Error(`Start failed: ${batchOut(r)}`)
     let noInitBackend: FirewallBackendResolved | null = null
     try {
       const conf = loadLinuxConf(dataDir)
@@ -1113,6 +1155,10 @@ export async function testLinuxStrategy(
   onLog?.(`Test firewall: ${backend} TCP=${parsed.tcpPorts} UDP=${parsed.udpPorts}`)
   const argv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: false })
   onLog?.(`Starting foreground test: nfqws ${argv.join(' ')}`)
+  const missingTestRefs = missingFiles(extractNfqwsFileRefs(argv))
+  if (missingTestRefs.length > 0) {
+    throw new Error(`Strategy references missing files:\n${missingTestRefs.join('\n')}`)
+  }
   // Drop any previous test silently (its rules are cleared by the setup
   // batch below, which covers every backend for backend switches).
   try {
