@@ -1,4 +1,4 @@
-/** Logs section (embedded in Settings): live stream + filter + export. */
+/** Logs section (embedded in Diagnostics): live stream + filter + copy/export. */
 import React, { useState } from 'react'
 import { useUi } from '../store'
 import { Btn, Card } from '../components/ui'
@@ -12,6 +12,7 @@ const levelColor: Record<string, string> = {
 export default function LogsSection(): React.JSX.Element {
   const { t, logs, clearLogs } = useUi()
   const [filter, setFilter] = useState<string>('')
+  const [copied, setCopied] = useState<boolean>(false)
 
   const shown = logs.filter(
     (l) =>
@@ -20,11 +21,36 @@ export default function LogsSection(): React.JSX.Element {
       l.source.toLowerCase().includes(filter.toLowerCase())
   )
 
+  // Copy ALL buffered logs (same format as Export), ignoring the view filter.
+  async function copyAll(): Promise<void> {
+    if (logs.length === 0) return
+    const text = logs.map((l) => `[${l.ts}] [${l.source}/${l.level}] ${l.text}`).join('\n')
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        ta.remove()
+      } catch {
+        return
+      }
+    }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">{t('nav.logs')}</h2>
         <div className="flex items-center gap-2">
+          <Btn variant="secondary" onClick={() => void copyAll()} disabled={logs.length === 0}>
+            {copied ? `✓ ${t('about.copied')}` : t('about.copy')}
+          </Btn>
           <Btn variant="secondary" onClick={clearLogs} disabled={logs.length === 0}>
             {t('logs.clear')}
           </Btn>

@@ -45,9 +45,10 @@ export default function App(): React.JSX.Element {
     )
   }
 
-  // 'updates'/'logs' are legacy tray pages now embedded in Settings —
-  // never render a blank screen if an old event still requests them.
-  const effectivePage = page === 'updates' || page === 'logs' ? 'settings' : page
+  // 'updates' is a legacy tray page now embedded in Settings, 'logs' is now
+  // embedded in Diagnostics — never render a blank screen if an old event
+  // still requests them.
+  const effectivePage = page === 'updates' ? 'settings' : page === 'logs' ? 'diagnostics' : page
 
   return (
     <Layout>

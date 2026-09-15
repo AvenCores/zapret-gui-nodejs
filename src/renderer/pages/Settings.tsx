@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react'
 import { useUi } from '../store'
 import { Card, Row, Spinner } from '../components/ui'
 import UpdatesSection from './Updates'
-import LogsSection from './Logs'
 
 export default function Settings(): React.JSX.Element {
   const { t, settings, applySettings, setError } = useUi()
@@ -93,10 +92,6 @@ export default function Settings(): React.JSX.Element {
 
         <h2 className="pt-2 text-xl font-semibold">{t('nav.updates')}</h2>
         <UpdatesSection />
-
-        <div className="pt-2">
-          <LogsSection />
-        </div>
       </div>
     )
   }

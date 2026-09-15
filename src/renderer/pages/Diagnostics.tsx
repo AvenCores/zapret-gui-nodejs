@@ -1,7 +1,8 @@
-/** Diagnostics page: checks table + tools + native config tester. */
+/** Diagnostics page: checks table + tools + native config tester + logs. */
 import React, { useEffect, useMemo, useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, ProgressBar, Spinner } from '../components/ui'
+import LogsSection from './Logs'
 import { formatDetail } from '../../shared/i18n'
 import type { ConfigTesterAnalyticsRow, ConfigTesterEvent, ConfigTestMode, DiagnosticCheck } from '../../shared/types'
 
@@ -125,6 +126,8 @@ export default function Diagnostics(): React.JSX.Element {
       </Card>
 
       <ConfigTesterCard />
+
+      <LogsSection />
     </div>
   )
 }
