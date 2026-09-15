@@ -1,10 +1,10 @@
 /** Diagnostics page: checks table + tools + native config tester + logs. */
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, ProgressBar, Spinner } from '../components/ui'
 import LogsSection from './Logs'
 import { formatDetail } from '../../shared/i18n'
-import type { ConfigTesterAnalyticsRow, ConfigTesterEvent, ConfigTestMode, DiagnosticCheck } from '../../shared/types'
+import type { DiagnosticCheck } from '../../shared/types'
 
 function tone(level: DiagnosticCheck['level']): 'green' | 'yellow' | 'red' {
   return level === 'ok' ? 'green' : level === 'warn' ? 'yellow' : 'red'
@@ -161,41 +161,28 @@ function Num(props: { value: number; tone: 'green' | 'red' | 'amber' | 'slate' }
 }
 
 function ConfigTesterCard(): React.JSX.Element {
-  const { t, setError, status, strategies, refreshStatus } = useUi()
-  const [mode, setMode] = useState<ConfigTestMode>('standard')
+  // Test run state (mode/results/progress/logs) lives in the global store so
+  // the results table survives tab switches — inactive pages are unmounted.
+  const {
+    t,
+    setError,
+    status,
+    strategies,
+    refreshStatus,
+    configMode: mode,
+    setConfigMode: setMode,
+    configRunning: running,
+    configProgress: progress,
+    configLogs: logs,
+    configRows: rows,
+    configBest: best,
+    configFilePath: filePath,
+    configCancelled: cancelled,
+    startConfigTests,
+    stopConfigTests
+  } = useUi()
   const [query, setQuery] = useState<string>('')
   const [selected, setSelected] = useState<Set<string> | null>(null)
-  const [running, setRunning] = useState<boolean>(false)
-  const [progress, setProgress] = useState<{ completed: number; total: number; current: string } | null>(null)
-  const [logs, setLogs] = useState<string[]>([])
-  const [rows, setRows] = useState<ConfigTesterAnalyticsRow[]>([])
-  const [best, setBest] = useState<string | null>(null)
-  const [filePath, setFilePath] = useState<string | null>(null)
-  const [cancelled, setCancelled] = useState<boolean>(false)
-
-  useEffect(
-    () =>
-      window.zapret.onConfigTesterEvent((e: ConfigTesterEvent) => {
-        if (e.kind === 'log') {
-          setLogs((prev) => [...prev.slice(-400), e.text])
-        } else if (e.kind === 'config-start') {
-          setProgress({ completed: e.index - 1, total: e.total, current: e.configName })
-          setLogs((prev) => [...prev.slice(-400), `[${e.index}/${e.total}] ${e.configName}`])
-        } else if (e.kind === 'progress') {
-          setProgress({ completed: e.completed, total: e.total, current: e.current })
-        } else if (e.kind === 'config-done') {
-          setProgress({ completed: e.index, total: e.total, current: e.configName })
-        } else if (e.kind === 'done') {
-          setRunning(false)
-          setRows(e.rows)
-          setBest(e.best)
-          setFilePath(e.filePath)
-          setCancelled(e.cancelled)
-          setProgress((p) => (p ? { ...p, completed: p.total } : p))
-        }
-      }),
-    []
-  )
 
   const filtered = useMemo(
     () => strategies.filter((s) => s.name.toLowerCase().includes(query.toLowerCase())),
@@ -220,27 +207,11 @@ function ConfigTesterCard(): React.JSX.Element {
       setError(t('diag.noTestResults'))
       return
     }
-    setLogs([])
-    setRows([])
-    setBest(null)
-    setFilePath(null)
-    setCancelled(false)
-    setProgress({ completed: 0, total: ids.length, current: '' })
-    setRunning(true)
-    try {
-      await window.zapret.startConfigTester(ids, mode)
-    } catch (e) {
-      setRunning(false)
-      setError(e instanceof Error ? e.message : String(e))
-    }
+    await startConfigTests(ids, mode)
   }
 
   async function stop(): Promise<void> {
-    try {
-      await window.zapret.stopConfigTester()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
+    await stopConfigTests()
   }
 
   async function applyBest(): Promise<void> {

@@ -9,6 +9,9 @@ import type {
   AppTheme,
   BypassCheckResult,
   BypassTargetId,
+  ConfigTesterAnalyticsRow,
+  ConfigTesterEvent,
+  ConfigTestMode,
   HostsCheckResult,
   LogLine,
   StatusSnapshot,
@@ -38,6 +41,7 @@ export function isDarkTheme(theme: AppTheme): boolean {
 
 let systemThemeQuery: MediaQueryList | null = null
 let logSubscribed = false
+let configTesterSubscribed = false
 
 /**
  * Apply a theme setting to `<html class="dark">`. In `auto` mode a listener
@@ -87,6 +91,24 @@ interface UiState {
   hostsCheck: HostsCheckResult | null
   hostsCheckedAt: string | null
   setHostsCheck: (r: HostsCheckResult | null, checkedAt: string | null) => void
+  /**
+   * Native config-tester state — lives here (not in the Diagnostics page)
+   * so the results table survives tab switches: App unmounts inactive
+   * pages, which used to wipe `rows`/`best` right after a test run.
+   * The `onConfigTesterEvent` subscription below is also global, so a
+   * run started on Diagnostics keeps streaming while the user is elsewhere.
+   */
+  configMode: ConfigTestMode
+  configRunning: boolean
+  configProgress: { completed: number; total: number; current: string } | null
+  configLogs: string[]
+  configRows: ConfigTesterAnalyticsRow[]
+  configBest: string | null
+  configFilePath: string | null
+  configCancelled: boolean
+  setConfigMode: (m: ConfigTestMode) => void
+  startConfigTests: (strategyIds: string[], mode: ConfigTestMode) => Promise<void>
+  stopConfigTests: () => Promise<void>
   checkBypassOne: (id: BypassTargetId) => Promise<void>
   checkBypassAll: (strategyKey: string) => Promise<void>
 }
@@ -124,6 +146,42 @@ export const useUi = create<UiState>((set, get) => ({
   hostsCheck: null,
   hostsCheckedAt: null,
   setHostsCheck: (hostsCheck, hostsCheckedAt) => set({ hostsCheck, hostsCheckedAt }),
+  configMode: 'standard',
+  configRunning: false,
+  configProgress: null,
+  configLogs: [],
+  configRows: [],
+  configBest: null,
+  configFilePath: null,
+  configCancelled: false,
+  setConfigMode: (configMode) => set({ configMode }),
+
+  startConfigTests: async (strategyIds, mode) => {
+    if (get().configRunning) return
+    set({
+      configMode: mode,
+      configRunning: true,
+      configProgress: { completed: 0, total: strategyIds.length, current: '' },
+      configLogs: [],
+      configRows: [],
+      configBest: null,
+      configFilePath: null,
+      configCancelled: false
+    })
+    try {
+      await window.zapret.startConfigTester(strategyIds, mode)
+    } catch (e) {
+      set({ configRunning: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  },
+
+  stopConfigTests: async () => {
+    try {
+      await window.zapret.stopConfigTester()
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) })
+    }
+  },
 
   checkBypassOne: async (id) => {
     if (get().bypassChecking[id] || get().bypassCheckingAll) return
@@ -174,6 +232,35 @@ export const useUi = create<UiState>((set, get) => ({
     if (!logSubscribed) {
       logSubscribed = true
       window.zapret.onLog((line) => get().pushLog(line))
+    }
+    // Same for config-tester events: a run keeps streaming into the store
+    // even when Diagnostics is unmounted (other tab open), and the results
+    // are still there when the user comes back.
+    if (!configTesterSubscribed) {
+      configTesterSubscribed = true
+      window.zapret.onConfigTesterEvent((e: ConfigTesterEvent) => {
+        if (e.kind === 'log') {
+          set((s) => ({ configLogs: [...s.configLogs.slice(-400), e.text] }))
+        } else if (e.kind === 'config-start') {
+          set((s) => ({
+            configProgress: { completed: e.index - 1, total: e.total, current: e.configName },
+            configLogs: [...s.configLogs.slice(-400), `[${e.index}/${e.total}] ${e.configName}`]
+          }))
+        } else if (e.kind === 'progress') {
+          set({ configProgress: { completed: e.completed, total: e.total, current: e.current } })
+        } else if (e.kind === 'config-done') {
+          set({ configProgress: { completed: e.index, total: e.total, current: e.configName } })
+        } else if (e.kind === 'done') {
+          set((s) => ({
+            configRunning: false,
+            configRows: e.rows,
+            configBest: e.best,
+            configFilePath: e.filePath,
+            configCancelled: e.cancelled,
+            configProgress: s.configProgress ? { ...s.configProgress, completed: s.configProgress.total } : s.configProgress
+          }))
+        }
+      })
     }
     const settings = await call('init', () => window.zapret.getSettings(), set, get)
     if (settings) {
