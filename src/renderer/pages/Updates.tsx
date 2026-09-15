@@ -1,11 +1,13 @@
-/** Updates section (embedded in Settings): version check, ipset/strategies refresh. */
-import React, { useState } from 'react'
+/** Updates page: version check, ipset/strategies refresh. */
+import React, { useEffect, useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, ProgressBar, Row, Spinner } from '../components/ui'
 import type { DownloadProgress, EngineRelease, EngineVersionInfo, UpdateInfo } from '../../shared/types'
 
-export default function UpdatesSection(): React.JSX.Element {
+export default function Updates(): React.JSX.Element {
   const { t, setError, status } = useUi()
+  const [autoCheck, setAutoCheck] = useState<boolean>(true)
+  const [autoCheckLoading, setAutoCheckLoading] = useState<boolean>(true)
   const [info, setInfo] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState<boolean>(false)
   const [busyKey, setBusyKey] = useState<string | null>(null)
@@ -19,6 +21,19 @@ export default function UpdatesSection(): React.JSX.Element {
   const [releasesLoading, setReleasesLoading] = useState<boolean>(false)
   const [engineResult, setEngineResult] = useState<string | null>(null)
   const [engineBackupDir, setEngineBackupDir] = useState<string | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setAutoCheck(await window.zapret.getAutoUpdateCheck())
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+      } finally {
+        setAutoCheckLoading(false)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function wrap(key: string, fn: () => Promise<void>): Promise<void> {
     setBusyKey(key)
@@ -97,7 +112,28 @@ export default function UpdatesSection(): React.JSX.Element {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4">
+      <h1 className="text-xl font-semibold">{t('nav.updates')}</h1>
+
+      <Card>
+        <Row label={t('settings.autoUpdateCheck')}>
+          <Toggle
+            value={autoCheck}
+            disabled={autoCheckLoading}
+            onChange={(v) => {
+              void (async () => {
+                try {
+                  await window.zapret.setAutoUpdateCheck(v)
+                  setAutoCheck(v)
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e))
+                }
+              })()
+            }}
+          />
+        </Row>
+      </Card>
+
       <Card title={`${t('updates.current')} / ${t('updates.remote')}`}>
         <Row label={t('updates.current')}>
           <Badge tone="gray">{info?.localVersion ?? '…'}</Badge>
@@ -274,5 +310,20 @@ export default function UpdatesSection(): React.JSX.Element {
         ) : null}
       </Card>
     </div>
+  )
+}
+
+function Toggle(props: { value: boolean; disabled?: boolean; onChange: (v: boolean) => void }): React.JSX.Element {
+  return (
+    <button
+      onClick={() => props.onChange(!props.value)}
+      disabled={props.disabled}
+      className={`relative h-6 w-11 rounded-full transition ${props.value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-slate-600'} ${props.disabled ? 'cursor-wait opacity-60' : ''}`}
+      aria-pressed={props.value}
+    >
+      <span
+        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${props.value ? 'left-[22px]' : 'left-0.5'}`}
+      />
+    </button>
   )
 }

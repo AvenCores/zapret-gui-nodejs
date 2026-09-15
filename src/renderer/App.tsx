@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Strategies from './pages/Strategies'
 import Settings from './pages/Settings'
+import Updates from './pages/Updates'
 import Lists from './pages/Lists'
 import Diagnostics from './pages/Diagnostics'
 import { useUi, syncThemeClass } from './store'
@@ -45,16 +46,16 @@ export default function App(): React.JSX.Element {
     )
   }
 
-  // 'updates' is a legacy tray page now embedded in Settings, 'logs' is now
-  // embedded in Diagnostics — never render a blank screen if an old event
-  // still requests them.
-  const effectivePage = page === 'updates' ? 'settings' : page === 'logs' ? 'diagnostics' : page
+  // 'logs' is now embedded in Diagnostics — never render a blank screen
+  // if an old event still requests it.
+  const effectivePage = page === 'logs' ? 'diagnostics' : page
 
   return (
     <Layout>
       <div key={effectivePage} className="animate-page-in">
         {effectivePage === 'dashboard' && <Dashboard />}
         {effectivePage === 'strategies' && <Strategies />}
+        {effectivePage === 'updates' && <Updates />}
         {effectivePage === 'settings' && <Settings />}
         {effectivePage === 'lists' && <Lists />}
         {effectivePage === 'diagnostics' && <Diagnostics />}

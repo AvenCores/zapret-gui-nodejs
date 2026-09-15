@@ -1,54 +1,16 @@
-/** Settings: updates, autostart and tray behavior. */
-import React, { useEffect, useState } from 'react'
+/** Settings: autostart and tray behavior. */
+import React from 'react'
 import { useUi } from '../store'
-import { Card, Row, Spinner } from '../components/ui'
-import UpdatesSection from './Updates'
+import { Card, Row } from '../components/ui'
 
 export default function Settings(): React.JSX.Element {
-  const { t, settings, applySettings, setError } = useUi()
-  const [autoCheck, setAutoCheck] = useState<boolean>(true)
-  const [loading, setLoading] = useState<boolean>(true)
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        setAutoCheck(await window.zapret.getAutoUpdateCheck())
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
-      } finally {
-        setLoading(false)
-      }
-    })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function wrap(fn: () => Promise<unknown>): Promise<void> {
-    try {
-      await fn()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner />
-      </div>
-    )
-  }
+  const { t, settings, applySettings } = useUi()
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">{t('nav.settings')}</h1>
 
       <Card>
-        <Row label={t('settings.autoUpdateCheck')}>
-          <Toggle value={autoCheck} onChange={(v) => void wrap(async () => {
-            await window.zapret.setAutoUpdateCheck(v)
-            setAutoCheck(v)
-          })} />
-        </Row>
         <Row label={t('settings.autoLaunch')}>
           <Toggle value={settings?.autoLaunch ?? false} onChange={(v) => void applySettings({ autoLaunch: v })} />
         </Row>
@@ -89,9 +51,6 @@ export default function Settings(): React.JSX.Element {
             />
           </Row>
         </Card>
-
-        <h2 className="pt-2 text-xl font-semibold">{t('nav.updates')}</h2>
-        <UpdatesSection />
       </div>
     )
   }

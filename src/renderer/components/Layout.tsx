@@ -14,7 +14,8 @@ const MAIN_NAV: Array<{ id: Page; shortcut: string }> = [
   { id: 'lists', shortcut: 'Alt+3' },
   { id: 'diagnostics', shortcut: 'Alt+4' }
 ]
-const SETTINGS_NAV: { id: Page; shortcut: string } = { id: 'settings', shortcut: 'Alt+5' }
+const UPDATES_NAV: { id: Page; shortcut: string } = { id: 'updates', shortcut: 'Alt+5' }
+const SETTINGS_NAV: { id: Page; shortcut: string } = { id: 'settings', shortcut: 'Alt+6' }
 
 function initialCollapsed(): boolean {
   try {
@@ -52,7 +53,7 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
     }
   }, [collapsed])
 
-  // Ctrl/Cmd+B — свернуть/развернуть, Alt+1..5 — навигация. Игнорируем ввод в полях.
+  // Ctrl/Cmd+B — свернуть/развернуть, Alt+1..6 — навигация. Игнорируем ввод в полях.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const el = e.target as HTMLElement | null
@@ -64,9 +65,9 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
         setCollapsed((v) => !v)
         return
       }
-      if (e.altKey && !e.ctrlKey && !e.metaKey && ['1', '2', '3', '4', '5'].includes(e.key)) {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && ['1', '2', '3', '4', '5', '6'].includes(e.key)) {
         e.preventDefault()
-        const order: Page[] = ['dashboard', 'strategies', 'lists', 'diagnostics', 'settings']
+        const order: Page[] = ['dashboard', 'strategies', 'lists', 'diagnostics', 'updates', 'settings']
         setPage(order[Number(e.key) - 1] as Page)
       }
     }
@@ -183,6 +184,17 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
               onClick={() => setPage(n.id)}
             />
           ))}
+
+          <div role="separator" aria-hidden className={`my-1.5 h-px shrink-0 bg-slate-200 dark:bg-slate-700/60 ${collapsed ? 'mx-2' : 'mx-1'}`} />
+
+          <NavButton
+            id={UPDATES_NAV.id}
+            label={t('nav.updates')}
+            shortcut={UPDATES_NAV.shortcut}
+            active={page === 'updates'}
+            collapsed={collapsed}
+            onClick={() => setPage('updates')}
+          />
 
           <div role="separator" aria-hidden className={`my-1.5 h-px shrink-0 bg-slate-200 dark:bg-slate-700/60 ${collapsed ? 'mx-2' : 'mx-1'}`} />
 
