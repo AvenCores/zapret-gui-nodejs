@@ -169,6 +169,15 @@ function checkConf(dataDir: string): DiagnosticCheck {
       detailKey: 'diag.detail.confMissing'
     }
   }
+  if (!conf.strategy) {
+    return {
+      id: 'conf',
+      labelKey: 'diag.conf',
+      level: 'warn',
+      detail: `preferences saved (iface=${conf.interface} fw=${conf.firewall_backend}) — apply a strategy first`,
+      detailKey: 'diag.detail.confMissing'
+    }
+  }
   return {
     id: 'conf',
     labelKey: 'diag.conf',

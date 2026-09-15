@@ -96,6 +96,20 @@ function sendLog(source: 'app' | 'winws' | 'updater' | 'diag', level: 'info' | '
   safeSend(IPC.onLog, line)
 }
 
+/**
+ * Game-filter flags seeded from the flag file, for a fresh partial conf.env
+ * (preferences picked before the first strategy Apply). Keeps the Strategies
+ * page game-filter card and conf.env in sync regardless of which setting the
+ * user touches first.
+ */
+function gameFilterFlags(dataDir: string): { gamefiltertcp: boolean; gamefilterudp: boolean } {
+  const mode = getGameFilterMode(dataDir)
+  return {
+    gamefiltertcp: mode === 'all' || mode === 'tcp',
+    gamefilterudp: mode === 'all' || mode === 'udp'
+  }
+}
+
 /** Read strategies from data dir (seeded from bundled assets on first run). */
 export function listStrategies(): Strategy[] {
   const dirs = [getStrategiesDir(), path.join(getBundledAssetsDir(), 'strategies')]
@@ -501,16 +515,16 @@ export function registerIpcHandlers(): void {
     const name = String(iface ?? '').slice(0, 32)
     if (!/^[A-Za-z0-9._-]+$/.test(name) && name !== 'any') throw new Error(`Invalid interface: ${name.slice(0, 32)}`)
     const { loadLinuxConf, saveLinuxConf } = await import('./linux/config')
+    // No strategy required: preferences can be picked before the first Apply
+    // (partial conf with an empty strategy). The first Apply picks them up.
     const prev = loadLinuxConf(getDataDir()) ?? {
       interface: 'any',
-      gamefiltertcp: false,
-      gamefilterudp: false,
+      ...gameFilterFlags(getDataDir()),
       strategy: '',
       firewall_backend: 'auto' as const
     }
-    if (!prev.strategy) throw new Error('Apply a strategy first — conf.env does not exist yet')
     saveLinuxConf(getDataDir(), { ...prev, interface: name })
-    sendLog('app', 'info', `Network interface → ${name}. Restart zapret to apply.`)
+    sendLog('app', 'info', `Network interface → ${name}. ${prev.strategy ? 'Restart zapret to apply.' : 'Will apply on first strategy Apply.'}`)
     return name
   })
 
@@ -526,16 +540,16 @@ export function registerIpcHandlers(): void {
       throw new Error(`Invalid firewall backend: ${String(backend).slice(0, 30)}`)
     }
     const { loadLinuxConf, saveLinuxConf } = await import('./linux/config')
+    // No strategy required: preferences can be picked before the first Apply
+    // (partial conf with an empty strategy). The first Apply picks them up.
     const prev = loadLinuxConf(getDataDir()) ?? {
       interface: 'any',
-      gamefiltertcp: false,
-      gamefilterudp: false,
+      ...gameFilterFlags(getDataDir()),
       strategy: '',
       firewall_backend: 'auto' as const
     }
-    if (!prev.strategy) throw new Error('Apply a strategy first — conf.env does not exist yet')
     saveLinuxConf(getDataDir(), { ...prev, firewall_backend: backend as 'auto' | 'nftables' | 'iptables' })
-    sendLog('app', 'info', `Firewall backend → ${backend}. Restart zapret to apply.`)
+    sendLog('app', 'info', `Firewall backend → ${backend}. ${prev.strategy ? 'Restart zapret to apply.' : 'Will apply on first strategy Apply.'}`)
     return backend
   })
 

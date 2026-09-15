@@ -691,6 +691,18 @@ function writeRunner(dataDir: string, content: string): string {
 }
 
 /**
+ * Whether a generated runner is fresh: has the runner-owned log *and* the
+ * stay-root `--uid`/`--user` pin. Runners generated before the droproot fix
+ * lack the pin — nfqws then drops to UID 2147483647 and dies with
+ * `cannot access hostlist file ... Permission denied` on lists under
+ * `$HOME` (home dirs are not traversable by other users). Pure — unit tested.
+ */
+export function isRunnerFresh(content: string): boolean {
+  if (!content.includes('RUN_LOG=')) return false
+  return /--(user|uid)(=|\s)/.test(content)
+}
+
+/**
  * Rebuild the runner from the stored conf.env + strategy JSON (same derivation
  * as installLinuxStrategy, but without touching the service). Used by the
  * start self-heal so a stale runner (pre-logging template, old args) is
@@ -758,6 +770,28 @@ export async function rebuildRunnerFromConf(dataDir: string): Promise<string | n
   }
 }
 
+/**
+ * Rebuild a stale on-disk runner when possible (user-writable, no prompt).
+ * Returns true when the runner is fresh afterwards. Never throws.
+ */
+async function healStaleRunner(dataDir: string, runnerPath: string, onLog?: (t: string) => void): Promise<boolean> {
+  let fresh = false
+  try {
+    fresh = isRunnerFresh(fs.readFileSync(runnerPath, 'utf8'))
+  } catch {
+    fresh = false
+  }
+  if (fresh) return true
+  if (!fs.existsSync(runnerPath)) return false
+  onLog?.('Runner is outdated, rebuilding from the stored strategy...')
+  const rebuilt = await rebuildRunnerFromConf(dataDir).catch(() => null)
+  if (!rebuilt) {
+    onLog?.('Could not rebuild the runner — continuing with the stored one (consider applying the strategy again).')
+    return false
+  }
+  return true
+}
+
 // ---------------------------------------------------------------------------
 // Status
 // ---------------------------------------------------------------------------
@@ -821,9 +855,11 @@ export async function getLinuxStatus(dataDir: string): Promise<{ snapshot: Statu
 
   // Effective zapret state: prefer the init service when installed,
   // otherwise reflect the daemon directly (foreground runs).
+  // A partial conf (preferences saved before the first Apply, empty
+  // strategy) still counts as NOT_INSTALLED — nothing runs yet.
   let zapret: ServiceState = serviceState
   if (serviceState === 'NOT_INSTALLED') {
-    zapret = nfqwsRunning ? 'RUNNING' : conf ? 'STOPPED' : 'NOT_INSTALLED'
+    zapret = nfqwsRunning ? 'RUNNING' : conf?.strategy ? 'STOPPED' : 'NOT_INSTALLED'
   }
   const ownership = detectLinuxOwnership(serviceState, nfqwsRunning, nfqwsProcPath ?? nfqwsDiskPath, ownBinDir)
   const firewallActive = resolved ? await isFirewallActive(resolved).catch(() => false) : false
@@ -832,7 +868,7 @@ export async function getLinuxStatus(dataDir: string): Promise<{ snapshot: Statu
     zapret,
     windivert: resolved ? (firewallActive ? 'RUNNING' : 'STOPPED') : 'NOT_INSTALLED',
     winwsRunning: nfqwsRunning,
-    activeStrategy: conf?.strategy ?? null,
+    activeStrategy: conf?.strategy || null,
     serviceBinPath: nfqwsDiskPath,
     winwsPath: nfqwsProcPath,
     ownership,
@@ -912,10 +948,24 @@ export async function installLinuxStrategy(
     throw new Error(`nfqws cannot start — ${deps.list}. ${deps.hint}`)
   }
   const prev = loadLinuxConf(dataDir)
+  // First Apply with no conf yet: honor a game filter picked beforehand
+  // (its setter only writes the flag file when no conf exists).
+  let flagTcp = false
+  let flagUdp = false
+  if (!prev) {
+    try {
+      const { getGameFilterMode } = await import('../service-manager')
+      const mode = getGameFilterMode(dataDir)
+      flagTcp = mode === 'all' || mode === 'tcp'
+      flagUdp = mode === 'all' || mode === 'udp'
+    } catch {
+      /* flag file unreadable — defaults stand */
+    }
+  }
   const conf: LinuxConf = {
     interface: opts.interface ?? prev?.interface ?? ANY_INTERFACE,
-    gamefiltertcp: prev?.gamefiltertcp ?? false,
-    gamefilterudp: prev?.gamefilterudp ?? false,
+    gamefiltertcp: prev?.gamefiltertcp ?? flagTcp,
+    gamefilterudp: prev?.gamefilterudp ?? flagUdp,
     strategy: strategy.fileName?.toLowerCase().endsWith('.bat') ? strategy.fileName : `${strategy.id}.bat`,
     firewall_backend: opts.firewallBackend ?? prev?.firewall_backend ?? 'auto'
   }
@@ -1023,6 +1073,7 @@ export async function startLinuxService(dataDir: string, onLog?: (t: string) => 
     // No init: re-run the stored runner daemon directly (one batch).
     const runner = getLinuxRunnerPath(dataDir)
     if (!fs.existsSync(runner)) throw new Error('No runner found — apply a strategy first')
+    await healStaleRunner(dataDir, runner, onLog)
     const r = await runBatch([{ kind: 'exec', file: 'bash', args: [runner, 'daemon'] }], { timeoutMs: 60000, onLog })
     if (r.code !== 0) throw new Error(`Start failed: ${batchOut(r)}`)
     let noInitBackend: FirewallBackendResolved | null = null
@@ -1048,6 +1099,11 @@ export async function startLinuxService(dataDir: string, onLog?: (t: string) => 
     unitState = 'UNKNOWN'
   }
   const runner = getLinuxRunnerPath(dataDir)
+  // Stale-runner heal runs on EVERY start (not only when the unit is
+  // missing): runners generated before the stay-root fix lack `--uid` and
+  // fail with `UID=2147483647 ... cannot access hostlist file` even though
+  // the unit itself is fine. Rebuilding is user-writable, needs no prompt.
+  await healStaleRunner(dataDir, runner, onLog)
   let needReinstall = unitState === 'NOT_INSTALLED'
   // Stale-unit migration (systemd): an existing unit whose content differs
   // from what the current app generates (old After=, old paths, ...) is
@@ -1070,12 +1126,11 @@ export async function startLinuxService(dataDir: string, onLog?: (t: string) => 
     if (!fs.existsSync(runner)) {
       throw new Error('Service is not installed — apply a strategy on the Strategies tab first')
     }
-    // Refresh a stale runner (pre-logging template) from the stored
-    // strategy so failures stay diagnosable — no full Apply needed.
-    // Falls back to the stored runner when it cannot be derived.
+    // Runner was already healed above; this second check only covers the
+    // narrow reinstall path for extra safety (kept for clarity).
     let runnerFresh = false
     try {
-      runnerFresh = fs.readFileSync(runner, 'utf8').includes('RUN_LOG=')
+      runnerFresh = isRunnerFresh(fs.readFileSync(runner, 'utf8'))
     } catch {
       runnerFresh = false
     }

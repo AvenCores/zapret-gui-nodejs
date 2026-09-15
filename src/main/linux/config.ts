@@ -13,7 +13,7 @@ export interface LinuxConf {
   interface: string
   gamefiltertcp: boolean
   gamefilterudp: boolean
-  /** Strategy `.bat` file name (e.g. `general.bat`) */
+  /** Strategy `.bat` file name (e.g. `general.bat`; empty = not applied yet) */
   strategy: string
   firewall_backend: FirewallBackend
 }
@@ -28,6 +28,8 @@ function parseBool(v: string): boolean {
 
 /**
  * Parse `conf.env` content. Throws on missing/invalid required fields.
+ * `strategy` is optional (empty = preferences saved before the first Apply:
+ * interface/firewall backend can be picked without a running zapret).
  * Pure — covered by unit tests.
  */
 export function parseConfEnv(content: string): LinuxConf {
@@ -46,7 +48,6 @@ export function parseConfEnv(content: string): LinuxConf {
   if (!iface) throw new Error('conf.env: missing "interface"')
   if (!gTcp) throw new Error('conf.env: missing "gamefiltertcp"')
   if (!gUdp) throw new Error('conf.env: missing "gamefilterudp"')
-  if (!strategy) throw new Error('conf.env: missing "strategy"')
   const fwRaw = (map.get('firewall_backend') ?? 'auto').toLowerCase()
   const firewall_backend: FirewallBackend = fwRaw === 'nftables' || fwRaw === 'iptables' ? fwRaw : 'auto'
   return {

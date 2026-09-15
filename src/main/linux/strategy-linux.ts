@@ -236,6 +236,19 @@ export function materializeNfqwsArgv(
 /**
  * Full nfqws argv for a strategy (without the binary itself).
  * `daemon=true` adds `--daemon` (service mode); foreground tests omit it.
+ *
+ * Stay-root trap: when started as root *with* CAP_SETUID/CAP_SETGID (our
+ * runner/systemd unit always are), nfqws defaults to
+ * `uid:gid = 0x7FFFFFFF:0x7FFFFFFF` (see `can_drop_root()` /
+ * `params.uid = params.gid[0] = 0x7FFFFFFF` in upstream `nfqws.c`) and then
+ * fails its post-drop `file_open_test()` on every list under
+ * `~/.config/zapret-gui/data/` (`Running as UID=2147483647 ... Permission
+ * denied ... cannot access hostlist file ...`, exit 1, restart loop).
+ * Upstream `/opt/zapret` works around it with `--user=<world-readable>`,
+ * but `$HOME` is not traversable by other users — so we pin `--uid=0:0`
+ * (stay root, `dropcaps()` still strips everything but
+ * `NET_ADMIN`/`NET_RAW`). An explicit `--user`/`--uid` from a custom
+ * strategy is respected and wins.
  * Pure.
  */
 export function buildNfqwsArgv(
@@ -246,6 +259,9 @@ export function buildNfqwsArgv(
   if (opts.daemon) argv.push('--daemon')
   argv.push(`--dpi-desync-fwmark=${opts.fwMark ?? '0x40000000'}`)
   argv.push(`--qnum=${opts.qnum ?? 220}`)
-  argv.push(...materializeNfqwsArgv(parsed.nfqwsParams, opts))
+  const materialized = materializeNfqwsArgv(parsed.nfqwsParams, opts)
+  const hasUserPin = materialized.some((a) => /^--(user|uid)(=|$)/.test(a))
+  if (!hasUserPin) argv.push('--uid=0:0')
+  argv.push(...materialized)
   return argv
 }
