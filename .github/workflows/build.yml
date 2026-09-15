@@ -35,7 +35,7 @@ jobs:
         # electron-builder downloads Electron + NSIS/winCodeSign tooling from
         # GitHub releases on every cold run; a warm cache turns a transient
         # 504 from that download step into a non-issue.
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -62,12 +62,24 @@ jobs:
       - name: Build installer
         # Retried: the packaging step downloads external toolchain bits and
         # occasionally hits transient HTTP 5xx from the mirror.
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 25
-          max_attempts: 3
-          retry_on: error
-          command: npm run build:win
+        # (nick-fields/retry is stuck on the Node 20 runtime, so the retry
+        # loop is inline pwsh instead of a third-party action.)
+        shell: pwsh
+        timeout-minutes: 75
+        run: |
+          $attempt = 0
+          $maxAttempts = 3
+          while ($true) {
+            $attempt++
+            npm run build:win
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -ge $maxAttempts) {
+              Write-Error "npm run build:win failed after $maxAttempts attempts."
+              exit 1
+            }
+            Write-Warning "Build attempt $attempt/$maxAttempts failed, retrying in 10s…"
+            Start-Sleep -Seconds 10
+          }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

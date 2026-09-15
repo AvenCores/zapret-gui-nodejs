@@ -29,7 +29,7 @@ jobs:
       - name: Cache Electron toolchain
         # See build.yml: warm cache + retries survive transient 5xx while
         # electron-builder fetches its NSIS/winCodeSign toolchain.
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -39,12 +39,23 @@ jobs:
             electron-tools-${{ runner.os }}-
 
       - name: Build
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 25
-          max_attempts: 3
-          retry_on: error
-          command: npm run build:win
+        # Retried inline in pwsh: nick-fields/retry is stuck on Node 20.
+        shell: pwsh
+        timeout-minutes: 75
+        run: |
+          $attempt = 0
+          $maxAttempts = 3
+          while ($true) {
+            $attempt++
+            npm run build:win
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -ge $maxAttempts) {
+              Write-Error "npm run build:win failed after $maxAttempts attempts."
+              exit 1
+            }
+            Write-Warning "Build attempt $attempt/$maxAttempts failed, retrying in 10s…"
+            Start-Sleep -Seconds 10
+          }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -61,7 +72,7 @@ jobs:
           "EOF" >> $env:GITHUB_OUTPUT
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body: |
             ## Zapret GUI ${{ github.ref_name }}
