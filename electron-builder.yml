@@ -20,6 +20,8 @@ win:
   signExecutable: false
 nsis:
   oneClick: false
+  # Single deterministic installer name (matches the release notes pattern).
+  artifactName: Zapret-GUI-Setup-${version}.${ext}
   allowToChangeInstallationDirectory: true
   include: build/installer.nsh
   installerIcon: bundled-assets/icon.ico

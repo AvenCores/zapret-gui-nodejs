@@ -1,15 +1,17 @@
-# Build + publish zapret-gui (Windows x64)
+# Build + validate zapret-gui (Windows x64)
 #
 # Triggers:
 # - push to main      -> build installer, upload as artifacts
-# - tags v*           -> same + publish to GitHub Release + update latest.yml
 # - workflow_dispatch -> manual build
+#
+# NOTE: tags v* intentionally do NOT trigger this workflow. Releases are
+# built + published solely by release.yml — running both used to publish
+# the installer twice (plus a stray .blockmap) into the same Release.
 name: build
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -91,9 +93,3 @@ jobs:
             dist/*.exe
             dist/latest.yml
           if-no-files-found: error
-
-      - name: Publish to GitHub Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: npm run build:win:publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

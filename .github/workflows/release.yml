@@ -1,4 +1,6 @@
 # Create a GitHub Release with auto-generated changelog when a v* tag is pushed.
+# This is the ONLY release publisher: keep publishing out of build.yml,
+# otherwise the installer (+ .blockmap) lands in the Release twice.
 name: release
 
 on:
@@ -81,7 +83,7 @@ jobs:
             ${{ steps.changelog.outputs.notes }}
 
             ### Install
-            - Download `Zapret GUI-*-setup.exe` and run as Administrator.
+            - Download `Zapret-GUI-Setup-*.exe` and run as Administrator.
           files: |
             dist/*.exe
             dist/latest.yml
