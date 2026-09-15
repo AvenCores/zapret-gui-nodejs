@@ -2,13 +2,15 @@
 import React from 'react'
 import { STATUS_DOT_COLORS } from '../../shared/constants'
 
-export function Card(props: { title?: string; children: React.ReactNode; className?: string; onClose?: () => void; closeLabel?: string }): React.JSX.Element {
+export function Card(props: { title?: string; children: React.ReactNode; className?: string; onClose?: () => void; closeLabel?: string; headerAction?: React.ReactNode }): React.JSX.Element {
   return (
     <section className={`rounded-xl border border-slate-200 bg-white p-4 shadow dark:border-slate-700/60 dark:bg-slate-800/60 ${props.className ?? ''}`}>
-      {props.title || props.onClose ? (
+      {props.title || props.onClose || props.headerAction ? (
         <div className="mb-3 flex items-center justify-between gap-2">
           {props.title ? <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">{props.title}</h2> : <span />}
-          {props.onClose ? (
+          <span className="flex items-center gap-1">
+            {props.headerAction}
+            {props.onClose ? (
             <button
               type="button"
               onClick={props.onClose}
@@ -18,7 +20,8 @@ export function Card(props: { title?: string; children: React.ReactNode; classNa
             >
               ✕
             </button>
-          ) : null}
+            ) : null}
+          </span>
         </div>
       ) : null}
       {props.children}

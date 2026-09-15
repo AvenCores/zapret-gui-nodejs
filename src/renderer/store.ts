@@ -130,6 +130,9 @@ interface UiState {
   restartTgProxy: () => Promise<void>
   updateTgProxySettings: (patch: Partial<TgProxySettings>) => Promise<void>
   openTgProxyLink: () => Promise<void>
+  /** Settings section to scroll-highlight after navigation (e.g. 'tgproxy'). */
+  settingsHighlight: string | null
+  setSettingsHighlight: (s: string | null) => void
 }
 
 async function call<T>(key: string, fn: () => Promise<T>, set: (p: Partial<UiState>) => void, get: () => UiState): Promise<T | null> {
@@ -169,6 +172,8 @@ export const useUi = create<UiState>((set, get) => ({
   tgProxyStatus: 'unknown',
   tgProxyStats: null,
   tgProxySettings: null,
+  settingsHighlight: null,
+  setSettingsHighlight: (settingsHighlight) => set({ settingsHighlight }),
   hostsCheck: null,
   hostsCheckedAt: null,
   setHostsCheck: (hostsCheck, hostsCheckedAt) => set({ hostsCheck, hostsCheckedAt }),
@@ -402,7 +407,8 @@ export const useUi = create<UiState>((set, get) => ({
         configFilePath: null,
         configCancelled: false,
         tgProxyStatus: 'stopped',
-        tgProxyStats: null
+        tgProxyStats: null,
+        settingsHighlight: null
       })
       syncThemeClass(r.settings.theme)
       try {

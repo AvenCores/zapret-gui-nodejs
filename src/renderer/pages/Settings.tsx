@@ -4,12 +4,14 @@ import { useUi } from '../store'
 import { Btn, Card, Row, Spinner } from '../components/ui'
 
 export default function Settings(): React.JSX.Element {
-  const { t, settings, status, applySettings, busy, resetAll, refreshStatus, tgProxySettings, updateTgProxySettings } =
+  const { t, settings, status, applySettings, busy, resetAll, refreshStatus, tgProxySettings, updateTgProxySettings, settingsHighlight, setSettingsHighlight } =
     useUi()
   const [resetDone, setResetDone] = useState<string | null>(null)
   const [portDraft, setPortDraft] = useState<string | null>(null)
   const resetting = busy.reset === true
   const tgBusy = busy.tgproxy === true || busy['tgproxy-settings'] === true
+  const tgCardRef = React.useRef<HTMLDivElement | null>(null)
+  const highlightTg = settingsHighlight === 'tgproxy'
 
   // Fresh service state on open: the button below is gated on it, and the
   // user may have stopped/started zapret on another tab just before.
@@ -17,6 +19,15 @@ export default function Settings(): React.JSX.Element {
     void refreshStatus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Arrived via the Dashboard gear: scroll the TG proxy section into view,
+  // flash-highlight it, then drop the flag so it does not retrigger.
+  useEffect(() => {
+    if (!highlightTg) return
+    tgCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const timer = setTimeout(() => setSettingsHighlight(null), 2500)
+    return () => clearTimeout(timer)
+  }, [highlightTg, setSettingsHighlight])
 
   // A running zapret (service or stray winws.exe) locks the data files —
   // wiping then fails with EPERM, so the reset stays disabled until stopped.
@@ -114,6 +125,7 @@ export default function Settings(): React.JSX.Element {
           </Row>
         </Card>
 
+      <div ref={tgCardRef} className={highlightTg ? 'rounded-xl ring-2 ring-sky-500 ring-offset-2 ring-offset-slate-100 transition dark:ring-offset-slate-900' : ''}>
       <Card title={t('tgProxy.title')}>
         <p className="py-1 text-sm text-slate-600 dark:text-slate-300">{t('tgProxy.desc')}</p>
         <Row label={t('tgProxy.autoStart')}>
@@ -145,6 +157,7 @@ export default function Settings(): React.JSX.Element {
         </Row>
         <p className="py-1 text-xs text-slate-500 dark:text-slate-400">{t('tgProxy.restartHint')}</p>
       </Card>
+      </div>
 
       <Card title={t('settings.resetTitle')}>
         <p className="py-1 text-sm text-slate-600 dark:text-slate-300">{t('settings.resetDesc')}</p>

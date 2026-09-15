@@ -171,7 +171,7 @@ function formatBytes(n: number): string {
 
 /** Built-in Telegram MTProto→WS proxy: status, controls, stats, link. */
 function TgProxyBlock(): React.JSX.Element {
-  const { t, tgProxyStatus, tgProxyStats, tgProxySettings, startTgProxy, stopTgProxy, restartTgProxy, openTgProxyLink, busy, setError } =
+  const { t, tgProxyStatus, tgProxyStats, tgProxySettings, startTgProxy, stopTgProxy, restartTgProxy, openTgProxyLink, setPage, setSettingsHighlight, busy, setError } =
     useUi()
   const [copied, setCopied] = useState(false)
   const acting = busy.tgproxy === true
@@ -208,7 +208,26 @@ function TgProxyBlock(): React.JSX.Element {
   }
 
   return (
-    <Card title={t('tgProxy.title')}>
+    <Card
+      title={t('tgProxy.title')}
+      headerAction={
+        <button
+          type="button"
+          onClick={() => {
+            setSettingsHighlight('tgproxy')
+            setPage('settings')
+          }}
+          title={t('nav.settings')}
+          aria-label={t('nav.settings')}
+          className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-200"
+        >
+          <svg aria-hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+          </svg>
+        </button>
+      }
+    >
       <p className="py-1 text-sm text-slate-600 dark:text-slate-300">{t('tgProxy.desc')}</p>
       <Row label={t('tgProxy.title')}>
         <Badge tone={tone}>
@@ -233,14 +252,9 @@ function TgProxyBlock(): React.JSX.Element {
       </Row>
       {link !== '' ? (
         <Row label={t('tgProxy.link')}>
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="max-w-[280px] truncate font-mono text-[11px] text-slate-600 dark:text-slate-300" title={link}>
-              {link}
-            </span>
-            <Btn variant="secondary" onClick={() => void copyLink()}>
-              {t('tgProxy.copyLink')}
-            </Btn>
-          </span>
+          <Btn variant="secondary" onClick={() => void copyLink()}>
+            {t('tgProxy.copyLink')}
+          </Btn>
         </Row>
       ) : null}
       {copied ? <p className="py-1 text-sm text-emerald-700 dark:text-emerald-300">✓ {t('tgProxy.linkCopied')}</p> : null}
