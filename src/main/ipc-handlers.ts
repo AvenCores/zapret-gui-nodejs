@@ -126,7 +126,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.startService, async () => {
-    await startService()
+    await startService((t) => sendLog('app', 'info', t))
     sendLog('app', 'info', 'Service started.')
     return true
   })

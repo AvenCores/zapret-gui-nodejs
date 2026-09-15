@@ -18,7 +18,7 @@ import {
   type FirewallBackend,
   type FirewallBackendResolved
 } from './constants'
-import { runPrivileged, runQuery } from './elevate'
+import { batchStepLabel, runBatch, runQuery, type BatchResult, type BatchStep } from './elevate'
 
 export interface FirewallPorts {
   tcp: string
@@ -203,39 +203,14 @@ export function buildIptablesClearCommands(): IptablesSetupStep[] {
 }
 
 // ---------------------------------------------------------------------------
-// Execution (elevated, best-effort cleanup never throws fatally)
+// Execution (batched: one auth prompt per operation; best-effort cleanup
+// never throws fatally)
 // ---------------------------------------------------------------------------
 
-/** Create nft table/chains/rules (clears the old table first). */
-export async function firewallSetupNft(ports: FirewallPorts, onLog?: (t: string) => void): Promise<void> {
+/** nft setup as batch steps (stale-table clear is best-effort). Pure. */
+export function buildNftSetupSteps(ports: FirewallPorts): BatchStep[] {
   const [tableProto, tableName] = NFT_TABLE.split(' ')
-  // Best-effort clear of a previous table (mirrors backend_setup).
-  const existing = await runPrivileged('nft', ['list', 'tables'], 10000)
-  if ((existing.stdout ?? '').includes(NFT_TABLE) || (existing.stdout ?? '').includes(tableName)) {
-    for (const args of [
-      ['flush', 'chain', tableProto, tableName, NFT_CHAIN],
-      ['delete', 'chain', tableProto, tableName, NFT_CHAIN],
-      ['flush', 'chain', tableProto, tableName, NFT_CHAIN_PRE],
-      ['delete', 'chain', tableProto, tableName, NFT_CHAIN_PRE],
-      ['delete', 'table', tableProto, tableName]
-    ]) {
-      await runPrivileged('nft', args, 10000)
-    }
-  }
-  for (const args of buildNftSetupCommands(ports)) {
-    onLog?.(`nft ${args.join(' ')}`)
-    const r = await runPrivileged('nft', args, 15000)
-    if (r.code !== 0) {
-      throw new Error(`nft failed: ${(r.stdout + r.stderr).trim().slice(0, 400)}`)
-    }
-  }
-}
-
-/** Remove the nft table/chains. Best-effort (never throws). */
-export async function firewallClearNft(onLog?: (t: string) => void): Promise<void> {
-  const [tableProto, tableName] = NFT_TABLE.split(' ')
-  const existing = await runPrivileged('nft', ['list', 'tables'], 10000).catch(() => ({ stdout: '', stderr: '', code: 1 }))
-  if (!((existing as { stdout: string }).stdout ?? '').includes(tableName)) return
+  const steps: BatchStep[] = []
   for (const args of [
     ['flush', 'chain', tableProto, tableName, NFT_CHAIN],
     ['delete', 'chain', tableProto, tableName, NFT_CHAIN],
@@ -243,37 +218,96 @@ export async function firewallClearNft(onLog?: (t: string) => void): Promise<voi
     ['delete', 'chain', tableProto, tableName, NFT_CHAIN_PRE],
     ['delete', 'table', tableProto, tableName]
   ]) {
-    try {
-      onLog?.(`nft ${args.join(' ')}`)
-      await runPrivileged('nft', args, 10000)
-    } catch {
-      /* best-effort */
-    }
+    steps.push({ kind: 'exec', file: 'nft', args, ignoreFailure: true })
   }
+  for (const args of buildNftSetupCommands(ports)) {
+    steps.push({ kind: 'exec', file: 'nft', args })
+  }
+  return steps
+}
+
+/** nft cleanup as batch steps (all best-effort). Pure. */
+export function buildNftClearSteps(): BatchStep[] {
+  const [tableProto, tableName] = NFT_TABLE.split(' ')
+  const steps: BatchStep[] = []
+  for (const args of [
+    ['flush', 'chain', tableProto, tableName, NFT_CHAIN],
+    ['delete', 'chain', tableProto, tableName, NFT_CHAIN],
+    ['flush', 'chain', tableProto, tableName, NFT_CHAIN_PRE],
+    ['delete', 'chain', tableProto, tableName, NFT_CHAIN_PRE],
+    ['delete', 'table', tableProto, tableName]
+  ]) {
+    steps.push({ kind: 'exec', file: 'nft', args, ignoreFailure: true })
+  }
+  return steps
+}
+
+/** iptables setup as batch steps (cleanup-prefixed steps are best-effort). Pure. */
+export function buildIptablesSetupSteps(ports: FirewallPorts): BatchStep[] {
+  return buildIptablesSetupCommands(ports).map((step) => ({
+    kind: 'exec' as const,
+    file: step.cmd,
+    args: step.args,
+    ignoreFailure: step.args.includes('-D') || step.args.includes('-F') || step.args.includes('-X')
+  }))
+}
+
+/** iptables cleanup as batch steps (all best-effort). Pure. */
+export function buildIptablesClearSteps(): BatchStep[] {
+  return buildIptablesClearCommands().map((step) => ({
+    kind: 'exec' as const,
+    file: step.cmd,
+    args: step.args,
+    ignoreFailure: true
+  }))
+}
+
+/** Setup steps for either backend (pure — for cross-operation batches). */
+export function buildFirewallSetupSteps(backend: FirewallBackendResolved, ports: FirewallPorts): BatchStep[] {
+  if (backend === 'nftables') return buildNftSetupSteps(ports)
+  return buildIptablesSetupSteps(ports)
+}
+
+/** Cleanup steps for either backend (pure — for cross-operation batches). */
+export function buildFirewallClearSteps(backend: FirewallBackendResolved): BatchStep[] {
+  if (backend === 'nftables') return buildNftClearSteps()
+  return buildIptablesClearSteps()
+}
+
+/** Human batch-failure summary with the offending step label. Pure. */
+function batchFailureText(r: BatchResult, steps: BatchStep[]): string {
+  const out = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim().slice(0, 400)
+  if (r.failedStep === null || r.failedStep < 0 || r.failedStep >= steps.length) return out
+  const step = steps[r.failedStep] as BatchStep
+  return `${out} [at "${batchStepLabel(step)}"]`
+}
+
+/** Create nft table/chains/rules (clears the old table first). */
+export async function firewallSetupNft(ports: FirewallPorts, onLog?: (t: string) => void): Promise<void> {
+  const steps = buildNftSetupSteps(ports)
+  const r = await runBatch(steps, { timeoutMs: 60000, onLog })
+  if (r.code !== 0) {
+    throw new Error(`nft failed${r.failedStep !== null ? ` (step ${r.failedStep + 1}/${steps.length})` : ''}: ${batchFailureText(r, steps)}`)
+  }
+}
+
+/** Remove the nft table/chains. Best-effort (never throws). */
+export async function firewallClearNft(onLog?: (t: string) => void): Promise<void> {
+  await runBatch(buildNftClearSteps(), { timeoutMs: 60000, onLog }).catch(() => undefined)
 }
 
 /** Create iptables chains/rules. Cleanup steps ignore failures (idempotent). */
 export async function firewallSetupIptables(ports: FirewallPorts, onLog?: (t: string) => void): Promise<void> {
-  for (const step of buildIptablesSetupCommands(ports)) {
-    const isCleanup = step.args.includes('-D') || step.args.includes('-F') || step.args.includes('-X')
-    onLog?.(`${step.cmd} ${step.args.join(' ')}`)
-    const r = await runPrivileged(step.cmd, step.args, 15000)
-    if (r.code !== 0 && !isCleanup) {
-      throw new Error(`${step.cmd} failed: ${(r.stdout + r.stderr).trim().slice(0, 400)}`)
-    }
+  const steps = buildIptablesSetupSteps(ports)
+  const r = await runBatch(steps, { timeoutMs: 60000, onLog })
+  if (r.code !== 0) {
+    throw new Error(`iptables setup failed${r.failedStep !== null ? ` (step ${r.failedStep + 1}/${steps.length})` : ''}: ${batchFailureText(r, steps)}`)
   }
 }
 
 /** Remove iptables chains. Best-effort (never throws). */
 export async function firewallClearIptables(onLog?: (t: string) => void): Promise<void> {
-  for (const step of buildIptablesClearCommands()) {
-    try {
-      onLog?.(`${step.cmd} ${step.args.join(' ')}`)
-      await runPrivileged(step.cmd, step.args, 10000)
-    } catch {
-      /* best-effort */
-    }
-  }
+  await runBatch(buildIptablesClearSteps(), { timeoutMs: 60000, onLog }).catch(() => undefined)
 }
 
 /** Dispatch setup by backend name. */

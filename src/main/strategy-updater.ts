@@ -11,6 +11,7 @@ import { execFile } from 'node:child_process'
 import { app } from 'electron'
 import { URLS, UPSTREAM_BRANCH } from '../shared/constants'
 import type { DownloadProgress, UpdateInfo } from '../shared/types'
+import type { BatchStep } from './linux/elevate'
 import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir, getBundledAssetsDir, applyWin7Drivers, isWindows7 } from './paths'
 import { parseBatContent } from './strategy-parser'
 
@@ -269,11 +270,11 @@ function canWriteHostsDirectly(hostsPath: string): boolean {
 
 /**
  * Linux elevated hosts write: the app keeps running as the user, only the
- * file update elevates (passwordless `tee` when NOPASSWD was configured,
- * otherwise a single `pkexec` prompt per call).
+ * file update elevates — one batch (backup + write), i.e. a single auth
+ * prompt (passwordless `tee` when NOPASSWD was configured, else `pkexec`).
  */
 async function applyHostsElevated(hostsPath: string, current: string, next: string): Promise<void> {
-  const { runPrivileged } = await import('./linux/elevate')
+  const { runBatch, batchFailWhat, batchOut } = await import('./linux/elevate')
   const backupPath = `${hostsPath}.zapret-gui.bak`
   try {
     let needBackup = true
@@ -282,12 +283,11 @@ async function applyHostsElevated(hostsPath: string, current: string, next: stri
     } catch {
       needBackup = true
     }
-    if (needBackup) {
-      const b = await runPrivileged('tee', [backupPath], 20000, { input: current })
-      if (b.code !== 0) throw new Error((b.stdout + b.stderr).trim().slice(0, 200))
-    }
-    const w = await runPrivileged('tee', [hostsPath], 20000, { input: next })
-    if (w.code !== 0) throw new Error((w.stdout + w.stderr).trim().slice(0, 200))
+    const steps: BatchStep[] = []
+    if (needBackup) steps.push({ kind: 'write', dest: backupPath, content: current, mode: '0644' })
+    steps.push({ kind: 'write', dest: hostsPath, content: next, mode: '0644' })
+    const r = await runBatch(steps, { timeoutMs: 60000 })
+    if (r.code !== 0) throw new Error(`${batchFailWhat(r, steps)}: ${batchOut(r)}`.trim())
   } catch (e) {
     throw hostsWriteError('write', hostsPath, e)
   }

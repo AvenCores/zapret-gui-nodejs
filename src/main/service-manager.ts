@@ -363,10 +363,10 @@ export async function removeServices(onLog?: (text: string) => void): Promise<vo
   }
 }
 
-export async function startService(): Promise<void> {
+export async function startService(onLog?: (text: string) => void): Promise<void> {
   if (process.platform === 'linux') {
     const { startLinuxService } = await import('./linux/service')
-    await startLinuxService(getDataDir())
+    await startLinuxService(getDataDir(), onLog)
     return
   }
   const r = await runCmd(`sc start ${SERVICE_NAME}`)

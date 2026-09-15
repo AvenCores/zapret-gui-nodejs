@@ -28,27 +28,39 @@ import {
 } from './constants'
 import { loadLinuxConf, saveLinuxConf, type LinuxConf } from './config'
 import {
+  batchFailWhat,
+  batchOut,
+  buildBatchScript,
+  runBatch,
+  runQuery,
+  spawnElevated,
+  buildSudoersContent,
+  buildDoasRules,
   canElevateWithoutPassword,
   checkElevateAvailable,
   detectElevateCmd,
   isRoot,
   resetElevateCache,
-  runPrivileged,
-  runPrivilegedScript,
-  runQuery,
-  spawnElevated,
-  buildSudoersContent,
-  buildDoasRules,
-  whichBin
+  shellQuote,
+  whichBin,
+  type BatchStep
 } from './elevate'
 import {
+  buildFirewallClearSteps,
+  buildFirewallSetupSteps,
   detectFirewallBackend,
   firewallClear,
-  firewallSetup,
   isFirewallActive,
   listAvailableBackends
 } from './firewall'
-import { detectInitSystem, installInitService, queryLinuxServiceState, removeInitService, startInitService, stopInitService } from './init-system'
+import {
+  buildInstallSteps,
+  buildRemoveSteps,
+  buildStartSteps,
+  buildStopSteps,
+  detectInitSystem,
+  queryLinuxServiceState
+} from './init-system'
 import { buildNfqwsArgv, parseStrategyArgsForLinux } from './strategy-linux'
 
 export interface LinuxStatusExtra {
@@ -63,6 +75,8 @@ export interface LinuxStatusExtra {
 }
 
 let foregroundProc: ChildProcess | null = null
+/** Firewall backend of the running foreground test (for one-batch cleanup on stop). */
+let foregroundBackend: FirewallBackendResolved | null = null
 
 function execAsync(cmd: string, args: string[], timeoutMs = 10000): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
@@ -118,20 +132,9 @@ export async function getNfqwsProcessPath(): Promise<string | null> {
   }
 }
 
-async function pkillNfqws(): Promise<void> {
-  // Elevated first (the daemon usually runs as root), then best-effort for
-  // own processes. runPrivileged prompts at most once via pkexec.
-  try {
-    await runPrivileged('pkill', ['-f', 'nfqws'], 10000)
-  } catch {
-    /* best-effort */
-  }
-  // Fallback without elevation (own processes).
-  try {
-    await execAsync('pkill', ['-f', 'nfqws'], 8000)
-  } catch {
-    /* ignore */
-  }
+/** Best-effort `pkill -f nfqws` as a batch step (joins the operation batch — no extra prompt). Pure. */
+function pkillStep(): BatchStep {
+  return { kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true }
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +424,9 @@ export interface LinuxApplyOptions {
 
 /**
  * Install a strategy on Linux: parse args → firewall ports + nfqws argv →
- * write `conf.env` + runner → firewall_setup → nfqws --daemon → init service.
+ * write `conf.env` + runner → (one batch:) stop previous + clear firewall +
+ * setup firewall + nfqws --daemon + init service. The whole privileged part
+ * is a single auth prompt (pkexec) or silent (NOPASSWD).
  */
 export async function installLinuxStrategy(
   strategy: Strategy,
@@ -478,106 +483,147 @@ export async function installLinuxStrategy(
   )
   say(`Runner written: ${runner}`)
 
-  // Stop previous instance + clear old firewall rules first.
-  say('Stopping previous nfqws (if any)...')
-  await pkillNfqws()
+  // One batch for everything privileged: stop previous + clear stale rules
+  // of every backend + set up the chosen backend + start nfqws (+ install
+  // the init service). Exactly one auth prompt.
+  const steps: BatchStep[] = [pkillStep()]
   try {
     const avail = await listAvailableBackends()
-    for (const b of avail) await firewallClear(b).catch(() => undefined)
+    for (const b of avail) steps.push(...buildFirewallClearSteps(b))
   } catch {
     /* ignore */
   }
   say(`Setting up ${backend} (TCP: ${parsed.tcpPorts}, UDP: ${parsed.udpPorts}, iface: ${conf.interface}) ...`)
-  await firewallSetup(backend, { tcp: parsed.tcpPorts, udp: parsed.udpPorts, interface: conf.interface }, say)
+  steps.push(...buildFirewallSetupSteps(backend, { tcp: parsed.tcpPorts, udp: parsed.udpPorts, interface: conf.interface }))
+  const nfqwsIdx = steps.length
+  steps.push({ kind: 'exec', file: nfqwsPath, args: nfqwsArgv, label: 'nfqws --daemon' })
+  let installFromIdx = -1
+  let init: InitSystem = 'unknown'
+  if (opts.installService !== false) {
+    init = await detectInitSystem().catch(() => 'unknown' as InitSystem)
+    if (init === 'unknown') {
+      say('No supported init system detected — running without autostart service.')
+    } else {
+      say(`Installing ${init} service (${LINUX_SERVICE_NAME}) for autostart...`)
+      installFromIdx = steps.length
+      steps.push(...buildInstallSteps(init, { runnerPath: runner, workDir: dataDir }))
+    }
+  } else {
+    say('Foreground install (no init service requested).')
+  }
 
   say('Starting nfqws --daemon ...')
-  const r = await runPrivileged(nfqwsPath, nfqwsArgv, 20000)
+  const r = await runBatch(steps, { timeoutMs: 180000, onLog: say })
   if (r.code !== 0) {
-    throw new Error(`nfqws failed to start: ${(r.stdout + r.stderr).trim().slice(0, 500)}`)
+    if (r.failedStep !== null && r.failedStep === nfqwsIdx) {
+      throw new Error(`nfqws failed to start: ${batchOut(r).slice(0, 500)}`)
+    }
+    if (r.failedStep !== null && installFromIdx >= 0 && r.failedStep >= installFromIdx) {
+      throw new Error(`Service install failed${batchFailWhat(r, steps)}: ${batchOut(r)}`)
+    }
+    throw new Error(`Firewall setup failed${batchFailWhat(r, steps)}: ${batchOut(r)}`)
   }
   // Give the daemon a moment, then verify it survived.
   await new Promise((res) => setTimeout(res, 800))
   if (!(await isNfqwsRunning())) {
     throw new Error('nfqws exited immediately after start — check the strategy and firewall rules')
   }
-
-  if (opts.installService === false) {
-    say('Foreground install done (no init service requested).')
-    return
-  }
-  const init = await detectInitSystem().catch(() => 'unknown' as InitSystem)
-  if (init === 'unknown') {
-    say('No supported init system detected — running without autostart service.')
-    return
-  }
-  say(`Installing ${init} service (${LINUX_SERVICE_NAME}) for autostart...`)
-  await installInitService(init, { runnerPath: runner, workDir: dataDir, onLog: say })
   say(`Strategy "${strategy.name}" installed and started.`)
 }
 
-/** Start the init service (or foreground daemon when no init). */
+/** Start the init service (or foreground daemon when no init). Single auth prompt. */
 export async function startLinuxService(dataDir: string, onLog?: (t: string) => void): Promise<void> {
   const init = await detectInitSystem().catch(() => 'unknown' as InitSystem)
   if (init === 'unknown') {
-    // No init: re-run the stored runner daemon directly (elevated per call,
-    // the app itself keeps running as the user).
+    // No init: re-run the stored runner daemon directly (one batch).
     const runner = getLinuxRunnerPath(dataDir)
     if (!fs.existsSync(runner)) throw new Error('No runner found — apply a strategy first')
-    const r = await runPrivileged('bash', [runner, 'daemon'], 30000)
-    if (r.code !== 0) throw new Error(`Start failed: ${(r.stdout + r.stderr).trim().slice(0, 400)}`)
+    const r = await runBatch([{ kind: 'exec', file: 'bash', args: [runner, 'daemon'] }], { timeoutMs: 60000, onLog })
+    if (r.code !== 0) throw new Error(`Start failed: ${batchOut(r).slice(0, 400)}`)
     onLog?.('nfqws daemon started (no init system).')
     return
   }
-  await startInitService(init)
+  // Self-heal: the unit can be absent while conf/runner exist (service
+  // removed externally, or a previous install that failed after nfqws had
+  // started). Reinstall from the stored runner instead of failing with
+  // `Unit ... not found` — all in the same batch (one prompt).
+  const steps: BatchStep[] = []
+  let unitState: ServiceState = 'UNKNOWN'
+  try {
+    unitState = await queryLinuxServiceState(init)
+  } catch {
+    unitState = 'UNKNOWN'
+  }
+  if (unitState === 'NOT_INSTALLED') {
+    const runner = getLinuxRunnerPath(dataDir)
+    if (!fs.existsSync(runner)) {
+      throw new Error('Service is not installed — apply a strategy on the Strategies tab first')
+    }
+    onLog?.(`Service unit is missing, reinstalling ${init} service (${LINUX_SERVICE_NAME})...`)
+    steps.push(...buildInstallSteps(init, { runnerPath: runner, workDir: dataDir }))
+  }
+  steps.push(...buildStartSteps(init))
+  const r = await runBatch(steps, { timeoutMs: 120000, onLog })
+  if (r.code !== 0) throw new Error(`Service start failed${batchFailWhat(r, steps)}: ${batchOut(r)}`)
   onLog?.('Service started.')
 }
 
-/** Stop nfqws + init service + firewall rules. */
+/** Stop nfqws + init service + firewall rules. Single auth prompt. */
 export async function stopLinuxService(dataDir: string, onLog?: (t: string) => void): Promise<void> {
+  const steps: BatchStep[] = []
   const init = await detectInitSystem().catch(() => 'unknown' as InitSystem)
   if (init !== 'unknown') {
-    try {
-      await stopInitService(init)
-    } catch {
-      /* fall through to pkill */
-    }
+    // Old behavior tolerated a failing stop (fell through to pkill).
+    for (const s of buildStopSteps(init)) steps.push({ ...s, ignoreFailure: true })
   }
-  await pkillNfqws()
+  steps.push(pkillStep())
   try {
     const conf = loadLinuxConf(dataDir)
     const backend = await detectFirewallBackend(conf?.firewall_backend ?? 'auto').catch(() => null)
-    if (backend) await firewallClear(backend, onLog)
+    if (backend) steps.push(...buildFirewallClearSteps(backend))
     else {
-      for (const b of await listAvailableBackends()) await firewallClear(b, onLog).catch(() => undefined)
+      for (const b of await listAvailableBackends()) steps.push(...buildFirewallClearSteps(b))
     }
   } catch {
     /* best-effort */
   }
+  await runBatch(steps, { timeoutMs: 120000, onLog })
   onLog?.('Service stopped, firewall cleared.')
 }
 
-/** Remove init service(s) + kill nfqws + clear firewall (all backends). */
+/** Remove init service(s) + kill nfqws + clear firewall (all backends). Single auth prompt. */
 export async function removeLinuxServices(dataDir: string, onLog?: (t: string) => void): Promise<void> {
   const say = (t: string): void => onLog?.(t)
+  const steps: BatchStep[] = []
   const init = await detectInitSystem().catch(() => 'unknown' as InitSystem)
   if (init !== 'unknown') {
-    try {
-      await removeInitService(init, LINUX_SERVICE_NAME, say)
-    } catch (e) {
-      say(`Service remove warning: ${(e as Error).message.slice(0, 200)}`)
-    }
+    steps.push(...buildRemoveSteps(init, LINUX_SERVICE_NAME))
   } else {
     say('No init system detected — removing daemon state only.')
   }
   if (await isNfqwsRunning()) {
     say('Killing nfqws...')
-    await pkillNfqws()
   } else {
     say('nfqws is not running.')
   }
+  steps.push(pkillStep())
   for (const b of (await listAvailableBackends().catch(() => [] as FirewallBackendResolved[]))) {
     say(`Clearing ${b} rules...`)
-    await firewallClear(b).catch(() => undefined)
+    steps.push(...buildFirewallClearSteps(b))
+  }
+  const r = await runBatch(steps, { timeoutMs: 180000, onLog: say })
+  if (r.code !== 0) {
+    say(`Service remove warning: ${`Remove failed${batchFailWhat(r, steps)}: ${batchOut(r)}`.slice(0, 200)}`)
+  } else {
+    const done: Record<string, string> = {
+      systemd: 'systemd service removed.',
+      openrc: 'OpenRC service removed.',
+      runit: 'runit service removed.',
+      s6: 's6 service removed.',
+      dinit: 'dinit service removed.',
+      unknown: 'Daemon state removed.'
+    }
+    say(done[init] ?? 'Service removed.')
   }
 }
 
@@ -585,20 +631,39 @@ export async function removeLinuxServices(dataDir: string, onLog?: (t: string) =
 // Foreground test (`run` without installing a service)
 // ---------------------------------------------------------------------------
 
-/** Stop the foreground test process (spawned by testLinuxStrategy). */
+/** Stop the foreground test process (spawned by testLinuxStrategy). Single auth prompt. */
 export function stopLinuxTest(): void {
+  const child = foregroundProc
+  foregroundProc = null
+  const backend = foregroundBackend
+  foregroundBackend = null
   try {
-    foregroundProc?.kill('SIGTERM')
+    child?.kill('SIGTERM')
   } catch {
     /* ignore */
   }
-  foregroundProc = null
-  void pkillNfqws().catch(() => undefined)
+  // One batch for pkill + firewall cleanup instead of a prompt per command.
+  void (async () => {
+    try {
+      const steps: BatchStep[] = [pkillStep()]
+      if (backend) steps.push(...buildFirewallClearSteps(backend))
+      else {
+        for (const b of await listAvailableBackends().catch(() => [] as FirewallBackendResolved[])) {
+          steps.push(...buildFirewallClearSteps(b))
+        }
+      }
+      await runBatch(steps, { timeoutMs: 60000 })
+    } catch {
+      /* best-effort */
+    }
+  })()
 }
 
 /**
  * Spawn nfqws in the foreground for strategy testing (no --daemon).
- * Returns the child; firewall rules are applied first and cleared on stop.
+ * pkill + firewall setup + nfqws run as ONE elevated `bash -c` script
+ * (single auth prompt), ending with `exec nfqws` so stdio keeps streaming
+ * to the test console. Firewall rules are cleared on stop.
  */
 export async function testLinuxStrategy(
   strategy: Strategy,
@@ -606,7 +671,6 @@ export async function testLinuxStrategy(
   onLog?: (t: string) => void,
   onOutput?: (stream: 'stdout' | 'stderr', text: string) => void
 ): Promise<ChildProcess> {
-  stopLinuxTest()
   const binDir = getLinuxBinDir(dataDir)
   const listsDir = path.join(dataDir, 'lists')
   const nfqwsPath = getLinuxNfqwsPath(dataDir)
@@ -620,19 +684,45 @@ export async function testLinuxStrategy(
   })
   const backend = await detectFirewallBackend(conf?.firewall_backend ?? 'auto')
   onLog?.(`Test firewall: ${backend} TCP=${parsed.tcpPorts} UDP=${parsed.udpPorts}`)
-  await pkillNfqws()
-  await firewallSetup(backend, { tcp: parsed.tcpPorts, udp: parsed.udpPorts, interface: conf?.interface ?? ANY_INTERFACE }, onLog)
   const argv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: false })
   onLog?.(`Starting foreground test: nfqws ${argv.join(' ')}`)
-  // Elevated per call (passwordless sudo when configured, else one pkexec
-  // prompt) — the app itself keeps running as the user.
-  const child = await spawnElevated(nfqwsPath, argv, { cwd: binDir })
+  // Drop any previous test silently (its rules are cleared by the setup
+  // batch below, which covers every backend for backend switches).
+  try {
+    foregroundProc?.kill('SIGTERM')
+  } catch {
+    /* ignore */
+  }
+  foregroundProc = null
+  foregroundBackend = null
+  const ports = { tcp: parsed.tcpPorts, udp: parsed.udpPorts, interface: conf?.interface ?? ANY_INTERFACE }
+  const setupSteps: BatchStep[] = [pkillStep()]
+  try {
+    for (const b of await listAvailableBackends()) setupSteps.push(...buildFirewallClearSteps(b))
+  } catch {
+    /* ignore */
+  }
+  setupSteps.push(...buildFirewallSetupSteps(backend, ports))
+  // Marker protocol lines must not leak into the test console.
+  const filterOut = (stream: 'stdout' | 'stderr', text: string): void => {
+    const clean = String(text ?? '')
+      .split('\n')
+      .filter((l) => !/^ZAPRET_BATCH_(STEP|FAIL) \d+\r?$/.test(l))
+      .join('\n')
+    if (clean !== '') onOutput?.(stream, clean)
+  }
+  const script = `${buildBatchScript(setupSteps)}exec ${[nfqwsPath, ...argv].map(shellQuote).join(' ')}\n`
+  const child = await spawnElevated('bash', ['-c', script], { cwd: binDir })
   foregroundProc = child
-  child.stdout?.on('data', (d: Buffer) => onOutput?.('stdout', String(d)))
-  child.stderr?.on('data', (d: Buffer) => onOutput?.('stderr', String(d)))
+  foregroundBackend = backend
+  child.stdout?.on('data', (d: Buffer) => filterOut('stdout', String(d)))
+  child.stderr?.on('data', (d: Buffer) => filterOut('stderr', String(d)))
   child.on('exit', () => {
-    if (foregroundProc === child) foregroundProc = null
-    firewallClear(backend).catch(() => undefined)
+    if (foregroundProc === child) {
+      foregroundProc = null
+      foregroundBackend = null
+      firewallClear(backend).catch(() => undefined)
+    }
   })
   return child
 }
@@ -680,11 +770,7 @@ export async function getLinuxPermissionsStatus(
   }
   let nopass = false
   try {
-    if (isRoot()) nopass = true
-    else if (elevateCmd === 'sudo') {
-      const r = await execAsync('sudo', ['-n', 'true'], 8000)
-      nopass = r.code === 0
-    }
+    nopass = await canElevateWithoutPassword()
   } catch {
     nopass = false
   }
@@ -723,6 +809,9 @@ export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string)
       whichBin('visudo'),
       whichBin('bash')
     ])
+  // `true` for the passwordless probe (`doas -n true`); resolved without
+  // `command -v` because shells report the builtin instead of a path.
+  const truePath = fs.existsSync('/usr/bin/true') ? '/usr/bin/true' : '/bin/true'
   let cmd: string
   try {
     cmd = detectElevateCmd()
@@ -734,12 +823,13 @@ export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string)
       nftPath,
       iptablesPath: iptPath,
       ip6tablesPath: ip6tPath,
-      extraBins: [systemctlPath, rcServicePath, rcUpdatePath, svPath, s6SvcPath, dinitctlPath, mkdirPath, rmPath, chmodPath, teePath, bashPath]
+      extraBins: [truePath, systemctlPath, rcServicePath, rcUpdatePath, svPath, s6SvcPath, dinitctlPath, mkdirPath, rmPath, chmodPath, teePath, bashPath]
     })
     say(`Appending NOPASSWD rules to /etc/doas.conf for ${user} ...`)
-    const b64 = Buffer.from(`\n${rules}`, 'utf8').toString('base64')
-    const r = await runPrivilegedScript(`base64 -d >> /etc/doas.conf <<'ZAPRET_EOF'\n${b64}\nZAPRET_EOF`, 20000)
-    if (r.code !== 0) throw new Error(`doas setup failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
+    // Single batch = single auth prompt.
+    const steps: BatchStep[] = [{ kind: 'write', dest: '/etc/doas.conf', content: `\n${rules}`, mode: '0644', append: true }]
+    const r = await runBatch(steps, { timeoutMs: 60000, onLog: say })
+    if (r.code !== 0) throw new Error(`doas setup failed${batchFailWhat(r, steps)}: ${batchOut(r)}`)
     resetElevateCache()
     say('doas rules installed.')
     return
@@ -765,16 +855,21 @@ export async function setupLinuxPermissions(dataDir: string, onLog?: (t: string)
     extraTeePaths: ['/etc/hosts', '/etc/hosts.zapret-gui.bak']
   })
   say(`Writing ${SUDOERS_FILE} for ${user} ...`)
-  const b64 = Buffer.from(content, 'utf8').toString('base64')
-  const r = await runPrivilegedScript(
-    `base64 -d > ${SUDOERS_FILE} <<'ZAPRET_EOF'\n${b64}\nZAPRET_EOF\nchmod 440 ${SUDOERS_FILE}`,
-    20000
-  )
-  if (r.code !== 0) throw new Error(`sudoers setup failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
-  const check = await runPrivileged('visudo', ['-c', '-f', SUDOERS_FILE], 15000).catch(() => null)
-  if (check && check.code !== 0) {
-    await runPrivileged('rm', ['-f', SUDOERS_FILE], 10000).catch(() => undefined)
-    throw new Error('sudoers syntax check failed — file removed')
+  // Single batch = single auth prompt: write + chmod + syntax check.
+  const visudoIdx = 1
+  const steps: BatchStep[] = [
+    { kind: 'write', dest: SUDOERS_FILE, content, mode: '0440', label: `write ${SUDOERS_FILE}` },
+    { kind: 'exec', file: 'visudo', args: ['-c', '-f', SUDOERS_FILE] }
+  ]
+  const r = await runBatch(steps, { timeoutMs: 60000, onLog: say })
+  if (r.code !== 0) {
+    if (r.failedStep !== null && r.failedStep >= visudoIdx) {
+      await runBatch([{ kind: 'exec', file: 'rm', args: ['-f', SUDOERS_FILE], ignoreFailure: true }], {
+        timeoutMs: 15000
+      }).catch(() => undefined)
+      throw new Error('sudoers syntax check failed — file removed')
+    }
+    throw new Error(`sudoers setup failed${batchFailWhat(r, steps)}: ${batchOut(r)}`)
   }
   // Fresh NOPASSWD must apply immediately, not after the probe-cache TTL.
   resetElevateCache()

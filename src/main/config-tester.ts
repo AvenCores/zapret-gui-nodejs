@@ -20,6 +20,7 @@ import crypto from 'node:crypto'
 import os from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Strategy, ConfigTestMode, ConfigTesterAnalyticsRow, ConfigTesterEvent, ServiceState } from '../shared/types'
+import type { BatchStep } from './linux/elevate'
 import { run, runCmd, runPowershell, isAdmin } from './exec'
 import { queryServiceState, isProcessRunning, resolveGameFilterPorts } from './service-manager'
 import { materializeArgsForSpawn } from './strategy-parser'
@@ -605,20 +606,26 @@ function splitArgs(cmdline: string): string[] {
 
 let activeChild: ChildProcess | null = null
 
-async function killWinws(): Promise<void> {
+/** Kill the tracked child only (no privilege needed — own wrapper process). */
+function killActiveChild(): void {
   try {
     activeChild?.kill()
   } catch {
     /* ignore */
   }
   activeChild = null
+}
+
+async function killWinws(): Promise<void> {
+  killActiveChild()
   if (process.platform === 'linux') {
     await run('pkill', ['-f', 'nfqws'], { timeoutMs: 8000 }).catch(() => ({ stdout: '', stderr: '', code: 1 }))
     try {
-      // Elevated pkill (the daemon usually runs as root); prompts at most
-      // once via pkexec, silent with passwordless sudo configured.
-      const { runPrivileged } = await import('./linux/elevate')
-      await runPrivileged('pkill', ['-f', 'nfqws'], 8000).catch(() => undefined)
+      // Single batched pkill (one prompt at most, silent with NOPASSWD).
+      const { runBatch } = await import('./linux/elevate')
+      await runBatch([{ kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true }], {
+        timeoutMs: 15000
+      }).catch(() => undefined)
     } catch {
       /* best-effort */
     }
@@ -908,35 +915,34 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
       const s = strategies[idx] as Strategy
       emit({ kind: 'config-start', index: idx + 1, total: strategies.length, configName: s.name, mode })
       emit({ kind: 'progress', completed, total: strategies.length, current: s.name })
-      await killWinws()
-      if (isLinux) {
-        // Clear stale rules between strategies (best-effort).
-        try {
-          const { firewallClear } = await import('./linux/firewall')
-          if (linuxBackend) await firewallClear(linuxBackend).catch(() => undefined)
-        } catch {
-          /* ignore */
-        }
-      }
+      if (!isLinux) await killWinws()
 
       const args = isLinux
         ? await buildLinuxTesterArgs(s, { binDir, listsDir, gameTcp: tcp, gameUdp: udp })
         : materializeArgsForSpawn(s.args, { binDir, listsDir, gameTcp: tcp, gameUdp: udp })
       if (isLinux && linuxBackend) {
+        // One batch (single prompt at most): drop the previous strategy's
+        // daemon, clear stale rules, set up this strategy's rules.
         try {
-          const { firewallSetup } = await import('./linux/firewall')
+          const { buildFirewallClearSteps, buildFirewallSetupSteps } = await import('./linux/firewall')
           const { parseStrategyArgsForLinux } = await import('./linux/strategy-linux')
+          const { runBatch } = await import('./linux/elevate')
           const parsed = parseStrategyArgsForLinux(s.args, {
             useGameFilterTcp: tcp === '1024-65535',
             useGameFilterUdp: udp === '1024-65535',
             binDir,
             listsDir
           })
-          await firewallSetup(
-            linuxBackend,
-            { tcp: parsed.tcpPorts, udp: parsed.udpPorts, interface: linuxIface },
-            undefined
-          )
+          killActiveChild()
+          const preSteps: BatchStep[] = [
+            { kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true },
+            ...buildFirewallClearSteps(linuxBackend),
+            ...buildFirewallSetupSteps(linuxBackend, { tcp: parsed.tcpPorts, udp: parsed.udpPorts, interface: linuxIface })
+          ]
+          const pre = await runBatch(preSteps, { timeoutMs: 120000 })
+          if (pre.code !== 0) {
+            throw new Error(`firewall batch failed${pre.failedStep !== null ? ` (step ${pre.failedStep + 1}/${preSteps.length})` : ''}: ${(pre.stdout + pre.stderr).trim().slice(0, 200)}`)
+          }
         } catch (e) {
           emit({ kind: 'log', level: 'error', text: `Firewall setup failed for ${s.name}: ${(e as Error).message.slice(0, 200)}. Skipping...` })
           continue
@@ -1033,14 +1039,22 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
         }
       }
 
-      await killWinws()
+      killActiveChild()
       if (isLinux && linuxBackend) {
+        // Single batched cleanup (one prompt at most) per strategy.
         try {
-          const { firewallClear } = await import('./linux/firewall')
-          await firewallClear(linuxBackend).catch(() => undefined)
+          const { buildFirewallClearSteps } = await import('./linux/firewall')
+          const { runBatch } = await import('./linux/elevate')
+          const postSteps: BatchStep[] = [
+            { kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true },
+            ...buildFirewallClearSteps(linuxBackend)
+          ]
+          await runBatch(postSteps, { timeoutMs: 60000 }).catch(() => undefined)
         } catch {
           /* ignore */
         }
+      } else {
+        await killWinws()
       }
       completed++
       emit({ kind: 'config-done', index: idx + 1, total: strategies.length, configName: s.name })
@@ -1054,16 +1068,21 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
     emit({ kind: 'done', cancelled, best, filePath, rows })
     return { best, filePath, rows }
   } finally {
-    await killWinws()
+    killActiveChild()
     if (isLinux) {
       try {
-        const { firewallClear, listAvailableBackends } = await import('./linux/firewall')
+        const { buildFirewallClearSteps, listAvailableBackends } = await import('./linux/firewall')
+        const { runBatch } = await import('./linux/elevate')
+        const finalSteps: BatchStep[] = [{ kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true }]
         for (const b of await listAvailableBackends().catch(() => [] as Array<'nftables' | 'iptables'>)) {
-          await firewallClear(b).catch(() => undefined)
+          finalSteps.push(...buildFirewallClearSteps(b))
         }
+        await runBatch(finalSteps, { timeoutMs: 60000 }).catch(() => undefined)
       } catch {
         /* ignore */
       }
+    } else {
+      await killWinws()
     }
     await restoreWindivert(windivertBefore, emit).catch(() => undefined)
     await restoreWinwsSnapshot(snapshot, emit).catch(() => undefined)

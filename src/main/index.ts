@@ -211,11 +211,11 @@ async function serviceAction(kind: 'start' | 'stop' | 'restart'): Promise<void> 
       navigateTo('dashboard')
       return
     }
-    if (kind === 'start') await startService()
+    if (kind === 'start') await startService((t) => info('app', t))
     else if (kind === 'stop') await stopService()
     else {
       await stopService().catch(() => undefined)
-      await startService()
+      await startService((t) => info('app', t))
     }
     info('app', `Service ${kind} from tray: OK.`)
   } catch (e) {

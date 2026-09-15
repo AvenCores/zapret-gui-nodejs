@@ -5,34 +5,18 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { execFile } from 'node:child_process'
 import type { DiagnosticCheck } from '../shared/types'
 import { getBinDir } from './paths'
 import { loadLinuxConf } from './linux/config'
 import { detectFirewallBackend, isFirewallActive, listAvailableBackends } from './linux/firewall'
 import { detectInitSystem, queryLinuxServiceState } from './linux/init-system'
 import { getLinuxNfqwsPath, isNfqwsRunning } from './linux/service'
-import { isRoot } from './linux/elevate'
+import { canElevateWithoutPassword, isRoot } from './linux/elevate'
 import { LINUX_SERVICE_NAME } from './linux/constants'
-
-function execOut(cmd: string, args: string[], timeoutMs = 8000): Promise<{ code: number; out: string }> {
-  return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: timeoutMs }, (error, stdout, stderr) => {
-      resolve({
-        code: error ? 1 : 0,
-        out: `${stdout ?? ''}\n${stderr ?? ''}`
-      })
-    })
-  })
-}
 
 async function checkElevate(): Promise<DiagnosticCheck> {
   const root = isRoot()
-  let nopass = root
-  if (!root) {
-    const r = await execOut('sudo', ['-n', 'true'])
-    nopass = r.code === 0
-  }
+  const nopass = root || (await canElevateWithoutPassword())
   return {
     id: 'root',
     labelKey: 'diag.root',

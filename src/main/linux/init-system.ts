@@ -6,7 +6,7 @@
 import fs from 'node:fs'
 import { execFile } from 'node:child_process'
 import { LINUX_SERVICE_NAME, type InitSystem } from './constants'
-import { runPrivileged, runQuery, writeFileAsRoot } from './elevate'
+import { runQuery, type BatchStep } from './elevate'
 import type { ServiceState } from '../../shared/types'
 
 function readFileSafe(p: string): string {
@@ -220,162 +220,141 @@ export async function queryLinuxServiceState(
 }
 
 // ---------------------------------------------------------------------------
-// Install / start / stop / restart / remove
+// Install / start / stop / restart / remove — pure step builders +
+// single-prompt executors (one `pkexec` per operation, zero with NOPASSWD)
 // ---------------------------------------------------------------------------
 
-/** Write text to a root-owned path via elevation (single pkexec prompt at most). */
-async function writeRootFile(dest: string, content: string, mode = '0644'): Promise<void> {
-  try {
-    await writeFileAsRoot(dest, content, mode)
-  } catch (e) {
-    throw new Error(`Cannot write ${dest}: ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}`)
-  }
+export interface InstallStepOpts {
+  runnerPath: string
+  workDir: string
+  serviceName?: string
 }
 
-export async function installInitService(
-  init: InitSystem,
-  opts: { runnerPath: string; workDir: string; serviceName?: string; onLog?: (t: string) => void }
-): Promise<void> {
+/** Init-service install as batch steps. Pure — covered by unit tests. */
+export function buildInstallSteps(init: InitSystem, opts: InstallStepOpts): BatchStep[] {
   const name = opts.serviceName ?? LINUX_SERVICE_NAME
-  const say = (t: string): void => opts.onLog?.(t)
+  const write = (dest: string, content: string, mode = '0644'): BatchStep => ({
+    kind: 'write',
+    dest,
+    content,
+    mode,
+    label: `write ${dest}`
+  })
   switch (init) {
-    case 'systemd': {
-      const dest = `/etc/systemd/system/${name}.service`
-      say(`Writing ${dest} ...`)
-      await writeRootFile(dest, buildSystemdUnit({ runnerPath: opts.runnerPath, workDir: opts.workDir }))
-      await runPrivileged('systemctl', ['daemon-reload'], 20000)
-      await runPrivileged('systemctl', ['enable', name], 20000)
-      say('Starting systemd service...')
-      const r = await runPrivileged('systemctl', ['restart', name], 20000)
-      if (r.code !== 0) throw new Error(`systemctl start failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
-      return
-    }
-    case 'openrc': {
-      const dest = `/etc/init.d/${name}`
-      say(`Writing ${dest} ...`)
-      await writeRootFile(dest, buildOpenrcScript({ runnerPath: opts.runnerPath, workDir: opts.workDir, serviceName: name }), '0755')
-      await runPrivileged('rc-update', ['add', name, 'default'], 20000)
-      const r = await runPrivileged('rc-service', [name, 'restart'], 20000)
-      if (r.code !== 0) throw new Error(`rc-service start failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
-      return
-    }
+    case 'systemd':
+      return [
+        write(`/etc/systemd/system/${name}.service`, buildSystemdUnit({ runnerPath: opts.runnerPath, workDir: opts.workDir })),
+        { kind: 'exec', file: 'systemctl', args: ['daemon-reload'], ignoreFailure: true },
+        { kind: 'exec', file: 'systemctl', args: ['enable', name], ignoreFailure: true },
+        { kind: 'exec', file: 'systemctl', args: ['restart', name] }
+      ]
+    case 'openrc':
+      return [
+        write(`/etc/init.d/${name}`, buildOpenrcScript({ runnerPath: opts.runnerPath, workDir: opts.workDir, serviceName: name }), '0755'),
+        { kind: 'exec', file: 'rc-update', args: ['add', name, 'default'], ignoreFailure: true },
+        { kind: 'exec', file: 'rc-service', args: [name, 'restart'] }
+      ]
     case 'runit': {
       const dir = `/etc/sv/${name}`
-      await runPrivileged('mkdir', ['-p', dir], 10000)
-      await writeRootFile(`${dir}/run`, buildRunitRun({ runnerPath: opts.runnerPath }), '0755')
-      await writeRootFile(`${dir}/finish`, buildRunitFinish({ runnerPath: opts.runnerPath }), '0755')
-      await runPrivileged('sv', ['up', name], 15000)
-      return
+      return [
+        { kind: 'exec', file: 'mkdir', args: ['-p', dir], ignoreFailure: true },
+        write(`${dir}/run`, buildRunitRun({ runnerPath: opts.runnerPath }), '0755'),
+        write(`${dir}/finish`, buildRunitFinish({ runnerPath: opts.runnerPath }), '0755'),
+        { kind: 'exec', file: 'sv', args: ['up', name], ignoreFailure: true }
+      ]
     }
     case 's6': {
       const dir = `/etc/s6/sv/${name}`
-      await runPrivileged('mkdir', ['-p', `${dir}/log`], 10000)
-      await writeRootFile(
-        `${dir}/run`,
-        `#!/bin/sh\nexec 2>&1\ncd "${opts.workDir}"\nexec "${opts.runnerPath}" daemon\n`,
-        '0755'
-      )
-      await writeRootFile(`${dir}/finish`, `#!/bin/sh\n"${opts.runnerPath}" kill\nexit 0\n`, '0755')
-      await writeRootFile(`${dir}/log/run`, `#!/bin/sh\nexec s6-log n20 s1000000 /var/log/${name}\n`, '0755')
-      return
+      return [
+        { kind: 'exec', file: 'mkdir', args: ['-p', `${dir}/log`], ignoreFailure: true },
+        write(
+          `${dir}/run`,
+          `#!/bin/sh\nexec 2>&1\ncd "${opts.workDir}"\nexec "${opts.runnerPath}" daemon\n`,
+          '0755'
+        ),
+        write(`${dir}/finish`, `#!/bin/sh\n"${opts.runnerPath}" kill\nexit 0\n`, '0755'),
+        write(`${dir}/log/run`, `#!/bin/sh\nexec s6-log n20 s1000000 /var/log/${name}\n`, '0755')
+      ]
     }
-    case 'dinit': {
-      const dest = `/etc/dinit.d/${name}`
-      say(`Writing ${dest} ...`)
-      await writeRootFile(dest, buildDinitConf({ runnerPath: opts.runnerPath }))
-      await runPrivileged('dinitctl', ['enable', name], 20000)
-      return
-    }
+    case 'dinit':
+      return [
+        write(`/etc/dinit.d/${name}`, buildDinitConf({ runnerPath: opts.runnerPath })),
+        { kind: 'exec', file: 'dinitctl', args: ['enable', name], ignoreFailure: true }
+      ]
     default:
       throw new Error('Unknown init system — cannot install a system service (use foreground run instead)')
   }
 }
 
-export async function startInitService(init: InitSystem, serviceName = LINUX_SERVICE_NAME): Promise<void> {
-  const run = async (cmd: string, args: string[]): Promise<void> => {
-    const r = await runPrivileged(cmd, args, 20000)
-    if (r.code !== 0) throw new Error(`${cmd} ${args.join(' ')} failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
-  }
+/** Service-start command per init. Pure. */
+export function buildStartSteps(init: InitSystem, serviceName = LINUX_SERVICE_NAME): BatchStep[] {
   switch (init) {
     case 'systemd':
-      return run('systemctl', ['start', serviceName])
+      return [{ kind: 'exec', file: 'systemctl', args: ['start', serviceName] }]
     case 'openrc':
-      return run('rc-service', [serviceName, 'start'])
+      return [{ kind: 'exec', file: 'rc-service', args: [serviceName, 'start'] }]
     case 'runit':
-      return run('sv', ['up', serviceName])
+      return [{ kind: 'exec', file: 'sv', args: ['up', serviceName] }]
     case 's6':
-      return run('s6-svc', ['-u', serviceLocation('s6', serviceName)])
+      return [{ kind: 'exec', file: 's6-svc', args: ['-u', serviceLocation('s6', serviceName)] }]
     case 'dinit':
-      return run('dinitctl', ['start', serviceName])
+      return [{ kind: 'exec', file: 'dinitctl', args: ['start', serviceName] }]
     default:
       throw new Error('Unknown init system')
   }
 }
 
-export async function stopInitService(init: InitSystem, serviceName = LINUX_SERVICE_NAME): Promise<void> {
-  const run = async (cmd: string, args: string[]): Promise<void> => {
-    const r = await runPrivileged(cmd, args, 20000)
-    if (r.code !== 0) throw new Error(`${cmd} ${args.join(' ')} failed: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
-  }
+/** Service-stop command per init. Pure. */
+export function buildStopSteps(init: InitSystem, serviceName = LINUX_SERVICE_NAME): BatchStep[] {
   switch (init) {
     case 'systemd':
-      return run('systemctl', ['stop', serviceName])
+      return [{ kind: 'exec', file: 'systemctl', args: ['stop', serviceName] }]
     case 'openrc':
-      return run('rc-service', [serviceName, 'stop'])
+      return [{ kind: 'exec', file: 'rc-service', args: [serviceName, 'stop'] }]
     case 'runit':
-      return run('sv', ['down', serviceName])
+      return [{ kind: 'exec', file: 'sv', args: ['down', serviceName] }]
     case 's6':
-      return run('s6-svc', ['-d', serviceLocation('s6', serviceName)])
+      return [{ kind: 'exec', file: 's6-svc', args: ['-d', serviceLocation('s6', serviceName)] }]
     case 'dinit':
-      return run('dinitctl', ['stop', serviceName])
+      return [{ kind: 'exec', file: 'dinitctl', args: ['stop', serviceName] }]
     default:
       throw new Error('Unknown init system')
   }
 }
 
-export async function removeInitService(
-  init: InitSystem,
-  serviceName = LINUX_SERVICE_NAME,
-  onLog?: (t: string) => void
-): Promise<void> {
-  const say = (t: string): void => onLog?.(t)
-  const bestEffort = async (cmd: string, args: string[]): Promise<void> => {
-    try {
-      await runPrivileged(cmd, args, 15000)
-    } catch {
-      /* ignore */
-    }
-  }
+/** Service removal as batch steps (stop/disable best-effort). Pure. */
+export function buildRemoveSteps(init: InitSystem, serviceName = LINUX_SERVICE_NAME): BatchStep[] {
+  const ign = (file: string, args: string[]): BatchStep => ({ kind: 'exec', file, args, ignoreFailure: true })
   switch (init) {
     case 'systemd':
-      await bestEffort('systemctl', ['stop', serviceName])
-      await bestEffort('systemctl', ['disable', serviceName])
-      await runPrivileged('rm', ['-f', `/etc/systemd/system/${serviceName}.service`], 10000)
-      await bestEffort('systemctl', ['daemon-reload'])
-      say('systemd service removed.')
-      return
+      return [
+        ign('systemctl', ['stop', serviceName]),
+        ign('systemctl', ['disable', serviceName]),
+        { kind: 'exec', file: 'rm', args: ['-f', `/etc/systemd/system/${serviceName}.service`] },
+        ign('systemctl', ['daemon-reload'])
+      ]
     case 'openrc':
-      await bestEffort('rc-service', [serviceName, 'stop'])
-      await bestEffort('rc-update', ['del', serviceName, 'default'])
-      await runPrivileged('rm', ['-f', `/etc/init.d/${serviceName}`], 10000)
-      say('OpenRC service removed.')
-      return
+      return [
+        ign('rc-service', [serviceName, 'stop']),
+        ign('rc-update', ['del', serviceName, 'default']),
+        { kind: 'exec', file: 'rm', args: ['-f', `/etc/init.d/${serviceName}`] }
+      ]
     case 'runit':
-      await bestEffort('sv', ['down', serviceName])
-      await runPrivileged('rm', ['-rf', `/etc/sv/${serviceName}`], 10000)
-      say('runit service removed.')
-      return
+      return [
+        ign('sv', ['down', serviceName]),
+        { kind: 'exec', file: 'rm', args: ['-rf', `/etc/sv/${serviceName}`] }
+      ]
     case 's6':
-      await bestEffort('s6-svc', ['-d', serviceLocation('s6', serviceName)])
-      await runPrivileged('rm', ['-rf', serviceLocation('s6', serviceName)], 10000)
-      say('s6 service removed.')
-      return
+      return [
+        ign('s6-svc', ['-d', serviceLocation('s6', serviceName)]),
+        { kind: 'exec', file: 'rm', args: ['-rf', serviceLocation('s6', serviceName)] }
+      ]
     case 'dinit':
-      await bestEffort('dinitctl', ['stop', serviceName])
-      await bestEffort('dinitctl', ['disable', serviceName])
-      await runPrivileged('rm', ['-f', `/etc/dinit.d/${serviceName}`], 10000)
-      say('dinit service removed.')
-      return
+      return [
+        ign('dinitctl', ['stop', serviceName]),
+        ign('dinitctl', ['disable', serviceName]),
+        { kind: 'exec', file: 'rm', args: ['-f', `/etc/dinit.d/${serviceName}`] }
+      ]
     default:
       throw new Error('Unknown init system')
   }

@@ -2,12 +2,13 @@
  * Privilege elevation on Linux.
  *
  * Model: the app ALWAYS runs as a regular user — it is never relaunched
- * as a whole under root. Only root-dependent operations elevate, and only
- * for the duration of a single call:
- * - `runPrivileged*` (mutations: firewall, services, nfqws, file installs):
- *   already-root runs directly; otherwise `sudo -n`/`doas -n` when the
- *   one-time passwordless setup (`setupPermissions`, a single auth) was
- *   done; otherwise one `pkexec` GUI prompt for that call.
+ * as a whole under root. Root-dependent *operations* (apply strategy,
+ * start/stop/remove service, hosts update, ...) elevate as a whole:
+ * - passwordless `sudo -n`/`doas -n` (one-time NOPASSWD setup or cached
+ *   credentials): steps run one by one, silently — zero prompts;
+ * - otherwise a single `pkexec` GUI prompt per operation: all steps run as
+ *   one `pkexec bash -c` script — exactly one prompt, never a dozen;
+ * - already-root runs directly.
  * - `runQuery*` (read-only status polling): never prompts — `sudo -n`
  *   when available, otherwise a direct unprivileged attempt (many queries
  *   such as `systemctl is-active` or `pgrep` work fine without root).
@@ -120,9 +121,12 @@ const nopassCache = new Map<string, { value: boolean; ts: number }>()
 const NOPASS_TTL_MS = 30000
 
 /**
- * Probe passwordless operation (`sudo -n true`), cached briefly to avoid a
- * failing probe (and its auth log line) on every single privileged call.
- * Never throws.
+ * Probe passwordless operation, cached briefly to avoid a failing probe
+ * (and its auth log line) on every single privileged call. Never throws.
+ *
+ * - sudo: `sudo -n -v` (validates cached credentials; needs no sudoers
+ *   entry for any particular command, unlike `sudo -n true`);
+ * - doas: `doas -n true` (`true` is whitelisted by new setups).
  */
 async function isPasswordless(sudoish: 'sudo' | 'doas', timeoutMs = 8000): Promise<boolean> {
   const now = Date.now()
@@ -130,7 +134,10 @@ async function isPasswordless(sudoish: 'sudo' | 'doas', timeoutMs = 8000): Promi
   if (hit && now - hit.ts < NOPASS_TTL_MS) return hit.value
   let value = false
   try {
-    const r = await runRaw(sudoish, ['-n', 'true'], timeoutMs)
+    const r =
+      sudoish === 'sudo'
+        ? await runRaw('sudo', ['-n', '-v'], timeoutMs)
+        : await runRaw('doas', ['-n', 'true'], timeoutMs)
     value = r.code === 0
   } catch {
     value = false
@@ -262,75 +269,259 @@ export function noAuthMessage(): string {
   )
 }
 
-function combinedOut(r: ExecResult): string {
-  return `${r.stdout ?? ''}\n${r.stderr ?? ''}`
+// ---------------------------------------------------------------------------
+// Privilege batches: exactly one auth prompt per user operation
+// ---------------------------------------------------------------------------
+
+/**
+ * One privileged step. `exec` runs a binary; `write` installs file content
+ * (plus mode) without shell-quoting pitfalls. Steps marked `ignoreFailure`
+ * never abort the batch (best-effort cleanup).
+ */
+export type BatchStep =
+  | { kind: 'exec'; file: string; args: string[]; ignoreFailure?: boolean; label?: string }
+  | { kind: 'write'; dest: string; content: string; mode?: string; append?: boolean; ignoreFailure?: boolean; label?: string }
+
+export interface BatchResult extends ExecResult {
+  /** Index of the first fatal failed step, null when the batch succeeded. */
+  failedStep: number | null
+}
+
+export interface RunBatchOpts {
+  timeoutMs?: number
+  onLog?: (line: string) => void
+}
+
+/** Human log label for a step (defaults to the rendered command). Pure. */
+export function batchStepLabel(step: BatchStep): string {
+  if (step.label) return step.label
+  if (step.kind === 'write') return `${step.append ? 'append' : 'write'} ${step.dest}`
+  return [step.file, ...step.args].join(' ')
+}
+
+/** Guard file-write steps against path/mode injection. Pure. Throws. */
+function checkWriteStep(dest: string, mode: string | undefined, append: boolean): void {
+  if (!dest.startsWith('/') || dest.includes('\n') || dest.includes('..')) {
+    throw new Error(`Refusing to write outside absolute system path: ${String(dest).slice(0, 120)}`)
+  }
+  // Fresh files must state their mode; appends keep the existing file's mode.
+  if (!append && (mode === undefined || !/^[0-7]{3,4}$/.test(mode))) {
+    throw new Error(`Invalid file mode: ${String(mode)}`)
+  }
+  if (mode !== undefined && !/^[0-7]{3,4}$/.test(mode)) throw new Error(`Invalid file mode: ${mode}`)
+}
+
+/** Exit code a batched script uses when a fatal step fails. */
+export const BATCH_EXIT_STEP_FAILED = 42
+
+/** Render one step as shell source lines (no protocol markers). Pure. */
+function renderStepBody(step: BatchStep): string[] {
+  if (step.kind === 'exec') {
+    return [[step.file, ...step.args].map(shellQuote).join(' ')]
+  }
+  checkWriteStep(step.dest, step.mode, step.append ?? false)
+  // base64 alphabet never contains a single quote — safe inside '...'.
+  const b64 = Buffer.from(step.content, 'utf8').toString('base64')
+  const redir = step.append ? '>>' : '>'
+  const lines = [`printf '%s' '${b64}' | base64 -d ${redir} ${shellQuote(step.dest)}`]
+  if (step.mode !== undefined) lines.push(`chmod ${step.mode} ${shellQuote(step.dest)}`)
+  return lines
 }
 
 /**
- * Run a command with elevation, prompting at most once via `pkexec`.
- * Order: direct (root) → `sudo -n`/`doas -n` when the probe shows
- * passwordless operation (one-time NOPASSWD setup or cached credentials) →
- * `pkexec` (one GUI prompt for this call). Never rejects — always resolves
- * with code/stdout/stderr, except when sudo/doas needs a password but no
- * graphical prompt exists (throws with actionable guidance).
+ * Render steps as a single bash script. Progress/failure protocol on
+ * stderr: `ZAPRET_BATCH_STEP <i>` before each step, `ZAPRET_BATCH_FAIL <i>`
+ * when a fatal step fails (then `exit 42`). Pure — covered by unit tests.
  */
-export async function runPrivileged(
-  file: string,
-  args: string[],
-  timeoutMs = 30000,
-  opts: { input?: string } = {}
-): Promise<ExecResult> {
-  if (isRoot()) return runRaw(file, args, timeoutMs, opts)
+export function buildBatchScript(steps: BatchStep[]): string {
+  const lines: string[] = []
+  steps.forEach((s, i) => {
+    lines.push(`printf '%s\\n' 'ZAPRET_BATCH_STEP ${i}' >&2`)
+    for (const body of renderStepBody(s)) {
+      if (s.ignoreFailure) lines.push(`${body} || true`)
+      else lines.push(`${body} || { printf '%s\\n' 'ZAPRET_BATCH_FAIL ${i}' >&2; exit ${BATCH_EXIT_STEP_FAILED}; }`)
+    }
+  })
+  return `${lines.join('\n')}\n`
+}
+
+export interface BatchMarker {
+  kind: 'step' | 'fail'
+  index: number
+}
+
+/**
+ * Line-buffered filter for the batch protocol: swallows
+ * `ZAPRET_BATCH_*` lines (reporting them via `onMarker`), forwards the
+ * rest. Pure-ish (stateful buffer) — covered by unit tests.
+ */
+export class BatchMarkerFilter {
+  private buf = ''
+  constructor(private readonly onMarker?: (m: BatchMarker) => void) {}
+  push(chunk: string): string {
+    this.buf += String(chunk ?? '')
+    const parts = this.buf.split('\n')
+    this.buf = parts.pop() ?? ''
+    let out = ''
+    for (const line of parts) {
+      const m = line.replace(/\r$/, '').match(/^ZAPRET_BATCH_(STEP|FAIL) (\d+)$/)
+      if (m) {
+        const index = Number(m[2])
+        try {
+          this.onMarker?.({ kind: m[1] === 'STEP' ? 'step' : 'fail', index })
+        } catch {
+          /* a log callback must never break the batch */
+        }
+      } else {
+        out += `${line}\n`
+      }
+    }
+    return out
+  }
+  flush(): string {
+    const rest = this.buf
+    this.buf = ''
+    if (rest === '') return ''
+    const m = rest.replace(/\r$/, '').match(/^ZAPRET_BATCH_(STEP|FAIL) (\d+)$/)
+    if (m) {
+      try {
+        this.onMarker?.({ kind: m[1] === 'STEP' ? 'step' : 'fail', index: Number(m[2]) })
+      } catch {
+        /* ignore */
+      }
+      return ''
+    }
+    return rest
+  }
+}
+
+/**
+ * Run a batch of privileged steps with **exactly one auth prompt**:
+ * - root: steps run directly, one by one;
+ * - passwordless `sudo -n`/`doas -n`: steps run one by one, silently
+ *   (zero prompts; every command is individually covered by the NOPASSWD
+ *   rules, so no broad `bash` rule is needed);
+ * - otherwise: all steps run as a single `pkexec bash -c` script —
+ *   one GUI prompt for the whole operation instead of a dozen;
+ * - sudo/doas needs a password but no `pkexec` exists: throws guidance;
+ * - no elevation tools at all: best-effort direct run.
+ * Empty step list resolves successfully without spawning anything (and
+ * without prompting). Never rejects except for the no-prompt guidance case.
+ */
+export async function runBatch(steps: BatchStep[], opts: RunBatchOpts = {}): Promise<BatchResult> {
+  const timeoutMs = opts.timeoutMs ?? 120000
+  if (steps.length === 0) return { stdout: '', stderr: '', code: 0, failedStep: null }
+  if (isRoot()) return runBatchSequential(steps, null, opts, timeoutMs)
   const sudoish = sudoishCmd()
   if (sudoish !== '' && (await isPasswordless(sudoish))) {
-    // Silent path — a failure here is the command's own error (returned
-    // as-is, no password dialog for broken firewall rules, ...).
-    const r = await runRaw(sudoish, ['-n', file, ...args], timeoutMs, opts)
-    if (r.code === 0) return r
-    // Rare timestamp race (expired between probe and run): fall through to
-    // the interactive prompt instead of failing outright.
-    if (!isAuthFailure(combinedOut(r)) || !hasBinary('pkexec')) return r
-  } else if (sudoish === '' && !hasBinary('pkexec')) {
-    // No sudo/doas at all (and no pkexec): best-effort direct attempt —
-    // some commands (e.g. `systemctl is-active`) do not need root.
-    return runRaw(file, args, timeoutMs, opts)
+    return runBatchSequential(steps, sudoish, opts, timeoutMs)
   }
   if (hasBinary('pkexec')) {
-    if (opts.input !== undefined) {
-      return runPkexecWithInput(file, args, opts.input, timeoutMs)
+    return runBatchScripted(steps, opts, timeoutMs)
+  }
+  if (sudoish !== '') throw new Error(noAuthMessage())
+  return runBatchSequential(steps, null, opts, timeoutMs)
+}
+
+/** Sequential executor: direct (root / no tools) or `sudo -n` per step. */
+async function runBatchSequential(
+  steps: BatchStep[],
+  sudoish: '' | 'sudo' | 'doas' | null,
+  opts: RunBatchOpts,
+  timeoutMs: number
+): Promise<BatchResult> {
+  let stdout = ''
+  let stderr = ''
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i]
+    opts.onLog?.(batchStepLabel(s))
+    const r = await runBatchStepSequential(s, sudoish, timeoutMs)
+    stdout += r.stdout
+    stderr += r.stderr
+    if (r.code !== 0 && !s.ignoreFailure) return { stdout, stderr, code: r.code, failedStep: i }
+  }
+  return { stdout, stderr, code: 0, failedStep: null }
+}
+
+async function runBatchStepSequential(
+  s: BatchStep,
+  sudoish: '' | 'sudo' | 'doas' | null,
+  timeoutMs: number
+): Promise<ExecResult> {
+  if (s.kind === 'write') {
+    checkWriteStep(s.dest, s.mode, s.append ?? false)
+    if (!sudoish) {
+      try {
+        if (s.append) fs.appendFileSync(s.dest, s.content, 'utf8')
+        else fs.writeFileSync(s.dest, s.content, 'utf8')
+        if (s.mode !== undefined) fs.chmodSync(s.dest, s.mode)
+        return { stdout: '', stderr: '', code: 0 }
+      } catch (e) {
+        return { stdout: '', stderr: e instanceof Error ? e.message : String(e), code: 1 }
+      }
     }
-    return runRaw('pkexec', [file, ...args], timeoutMs)
+    const teeArgs = s.append ? ['-n', 'tee', '-a', s.dest] : ['-n', 'tee', s.dest]
+    const t = await runWithInput(sudoish, teeArgs, s.content, timeoutMs)
+    if (t.code !== 0) return t
+    if (s.mode === undefined) return { stdout: t.stdout, stderr: t.stderr, code: 0 }
+    return runRaw(sudoish, ['-n', 'chmod', s.mode, s.dest], timeoutMs)
   }
-  // sudo/doas exists but needs a password, and there is no GUI prompt to
-  // ask it: single attempt for an honest stderr, then guidance.
-  const r = await runRaw(sudoish, ['-n', file, ...args], timeoutMs, opts)
-  throw new Error(`${combinedOut(r).trim().slice(0, 300)}\n${noAuthMessage()}`)
+  if (!sudoish) return runRaw(s.file, s.args, timeoutMs)
+  return runRaw(sudoish, ['-n', s.file, ...s.args], timeoutMs)
 }
 
-/** `pkexec` with piped stdin (used for `tee` writes). */
-function runPkexecWithInput(file: string, args: string[], input: string, timeoutMs: number): Promise<ExecResult> {
-  return runWithInput('pkexec', [file, ...args], input, timeoutMs)
-}
-
-/**
- * Run an arbitrary shell script text with elevation (used for the one-time
- * NOPASSWD bootstrap, sysctl, etc.). Same probe-first order as
- * {@link runPrivileged}: silent passwordless path, else a single `pkexec`
- * prompt for this call.
- */
-export async function runPrivilegedScript(script: string, timeoutMs = 30000): Promise<ExecResult> {
-  if (isRoot()) return runRaw('bash', ['-c', script], timeoutMs)
-  const sudoish = sudoishCmd()
-  if (sudoish !== '' && (await isPasswordless(sudoish))) {
-    const r = await runRaw(sudoish, ['-n', 'bash', '-c', script], timeoutMs)
-    if (r.code === 0) return r
-    if (!isAuthFailure(combinedOut(r)) || !hasBinary('pkexec')) return r
-  } else if (sudoish === '' && !hasBinary('pkexec')) {
-    throw new Error(noAuthMessage())
-  }
-  if (hasBinary('pkexec')) return runRaw('pkexec', ['bash', '-c', script], timeoutMs)
-  const r = await runRaw(sudoish, ['-n', 'bash', '-c', script], timeoutMs)
-  throw new Error(`${combinedOut(r).trim().slice(0, 300)}\n${noAuthMessage()}`)
+/** Single-`pkexec` executor: one GUI prompt for the whole batch. */
+function runBatchScripted(steps: BatchStep[], opts: RunBatchOpts, timeoutMs: number): Promise<BatchResult> {
+  const script = buildBatchScript(steps)
+  return new Promise<BatchResult>((resolve) => {
+    let settled = false
+    const done = (r: BatchResult): void => {
+      if (!settled) {
+        settled = true
+        resolve(r)
+      }
+    }
+    let failedStep: number | null = null
+    const filter = new BatchMarkerFilter((m) => {
+      if (m.kind === 'step') {
+        if (m.index >= 0 && m.index < steps.length) opts.onLog?.(batchStepLabel(steps[m.index] as BatchStep))
+      } else if (m.index >= 0 && m.index < steps.length) {
+        failedStep = m.index
+      }
+    })
+    let child: ChildProcess
+    try {
+      child = spawn('pkexec', ['bash', '-c', script], { stdio: ['ignore', 'pipe', 'pipe'], env: cLocaleEnv() })
+    } catch (e) {
+      done({ stdout: '', stderr: e instanceof Error ? e.message : String(e), code: 1, failedStep: null })
+      return
+    }
+    let stdout = ''
+    let stderr = ''
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        /* ignore */
+      }
+      done({ stdout, stderr: `${stderr}${filter.flush()}Timed out after ${timeoutMs}ms`, code: 1, failedStep })
+    }, timeoutMs)
+    if (timer.unref) timer.unref()
+    child.stdout?.on('data', (d: Buffer) => {
+      stdout += String(d)
+    })
+    child.stderr?.on('data', (d: Buffer) => {
+      stderr += filter.push(String(d))
+    })
+    child.on('error', (e: Error) => {
+      clearTimeout(timer)
+      done({ stdout, stderr: `${stderr}${filter.flush()}${e.message}`, code: 1, failedStep })
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      done({ stdout, stderr: stderr + filter.flush(), code: code ?? 1, failedStep })
+    })
+  })
 }
 
 /**
@@ -382,21 +573,15 @@ export async function spawnElevated(
   throw new Error(noAuthMessage())
 }
 
-/**
- * Write text to a root-owned path without a shell: `tee` via
- * {@link runPrivileged} (stdin carries the content, so no quoting
- * pitfalls), then `chmod`. Used for init-service files.
- */
-export async function writeFileAsRoot(dest: string, content: string, mode = '0644'): Promise<void> {
-  const safeDest = String(dest ?? '')
-  if (!safeDest.startsWith('/') || safeDest.includes('\n') || safeDest.includes('..')) {
-    throw new Error(`Refusing to write outside absolute system path: ${safeDest.slice(0, 120)}`)
-  }
-  if (!/^[0-7]{3,4}$/.test(mode)) throw new Error(`Invalid file mode: ${mode}`)
-  const r = await runPrivileged('tee', [safeDest], 20000, { input: content })
-  if (r.code !== 0) throw new Error(`Cannot write ${safeDest}: ${(r.stdout + r.stderr).trim().slice(0, 300)}`)
-  const c = await runPrivileged('chmod', [mode, safeDest], 10000)
-  if (c.code !== 0) throw new Error(`Cannot chmod ${safeDest}: ${(c.stdout + c.stderr).trim().slice(0, 300)}`)
+/** Combined batch output, trimmed for error messages. Pure. */
+export function batchOut(r: BatchResult): string {
+  return `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim().slice(0, 300)
+}
+
+/** ` at "<step label>"` suffix for batch failures. Pure. */
+export function batchFailWhat(r: BatchResult, steps: BatchStep[]): string {
+  if (r.failedStep === null || r.failedStep < 0 || r.failedStep >= steps.length) return ''
+  return ` at "${batchStepLabel(steps[r.failedStep] as BatchStep)}"`
 }
 
 /** Shell-quote a single argv entry for `sh -c` / `bash -c` wrappers. */
@@ -469,8 +654,8 @@ export interface SudoersOpts {
 /**
  * Build `/etc/sudoers.d/zapret` content for a user. Covers the exact
  * privileged commands the app runs (firewall, nfqws, service management,
- * service-file installs); anything else falls back to a per-call `pkexec`
- * prompt instead of failing. Pure.
+ * service-file installs, hosts); anything else falls back to a
+ * per-operation `pkexec` prompt instead of failing. Pure.
  */
 export function buildSudoersContent(
   user: string,

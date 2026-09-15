@@ -170,8 +170,11 @@ export async function ensureUserOwnsDataDir(): Promise<'ok' | 'root' | 'unwritab
   if (probe()) return 'ok'
   try {
     if (typeof process.getuid !== 'function' || typeof process.getgid !== 'function') return 'unwritable'
-    const { runPrivileged } = await import('./linux/elevate')
-    const r = await runPrivileged('chown', ['-R', `${process.getuid()}:${process.getgid()}`, base], 60000)
+    const { runBatch } = await import('./linux/elevate')
+    const r = await runBatch(
+      [{ kind: 'exec', file: 'chown', args: ['-R', `${process.getuid()}:${process.getgid()}`, base] }],
+      { timeoutMs: 60000 }
+    )
     if (r.code !== 0) return 'unwritable'
   } catch {
     return 'unwritable'

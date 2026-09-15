@@ -1,8 +1,10 @@
 /** Unit tests for the Linux support modules (pure helpers, no root needed). */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import type { ServiceState } from '../src/shared/types'
+import type { InitSystem } from '../src/main/linux/constants'
 import { parseConfEnv, serializeConfEnv, normalizeStrategyFileName, isValidInterfaceName } from '../src/main/linux/config'
 import {
   applyGameFilterSubstitution,
@@ -14,10 +16,28 @@ import {
 import {
   buildNftSetupCommands,
   buildIptablesSetupCommands,
-  toIptablesPorts
+  toIptablesPorts,
+  buildNftSetupSteps,
+  buildIptablesSetupSteps,
+  buildFirewallClearSteps,
+  buildFirewallSetupSteps
 } from '../src/main/linux/firewall'
-import { buildSystemdUnit, buildDinitConf, serviceLocation } from '../src/main/linux/init-system'
+import {
+  buildSystemdUnit,
+  buildDinitConf,
+  serviceLocation,
+  buildInstallSteps,
+  buildStartSteps,
+  buildStopSteps,
+  buildRemoveSteps
+} from '../src/main/linux/init-system'
 import { buildSudoersContent, buildDoasRules, isAuthFailure, noAuthMessage, withPathVariants } from '../src/main/linux/elevate'
+import {
+  BatchMarkerFilter,
+  batchStepLabel,
+  buildBatchScript,
+  type BatchStep
+} from '../src/main/linux/elevate'
 import { mapPlatformDir } from '../src/main/linux/download'
 import { detectLinuxOwnership } from '../src/main/linux/service'
 import { buildRunnerScript } from '../src/main/linux/service'
@@ -25,6 +45,35 @@ import { isLinuxPlatform, isWindowsPlatform, dpiEngineBinary } from '../src/main
 
 const EXAMPLE_BAT = path.join(process.cwd(), 'bundled-assets', 'bat', 'general_nix1.bat')
 const GENERATED_JSON = path.join(process.cwd(), 'bundled-assets', 'strategies', 'general_nix1.json')
+
+// init-system is mocked for the startLinuxService self-heal tests below
+// (no root, no real systemctl); pure builders keep working via spread.
+const startMocks = vi.hoisted(() => ({
+  unitState: 'NOT_INSTALLED' as ServiceState
+}))
+
+vi.mock('../src/main/linux/init-system', async (importOriginal: () => Promise<typeof import('../src/main/linux/init-system')>) => {
+  const orig = await importOriginal()
+  return {
+    ...orig,
+    detectInitSystem: async (): Promise<InitSystem> => 'systemd',
+    queryLinuxServiceState: async (): Promise<ServiceState> => startMocks.unitState
+  }
+})
+
+// runBatch is mocked for composition tests (assert the assembled steps);
+// pure elevate helpers keep working via spread.
+const batchMocks = vi.hoisted(() => ({
+  runBatch: vi.fn(async (..._args: unknown[]) => ({ stdout: '', stderr: '', code: 0, failedStep: null }))
+}))
+
+vi.mock('../src/main/linux/elevate', async (importOriginal: () => Promise<typeof import('../src/main/linux/elevate')>) => {
+  const orig = await importOriginal()
+  return {
+    ...orig,
+    runBatch: batchMocks.runBatch
+  }
+})
 
 describe('platform helpers', () => {
   it('detects linux vs windows', () => {
@@ -374,5 +423,175 @@ describe('seedLinuxNfqws', () => {
     const dataBin = fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-seed-'))
     expect(seedLinuxNfqws(path.join(process.cwd(), 'bundled-assets'), dataBin, 'linux-nope')).toBeNull()
     fs.rmSync(dataBin, { recursive: true, force: true })
+  })
+})
+
+describe('startLinuxService self-heal (missing unit, no root)', () => {
+  beforeEach(() => {
+    startMocks.unitState = 'NOT_INSTALLED'
+    batchMocks.runBatch.mockClear()
+  })
+
+  function makeDataDir(withRunner: boolean): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-start-'))
+    if (withRunner) {
+      fs.writeFileSync(path.join(dir, 'zapret-linux-run.sh'), '#!/usr/bin/env bash\n', 'utf8')
+    }
+    return dir
+  }
+
+  function batchSteps(): BatchStep[] {
+    const call = batchMocks.runBatch.mock.calls[0] as unknown[] | undefined
+    return (call?.[0] ?? []) as BatchStep[]
+  }
+
+  it('reinstalls the unit from the stored runner in ONE batch instead of failing `Unit not found`', async () => {
+    const { startLinuxService, getLinuxRunnerPath } = await import('../src/main/linux/service')
+    const dir = makeDataDir(true)
+    try {
+      const logs: string[] = []
+      await startLinuxService(dir, (t) => logs.push(t))
+      // Exactly one elevated batch (i.e. a single auth prompt).
+      expect(batchMocks.runBatch).toHaveBeenCalledTimes(1)
+      const steps = batchSteps()
+      const writes = steps.filter((s) => s.kind === 'write')
+      expect(writes.map((s) => (s.kind === 'write' ? s.dest : ''))).toContain(
+        '/etc/systemd/system/zapret_discord_youtube.service'
+      )
+      const last = steps[steps.length - 1]
+      expect(last).toMatchObject({ kind: 'exec', file: 'systemctl', args: ['start', 'zapret_discord_youtube'] })
+      expect(getLinuxRunnerPath(dir)).toBe(path.join(dir, 'zapret-linux-run.sh'))
+      expect(logs.join('\n')).toContain('reinstalling')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('starts with a single-step batch when the unit exists (no reinstall)', async () => {
+    startMocks.unitState = 'RUNNING'
+    const { startLinuxService } = await import('../src/main/linux/service')
+    const dir = makeDataDir(true)
+    try {
+      await startLinuxService(dir)
+      expect(batchMocks.runBatch).toHaveBeenCalledTimes(1)
+      const steps = batchSteps()
+      expect(steps).toHaveLength(1)
+      expect(steps[0]).toMatchObject({ kind: 'exec', file: 'systemctl', args: ['start', 'zapret_discord_youtube'] })
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('asks to apply a strategy when neither unit nor runner exist', async () => {
+    const { startLinuxService } = await import('../src/main/linux/service')
+    const dir = makeDataDir(false)
+    try {
+      await expect(startLinuxService(dir)).rejects.toThrow('apply a strategy')
+      expect(batchMocks.runBatch).not.toHaveBeenCalled()
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('privilege batching (one auth prompt per operation)', () => {
+  it('labels steps for logs by default', () => {
+    expect(batchStepLabel({ kind: 'exec', file: 'nft', args: ['list', 'tables'] })).toBe('nft list tables')
+    expect(batchStepLabel({ kind: 'write', dest: '/etc/hosts', content: 'x', mode: '0644' })).toBe('write /etc/hosts')
+    expect(batchStepLabel({ kind: 'write', dest: '/etc/doas.conf', content: 'x', append: true })).toBe('append /etc/doas.conf')
+    expect(batchStepLabel({ kind: 'exec', file: 'x', args: [], label: 'custom' })).toBe('custom')
+  })
+
+  it('renders fatal steps with FAIL markers and best-effort steps with `|| true`', () => {
+    const script = buildBatchScript([
+      { kind: 'exec', file: 'nft', args: ['add', 'table', 'inet', 'zapretunix'] },
+      { kind: 'exec', file: 'pkill', args: ['-f', 'nfqws'], ignoreFailure: true }
+    ])
+    expect(script).toContain('ZAPRET_BATCH_STEP 0')
+    expect(script).toContain('ZAPRET_BATCH_STEP 1')
+    expect(script).toContain('ZAPRET_BATCH_FAIL 0')
+    expect(script).not.toContain('ZAPRET_BATCH_FAIL 1')
+    expect(script).toContain('|| true')
+    expect(script).toContain('exit 42')
+    expect(script).toContain('nft add table inet zapretunix')
+    // Unsafe argv entries are shell-quoted (nft chain specs use braces).
+    const braced = buildBatchScript([{ kind: 'exec', file: 'nft', args: ['add', 'chain', 'inet', 'x', 'post', '{', 'type', 'filter', '}'] }])
+    expect(braced).toContain(`'{'`)
+  })
+
+  it('renders file writes as base64 pipe + chmod (no quoting pitfalls)', () => {
+    const script = buildBatchScript([{ kind: 'write', dest: '/etc/sudoers.d/zapret', content: "a'b\n$c", mode: '0440' }])
+    expect(script).toContain(`| base64 -d > /etc/sudoers.d/zapret`)
+    expect(script).toContain(`chmod 0440 /etc/sudoers.d/zapret`)
+    // No raw quotes from the content leak into the script.
+    expect(script).not.toContain(`a'b`)
+  })
+
+  it('renders appends without chmod (existing file keeps its mode)', () => {
+    const script = buildBatchScript([{ kind: 'write', dest: '/etc/doas.conf', content: 'x', append: true }])
+    expect(script).toContain('>>')
+    expect(script).not.toContain('chmod')
+  })
+
+  it('filters protocol lines out of streamed output (incl. split chunks)', () => {
+    const seen: Array<{ kind: string; index: number }> = []
+    const f = new BatchMarkerFilter((m) => seen.push({ kind: m.kind, index: m.index }))
+    expect(f.push('nft ok\nZAPRET_BATCH_STEP 3\nmore\n')).toBe('nft ok\nmore\n')
+    // A marker split across two chunks still parses once complete.
+    expect(f.push('ZAPRET_BATCH_ST')).toBe('')
+    expect(f.push('EP 4\ntail\n')).toBe('tail\n')
+    expect(f.flush()).toBe('')
+    expect(seen).toEqual([
+      { kind: 'step', index: 3 },
+      { kind: 'step', index: 4 }
+    ])
+    const f2 = new BatchMarkerFilter()
+    expect(f2.push('err\nZAPRET_BATCH_FAIL 2\n')).toBe('err\n')
+    expect(f2.flush()).toBe('')
+  })
+
+  it('builds nft setup steps: best-effort clear first, fatal rules after', () => {
+    const steps = buildNftSetupSteps({ tcp: '80,443', udp: '443', interface: 'any' })
+    expect(steps.length).toBeGreaterThan(5)
+    expect(steps.slice(0, 5).every((s) => s.ignoreFailure === true)).toBe(true)
+    expect(steps.slice(5).every((s) => s.ignoreFailure !== true)).toBe(true)
+    expect(steps[5]).toMatchObject({ kind: 'exec', file: 'nft' })
+  })
+
+  it('builds firewall clear steps for both backends (all best-effort)', () => {
+    for (const b of ['nftables', 'iptables'] as const) {
+      const steps = buildFirewallClearSteps(b)
+      expect(steps.length).toBeGreaterThan(0)
+      expect(steps.every((s) => s.ignoreFailure === true)).toBe(true)
+    }
+    expect(buildFirewallSetupSteps('iptables', { tcp: '80', udp: '443', interface: 'any' })[0]).toMatchObject({
+      kind: 'exec',
+      file: 'iptables'
+    })
+  })
+
+  it('builds iptables setup steps with cleanup best-effort and rules fatal', () => {
+    const steps = buildIptablesSetupSteps({ tcp: '80', udp: '443', interface: 'any' })
+    const first = steps[0]
+    expect(first?.ignoreFailure).toBe(true)
+    const rule = steps.find((s) => s.kind === 'exec' && s.args.includes('NFQUEUE'))
+    expect(rule?.ignoreFailure).not.toBe(true)
+  })
+
+  it('builds systemd install steps ending with restart, with unit write first', () => {
+    const steps = buildInstallSteps('systemd', { runnerPath: '/data/run.sh', workDir: '/data' })
+    expect(steps[0]).toMatchObject({ kind: 'write', dest: '/etc/systemd/system/zapret_discord_youtube.service' })
+    const last = steps[steps.length - 1]
+    expect(last).toMatchObject({ kind: 'exec', file: 'systemctl', args: ['restart', 'zapret_discord_youtube'] })
+  })
+
+  it('builds start/stop/remove steps per init (unknown throws)', () => {
+    expect(buildStartSteps('systemd')).toEqual([{ kind: 'exec', file: 'systemctl', args: ['start', 'zapret_discord_youtube'] }])
+    expect(buildStopSteps('openrc')).toEqual([{ kind: 'exec', file: 'rc-service', args: ['zapret_discord_youtube', 'stop'] }])
+    const rm = buildRemoveSteps('systemd')
+    expect(rm[0]).toMatchObject({ ignoreFailure: true })
+    expect(rm[2]).toMatchObject({ kind: 'exec', file: 'rm', args: ['-f', '/etc/systemd/system/zapret_discord_youtube.service'] })
+    expect(() => buildStartSteps('unknown')).toThrow()
+    expect(() => buildInstallSteps('unknown', { runnerPath: '/x', workDir: '/y' })).toThrow()
   })
 })
