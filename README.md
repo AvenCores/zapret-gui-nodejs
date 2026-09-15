@@ -29,9 +29,11 @@
 | Страница | Что умеет |
 |---|---|
 | Дашборд | Статус `zapret` / WinDivert / `winws.exe`, активная стратегия, путь сервиса, кнопки Старт / Стоп / Рестарт / Удалить, детект чужого сервиса + takeover, блок Hosts (проверка/применение/контроль), bypass-проверки Discord/YouTube/Cloudflare |
-| Стратегии | Все 22 стратегии из upstream, установка службой Windows, тестовый запуск в foreground-режиме с живым выводом, поиск, бейджи desync-методов, импорт своих `.bat`, удаление импортированных |
-| Настройки | Game Filter, режим IPSet, флаг автопроверки обновлений, автозапуск, трей, старт свёрнутым, активные `.bin`-фейки Discord/Game, разделы Обновления (версия данных, IPSet, стратегии) и Логи (живой поток, фильтр, экспорт) |
-| Диагностика | 17 проверок + инструменты: очистка кэша Discord, удаление конфликтующих сервисов, встроенные тесты стратегий |
+| Стратегии | Все 22 стратегии из upstream, установка службой Windows, тестовый запуск в foreground-режиме с живым выводом, поиск, бейджи desync-методов, импорт своих `.bat`, удаление импортированных + тюнинг поверх стратегии: Game Filter, режим IPSet, активные `.bin`-фейки Discord/Game |
+| Списки | Редактор пользовательских `*-user.txt` (`list-general-user.txt`, `list-exclude-user.txt`, `ipset-exclude-user.txt` + любые новые `*-user.txt`): счётчик записей, добавление, дедупликация, сортировка, лимит 2 МБ |
+| Обновления | Версия zapret-данных, IPSet, стратегии (снапшот ветки), движок `bol-van/zapret` (выбор тега, allowlist бинарей в `bin/`), автообновление приложения (`electron-updater`) |
+| Настройки | Только автозапуск с Windows и поведение трея: иконка в трее, сворачивание при закрытии, старт свёрнутым, пункты меню стратегий/тюнинга/быстрых настроек; флаг автопроверки обновлений — на странице Обновлений |
+| Диагностика | 17 проверок + инструменты: очистка кэша Discord, удаление конфликтующих сервисов, встроенные тесты стратегий (standard/dpi) + встроенная секция Логи (живой поток, фильтр, экспорт; отдельная страница `logs` оставлена как legacy-алиас на диагностику) |
 | Прочее | 28 языков с автоопределением языка ОС и fallback на английский, тёмная/светлая/авто тема, иконка трея с цветом статуса, мастер первого запуска, флаги языков в сайдбаре, выбор языка и темы на странице установщика |
 
 ## 📊 Дашборд
@@ -57,17 +59,20 @@
 * Удаление только импортированных (встроенные защищены от удаления)
 * «Выбрать» сохраняет стратегию в настройки, не трогая сервис; бейджи `активна` (установлена службой) vs `выбрана` (ожидает); расхождение показывает панель «Применить / Отменить выбор», применение спрашивает подтверждение и останавливает активный тест
 
-## ⚙️ Настройки
+## ⚙️ Настройки и тюнинг
 
-| Параметр | Значения / поведение |
-|---|---|
-| Game Filter (`utils/game_filter.enabled`) | `disabled` / `all` (TCP+UDP) / `tcp` / `udp` — порты `1024-65535` vs `12` |
-| IPSet (`lists/ipset-all.txt`) | `none` (`203.0.113.113/32`) / `loaded` (restore из `.backup`) / `any` (пустой файл) |
-| Автопроверка обновлений | Флаг-файл `utils/check_updates.enabled` |
-| Автозапуск с Windows | `app.setLoginItemSettings({ openAtLogin })` |
-| Трей | Сворачивать в трей при закрытии + старт свёрнутым в трей |
-| Фейки (`.bin`) | Списки из `bin/*.bin` (без `ACTIVE_*`), замена `ACTIVE_DISCORD_UDP.bin` / `ACTIVE_GAME_UDP.bin` копией выбранного фейка |
-| Язык / Тема | Сохраняются в `settings.json`, применяются мгновенно (трей обновляется по таймеру ~15с) |
+> Game Filter, IPSet и `.bin`-фейки живут на странице **Стратегии** (блок тюнинга поверх
+> установленной стратегии), а не в Настройках. Страница **Настройки** — только автозапуск и трей.
+
+| Параметр | Где | Значения / поведение |
+|---|---|---|
+| Game Filter (`utils/game_filter.enabled`) | Стратегии | `disabled` / `all` (TCP+UDP) / `tcp` / `udp` — порты `1024-65535` vs `12` |
+| IPSet (`lists/ipset-all.txt`) | Стратегии | `none` (`203.0.113.113/32`) / `loaded` (restore из `.backup`) / `any` (пустой файл) |
+| Фейки (`.bin`) | Стратегии | Списки из `bin/*.bin` (без `ACTIVE_*`), замена `ACTIVE_DISCORD_UDP.bin` / `ACTIVE_GAME_UDP.bin` копией выбранного фейка |
+| Автопроверка обновлений | Обновления | Флаг-файл `utils/check_updates.enabled` |
+| Автозапуск с Windows | Настройки | `app.setLoginItemSettings({ openAtLogin })` |
+| Трей | Настройки | `showTrayIcon`, `minimizeToTrayOnClose`, `startMinimizedToTray`, видимость подменю `trayStrategyMenu` / `trayTuningMenu` / `trayQuickSettings` |
+| Язык / Тема | Сайдбар + установщик | Сохраняются в `settings.json`, применяются мгновенно (трей перестраивается сразу через `onSettingsChanged` + по таймеру ~15с) |
 
 ## 🔄 Обновления
 
@@ -75,13 +80,17 @@
 * `updateIPSetList()` — качает `.service/ipset-service.txt` → `lists/ipset-all.txt`, удаляет stale `.backup`, возвращает `{ lines, bytes }`
 * `checkHosts()` / `applyHosts()` — качает `.service/hosts`, сравнивает первую/последнюю строки с системным `hosts`, при применении заменяет zapret-блок или дописывает + бэкап `hosts.zapret-gui.bak`
 * `updateStrategiesFromGithub()`:
-  1. `api.github.com/.../releases/latest` → выбор `.zip`-ассета или `zipball`
+  1. Снапшот исходников ветки `UPSTREAM_BRANCH` через `codeload.github.com/.../zip/refs/heads/<branch>` (не release-ассеты) + `branchHeadApi` для SHA
   2. Скачивание с прогрессом `zapret:on-download-progress` (0–80%)
   3. Бэкап `bin/lists/utils/strategies` → `data/_backup/<timestamp>`
   4. `Expand-Archive` через PowerShell, обход одного top-level каталога
   5. Копирование только изменённых файлов (сравнение по размеру + хешу), `lists/*-user.txt` никогда не затираются
-  6. Регенерация `strategies/*.json` из `*.bat` корня архива (`origin: 'bundled'`)
-* Автообновление приложения: `electron-updater` (`autoDownload: false`, проверка при старте + каждые 6ч, событие `zapret:app-update-available`)
+  6. Регенерация `strategies/*.json` из `*.bat` корня архива (`origin: 'bundled'`, `service.bat` исключён), поверх накатываются Win7-драйверы при необходимости
+* Движок `bol-van/zapret` (`listEngineReleases/checkEngineUpdates/updateEngineToTag`):
+  выбор тега `/^v\d[\w.\-]{0,31}$/` → `zapret-<tag>.zip` → синхронизация только allowlist `ENGINE_BIN_FILES`
+  (`winws.exe`, `WinDivert.dll`, `WinDivert64.sys`, `cygwin1.dll`, `mdig.exe`, `ip2net.exe`, `killall.exe`)
+  + `files/fake/*.bin` (кроме `ACTIVE_*`) в `bin/`, версия в `bin/engine-version.txt`, перед копией `net stop zapret` + `taskkill winws.exe`
+* Автообновление приложения: `electron-updater` (`autoDownload: false`, проверка при старте + каждые 6ч, события `zapret:app-update-available` / `zapret:app-update-downloaded`, нативный диалог «Скачать / Позже» + баннер в UI, установка через `quitAndInstall`)
 
 ## 🩺 Диагностика (17 проверок)
 
@@ -115,7 +124,7 @@
 
 * Источники: `app` / `winws` / `updater` / `diag`, уровни `info` / `warn` / `error`
 * Файл `%APPDATA%\zapret-gui\app.log` + in-memory буфер 2000 строк
-* Страница «Логи»: фильтр по тексту/источнику, моноширинный вывод `HH:MM:SS [source] text`, экспорт через диалог сохранения + автооткрытие папки
+* Секция «Логи» встроена в страницу Диагностики (тип страницы `logs` в сторе — legacy-алиас на `diagnostics`): фильтр по тексту/источнику, моноширинный вывод `HH:MM:SS [source] text`, экспорт в `zapret-gui-logs-YYYY-MM-DD.log` через диалог сохранения + автооткрытие папки
 
 ## 🌍 Локализация (28 языков)
 
@@ -130,18 +139,19 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
 ## 🎨 Тема и трей
 
 * Тёмная/светлая тема через класс `dark` + Tailwind, анимация переключения `.theme-anim` ~350мс
-* Трей: иконка по статусу `running` / `stopped` / `not-installed` / `unknown` (готовые `bundled-assets/tray/tray-*.png` или генерация 16×16 PNG-кружка), тултип `Zapret GUI — <статус>`, меню Старт / Стоп / Открыть / Выйти, дабл-клик/клик — показать окно, автообновление каждые 15с
+* Трей: иконка по статусу `running` / `stopped` / `not-installed` / `unknown` (готовые `bundled-assets/tray/tray-*.png` или генерация 16×16 PNG-кружка), тултип `Zapret GUI — <статус>`, меню Старт / Стоп / Рестарт, подменю стратегий (лимит 8 + активная всегда видна), навигация по 6 страницам, GameFilter / IPSet / автозапуск / трей-тогглы, Открыть / Выйти, дабл-клик/клик — показать окно, автообновление каждые 15с + мгновенно по `onSettingsChanged`, скрытие через `showTrayIcon`, чужая служба (`ownership === 'foreign'`) блокирует управление из трея
 * Модалка «О программе»: версии приложения/данных, ссылки, лицензия GPL-3.0, донат-блок SBER с кнопкой копирования
 
 ## 💾 Раскладка установки (без папки `zapret-discord-youtube-main`!)
 
-* Установщик (NSIS): `%LOCALAPPDATA%\Programs\Zapret GUI\` (+ ярлыки на рабочем столе и в меню «Пуск»), запрашивает повышение прав (`requestedExecutionLevel: requireAdministrator`, `oneClick: false`, цели `nsis` + `zip`)
+* Установщик (NSIS): `%LOCALAPPDATA%\Programs\Zapret GUI\` (+ ярлыки на рабочем столе и в меню «Пуск»), запрашивает повышение прав (`requestedExecutionLevel: requireAdministrator`, `oneClick: false`, цель только `nsis`, `include: build/installer.nsh` с выбором языка/темы через `install-defaults.json`)
 * Рабочие данные (при первом запуске копируются из `resources/bundled-assets` установщика, пользовательские файлы не перезаписываются): `%APPDATA%\zapret-gui\data\{bin,lists,utils,strategies}`
-  * `bin/` — `winws.exe`, `WinDivert64.sys`, `WinDivert.dll`, `cygwin1.dll`, `tls_clienthello_*.bin` / `quic_initial_*.bin` / `stun*.bin` / `ACTIVE_*.bin`
-  * `lists/` — `ipset-all.txt`, `list-general.txt`, `list-google.txt`, `list-exclude.txt`, `ipset-exclude.txt` + создаваемые `*-user.txt` заглушки
+  * `bin/` — `winws.exe`, `WinDivert64.sys`, `WinDivert.dll`, `cygwin1.dll`, `engine-version.txt`, `tls_clienthello_*.bin` / `quic_initial_*.bin` / `stun*.bin` / `ACTIVE_*.bin`
+  * `lists/` — `ipset-all.txt` (+ `.backup`), `list-general.txt`, `list-google.txt`, `list-exclude.txt`, `ipset-exclude.txt` + создаваемые `*-user.txt` заглушки (`list-general-user.txt`, `list-exclude-user.txt`, `ipset-exclude-user.txt`, лимит редактора 2 МБ)
   * `utils/` — `targets.txt`, результаты `test results/`, флаги `check_updates.enabled` / `game_filter.enabled`
   * `strategies/` — 22 × `*.json`
-* Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`)
+  * служебные: `_backup/<timestamp>` (снапшоты перед обновлением), `_tmp/`, `tray-icons/` (сгенерированные PNG)
+* Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `showTrayIcon`, `trayStrategyMenu`, `trayTuningMenu`, `trayQuickSettings`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`)
 * Лог: `%APPDATA%\zapret-gui\app.log`
 * Dev-режим: `bundled-assets` из репозитория, данные в `<repo>/.data`, `userData` изолирован в `zapret-gui-dev` во избежание лока кэша Chromium
 
@@ -177,7 +187,7 @@ npm run preview              # electron-vite preview
 `npm run generate:strategies` автоматически выполняется перед каждой сборкой.
 В CI `bundled-assets/` уже закоммичен, скрипт только идемпотентно пересинхронизирует JSON-конфиги.
 
-Тесты (vitest, 9 файлов): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `paths-win7` (+ `setup.ts`).
+Тесты (vitest, 14 файлов + `setup.ts`): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `paths-win7`, `config-tester`, `installer-update`, `settings-notify`, `status-dot`, `user-lists`.
 
 CI (`.github/workflows/`): `build.yml` + `release.yml`.
 
@@ -185,30 +195,34 @@ CI (`.github/workflows/`): `build.yml` + `release.yml`.
 
 ```
 src/
-  main/         index.ts (окно 1500x875, tray, auto-updater, first-run wizard)
-                tray.ts (цветные иконки, меню Start/Stop/Show/Quit)
+  main/         index.ts (окно 1625x935 min 1080x680, tray, auto-updater, first-run wizard)
+                tray.ts (цветные иконки, меню Start/Stop/Restart/Strategies/Goto/Tuning/QuickSettings)
                 ipc-handlers.ts (все IPC + foreground-тест + экспорт логов)
                 service-manager.ts (sc/net/reg/tasklist, install/remove/start/stop, GameFilter, IPSet, Discord-кэш, конфликты)
-                strategy-parser.ts (парсинг .bat в args, плейсхолдеры <BIN>/<LISTS>/<GAME_TCP>)
-                strategy-updater.ts (version/IPSet/hosts/source-snapshot, .bin-фейки)
+                strategy-parser.ts (парсинг .bat в args, плейсхолдеры <BIN>/<LISTS>/<GAME_TCP>/<GAME_UDP>/<ROOT>)
+                strategy-updater.ts (version/IPSet/hosts/source-snapshot/engine bol-van, .bin-фейки)
                 diagnostics.ts + diagnostics-helpers.ts (17 проверок)
-                settings.ts (settings.json + systemDefaults + autoLaunch)
+                config-tester.ts (нативный тестер standard/dpi, targets.txt, test results/)
+                bypass-check.ts (HTTPS-пробы YouTube/Discord/Cloudflare из main-процесса)
+                user-lists.ts (*-user.txt: list/read/write, лимит 2 МБ)
+                app-updater.ts (electron-updater: check/download/install, диалог + баннер)
+                settings.ts (settings.json + systemDefaults + install-defaults.json + autoLaunch)
                 paths.ts (bundled-assets vs %APPDATA%/zapret-gui/data, Win7-детект + applyWin7Drivers)
                 exec.ts (cmd/powershell, isAdmin, RunAs, spawnLong)
                 logger.ts (файл + буфер 2000 + zapret:on-log)
   preload/      index.ts — типизированный мост window.zapret
-  renderer/     App.tsx + main.tsx + store.ts — zustand (page/locale/theme/status/strategies/logs/busy/error)
+  renderer/     App.tsx + main.tsx + store.ts — zustand (page/locale/theme/status/strategies/logs/busy/error, logs→diagnostics)
                 components/ Layout.tsx (сайдбар, пикер языка с флагами SVG, темы, AboutModal с донатом) + ui.tsx
-                pages/ Dashboard Strategies Settings Updates Diagnostics Logs
+                pages/ Dashboard Strategies Lists Updates Settings Diagnostics (+ Logs как секция диагностики)
                 assets/ app-icon.png
-  shared/       types.ts (ServiceState, Strategy, StatusSnapshot, DiagnosticCheck, UpdateInfo, AppSettings, IPC)
-                constants.ts (SERVICE_NAME=zapret, UPSTREAM_OWNER=Flowseal, URLS, CONFLICTING_SERVICES, FAKE_*.bin)
+  shared/       types.ts (ServiceState, Strategy, StatusSnapshot, DiagnosticCheck, UpdateInfo, EngineVersionInfo, AppSettings, IPC ~53 канала)
+                constants.ts (SERVICE_NAME=zapret, UPSTREAM_OWNER=Flowseal, ENGINE_OWNER=bol-van, URLS, CONFLICTING_SERVICES, FAKE_*.bin)
                 i18n.ts + locales/ (28 словарей)
-bundled-assets/ bin/ bin-win7/ (WinDivert с подписью для Win7) lists/ utils/ strategies/ (22 JSON) bat/ (исходные .bat) service/ (version.txt + hosts) tray/ icon.ico
+bundled-assets/ bin/ (engine-version.txt) bin-win7/ (WinDivert с подписью для Win7) lists/ utils/ strategies/ (22 JSON) bat/ (22 general*.bat + service.bat) service/ (version.txt + engine-version.txt + hosts) tray/ (4 PNG) icon.ico
 scripts/        generate-strategies.mjs + clean.mjs + make-icon.mjs
-tests/          9 x *.test.ts + setup.ts
+tests/          14 x *.test.ts + setup.ts
 .github/workflows/ build.yml release.yml
-electron-builder.yml electron.vite.config.ts tailwind.config.js postcss.config.cjs
+build/ installer.nsh electron-builder.yml electron.vite.config.ts tailwind.config.js postcss.config.cjs
 ```
 
 ## ⚙️ Как работает служба
