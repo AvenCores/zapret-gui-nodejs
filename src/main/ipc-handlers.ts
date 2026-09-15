@@ -80,9 +80,12 @@ let testProc: ChildProcess | null = null
 let configTesterAbort: AbortController | null = null
 
 function sendLog(source: 'app' | 'winws' | 'updater' | 'diag' | 'tg-proxy', level: 'info' | 'warn' | 'error', text: string): void {
-  const line =
-    level === 'error' ? err(source, text) : level === 'warn' ? warn(source, text) : info(source, text)
-  safeSend(IPC.onLog, line)
+  // log() already forwards to the renderer via the global onLog subscription
+  // (armLogForwarding in index.ts) — a direct safeSend here would deliver
+  // every line twice.
+  if (level === 'error') err(source, text)
+  else if (level === 'warn') warn(source, text)
+  else info(source, text)
 }
 
 /** Read strategies from data dir (seeded from bundled assets on first run). */

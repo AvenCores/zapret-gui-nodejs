@@ -39,6 +39,7 @@ import {
   wsDomains
 } from '../src/main/tg-proxy'
 import { getTrayLabels, tgProxyActionsState, tgStatusLabel, trayTooltip } from '../src/main/tray'
+import { TG_PROXY_DC_FALLBACK_IPS } from '../src/shared/constants'
 
 describe('normalizeTgPort', () => {
   it('accepts valid ports', () => {
@@ -557,6 +558,86 @@ describe('FakeTLS', () => {
     await serverSide
     expect(got).toEqual(payload)
   }, 15000)
+})
+
+describe('tg-proxy TCP fallback session lifetime (regression)', () => {
+  it('keeps the fallback session alive until the client disconnects', async () => {
+    // Fake "Telegram" TCP endpoint on :443 (the hardcoded fallback port):
+    // accepts the 64-byte relay init, then just holds the connection open.
+    const upstream = net.createServer()
+    const held: net.Socket[] = []
+    let relayInitSeen: Buffer | null = null
+    upstream.on('connection', (s) => {
+      held.push(s)
+      let acc = Buffer.alloc(0)
+      s.on('data', (d: Buffer) => {
+        acc = Buffer.concat([acc, d])
+        if (acc.length >= 64 && !relayInitSeen) relayInitSeen = acc.subarray(0, 64)
+      })
+      s.on('error', () => undefined)
+    })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        upstream.once('error', reject)
+        upstream.listen(443, '127.0.0.1', () => resolve())
+      })
+    } catch {
+      // Cannot bind :443 here (permissions/busy) — nothing to fall back to.
+      return
+    }
+    // DC203 has no direct target (straight to fallback, like in the wild)
+    // and CF is disabled, so the chain must reach our fake TCP endpoint.
+    const prevFallback203 = TG_PROXY_DC_FALLBACK_IPS[203]
+    TG_PROXY_DC_FALLBACK_IPS[203] = '127.0.0.1'
+    const secret = generateTgSecret()
+    const probe = net.createServer()
+    await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r))
+    const proxyPort = (probe.address() as net.AddressInfo).port
+    await new Promise<void>((r) => probe.close(() => r()))
+    try {
+      const bound = await startTgProxy({ port: proxyPort, secret, cfProxyEnabled: false })
+      const sock = net.connect({ host: '127.0.0.1', port: bound.port })
+      await new Promise<void>((resolve, reject) => {
+        sock.once('connect', () => resolve())
+        sock.once('error', reject)
+      })
+      sock.on('error', () => undefined)
+      // Valid obfuscation init (only the tail is encrypted — see helper above).
+      const { packet } = craftClientHandshake(Buffer.from(secret, 'hex'), 203, Buffer.from([0xee, 0xee, 0xee, 0xee]))
+      sock.write(packet)
+      // The fallback must keep the session alive: before the fix
+      // `handleClient` returned right after spawning the background bridge
+      // and its `finally` destroyed the still-live client socket.
+      let active = 0
+      const start = Date.now()
+      while (Date.now() - start < 4000) {
+        active = getTgProxyStats().connectionsActive
+        if (active >= 1 && relayInitSeen) break
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      expect((relayInitSeen as Buffer | null)?.length).toBe(64)
+      expect(sock.destroyed).toBe(false)
+      expect(active).toBeGreaterThanOrEqual(1)
+      sock.destroy()
+      // …and terminate cleanly afterwards (no hanging pumps).
+      const deadline = Date.now() + 5000
+      while (getTgProxyStats().connectionsActive > 0 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      expect(getTgProxyStats().connectionsActive).toBe(0)
+    } finally {
+      TG_PROXY_DC_FALLBACK_IPS[203] = prevFallback203
+      for (const s of held) {
+        try {
+          s.destroy()
+        } catch {
+          /* ignore */
+        }
+      }
+      await new Promise<void>((r) => upstream.close(() => r()))
+      await stopTgProxy()
+    }
+  }, 30000)
 })
 
 describe('tray tg-proxy helpers', () => {  it('enables Start only when stopped', () => {

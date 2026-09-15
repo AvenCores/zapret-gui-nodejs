@@ -1815,7 +1815,20 @@ async function pumpWsToTcp(client: BridgeSocket, ws: RawWebSocket, ctx: CryptoCt
         return 'client: write failed'
       }
       if (!ok) {
-        await new Promise<void>((resolve) => client.once('drain', () => resolve()))
+        // A destroyed client never emits 'drain' — resolve on close/error
+        // too, otherwise this pump (and its upstream socket) leaks forever.
+        if (client.destroyed) return 'client: closed'
+        await new Promise<void>((resolve) => {
+          const done = (): void => {
+            client.removeListener('drain', done)
+            client.removeListener('close', done)
+            client.removeListener('error', done)
+            resolve()
+          }
+          client.once('drain', done)
+          client.once('close', done)
+          client.once('error', done)
+        })
       }
       if (client.destroyed) return 'client: closed'
     }
@@ -1953,7 +1966,10 @@ async function cfProxyFallback(io: BridgeSocket, relayInit: Buffer, ctx: CryptoC
       if (balancer.updateDomainForDc(dc, base)) info('tg-proxy', `[${label}] Switched active CF domain`)
       counters.cf += 1
       await ws.send(Buffer.from(relayInit))
-      void bridgeWs(io, ws, ctx, splitter, label, dc, isMedia, teardown).catch(() => undefined)
+      // Await the session like upstream (`do_fallback` runs the bridge to
+      // completion): returning early would let `handleClient`'s finally
+      // destroy the still-live client socket, killing every fallback session.
+      await bridgeWs(io, ws, ctx, splitter, label, dc, isMedia, teardown).catch(() => undefined)
       return true
     } catch (e) {
       warn('tg-proxy', `[${label}] DC${dc}${mediaTag} CF proxy failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
@@ -1985,7 +2001,8 @@ async function cfWorkerFallback(
       const ws = await RawWebSocket.connect(workerDomain, workerDomain, CF_CONNECT_TIMEOUT_MS, path, undefined, activeHwm > 0 ? activeHwm : undefined)
       counters.cf += 1
       await ws.send(Buffer.from(relayInit))
-      void bridgeWs(io, ws, ctx, null, label, dc, isMedia, teardown).catch(() => undefined)
+      // Same as CF-proxy above: the bridge must run to completion here.
+      await bridgeWs(io, ws, ctx, null, label, dc, isMedia, teardown).catch(() => undefined)
       return true
     } catch (e) {
       warn('tg-proxy', `[${label}] DC${dc}${mediaTag} CF worker failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
@@ -2001,7 +2018,8 @@ async function tcpFallback(io: BridgeSocket, relayInit: Buffer, ctx: CryptoCtx, 
     const remote = await connectTcp(dst, 443, TCP_FALLBACK_TIMEOUT_MS, activeHwm)
     counters.tcpFallback += 1
     remote.write(Buffer.from(relayInit))
-    void bridgeTcp(io, remote, ctx, teardown).catch(() => undefined)
+    // Same as CF-proxy above: the bridge must run to completion here.
+    await bridgeTcp(io, remote, ctx, teardown).catch(() => undefined)
     return true
   } catch (e) {
     warn('tg-proxy', `[${label}] TCP fallback to ${dst}:443 failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
