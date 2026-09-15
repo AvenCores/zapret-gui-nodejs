@@ -34,6 +34,7 @@ import {
   updateIPSetList,
   checkHosts,
   applyHosts,
+  removeHosts,
   updateStrategiesFromGithub,
   listEngineReleases,
   checkEngineUpdates,
@@ -276,6 +277,27 @@ export function registerIpcHandlers(): void {
     sendLog('app', 'info', 'System Hosts updated (backup: hosts.zapret-gui.bak).')
     return true
   })
+
+  ipcMain.handle(
+    IPC.removeHosts,
+    async (_e, payload?: { firstLine?: string; lastLine?: string; remoteContent?: string }) => {
+      if (!(await isAdmin())) {
+        throw new Error('Administrator rights are required to update the system hosts file. Click "Restart as administrator" and retry.')
+      }
+      const p = (payload ?? {}) as { firstLine?: string; lastLine?: string; remoteContent?: string }
+      const removed = await removeHosts({
+        firstLine: typeof p.firstLine === 'string' ? p.firstLine.slice(0, 1024) : undefined,
+        lastLine: typeof p.lastLine === 'string' ? p.lastLine.slice(0, 1024) : undefined,
+        remoteContent: typeof p.remoteContent === 'string' ? p.remoteContent.slice(0, 1024 * 1024) : undefined
+      })
+      sendLog(
+        'app',
+        'info',
+        removed ? 'Zapret entries removed from system Hosts (backup: hosts.zapret-gui.bak).' : 'No zapret entries found in system Hosts — nothing removed.'
+      )
+      return removed
+    }
+  )
 
   ipcMain.handle(IPC.updateStrategies, async () => {
     const r = await updateStrategiesFromGithub(

@@ -253,6 +253,7 @@ export const IPC = {
   updateIPSet: 'zapret:update-ipset',
   updateHosts: 'zapret:update-hosts',
   applyHosts: 'zapret:apply-hosts',
+  removeHosts: 'zapret:remove-hosts',
   updateStrategies: 'zapret:update-strategies',
   listEngineReleases: 'zapret:list-engine-releases',
   checkEngineUpdates: 'zapret:check-engine-updates',

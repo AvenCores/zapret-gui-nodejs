@@ -161,14 +161,16 @@ function BypassIcon(props: { id: BypassTargetId }): React.JSX.Element {
 /** Full-featured hosts block: check upstream, inspect markers, apply, verify. */
 function HostsBlock(): React.JSX.Element {
   const { t, setError, status, hostsCheck: hosts, hostsCheckedAt: checkedAt, setHostsCheck } = useUi()
-  const [busy, setBusy] = useState<null | 'check' | 'apply'>(null)
+  const [busy, setBusy] = useState<null | 'check' | 'apply' | 'remove'>(null)
   const [applied, setApplied] = useState(false)
+  const [removed, setRemoved] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
   async function check(): Promise<void> {
     if (busy) return
     setBusy('check')
     setApplied(false)
+    setRemoved(false)
     try {
       setHostsCheck(await window.zapret.updateHosts(), new Date().toLocaleString())
     } catch (e) {
@@ -181,6 +183,7 @@ function HostsBlock(): React.JSX.Element {
   async function apply(): Promise<void> {
     if (busy || !hosts) return
     setBusy('apply')
+    setRemoved(false)
     try {
       await window.zapret.applyHosts(hosts.remoteContent)
       // Re-check to verify the install actually landed.
@@ -188,6 +191,33 @@ function HostsBlock(): React.JSX.Element {
       setHostsCheck(re, new Date().toLocaleString())
       setApplied(!re.needsUpdate)
       if (re.needsUpdate) setError(t('updates.hostsDiffers'))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function remove(): Promise<void> {
+    if (busy || !hosts) return
+    if (!window.confirm(t('updates.removeHostsConfirm'))) return
+    setBusy('remove')
+    setApplied(false)
+    setRemoved(false)
+    try {
+      const wasRemoved = await window.zapret.removeHosts({
+        firstLine: hosts.firstLine,
+        lastLine: hosts.lastLine,
+        remoteContent: hosts.remoteContent
+      })
+      // Re-check to verify the entries are actually gone.
+      const re = await window.zapret.updateHosts()
+      setHostsCheck(re, new Date().toLocaleString())
+      if (wasRemoved) {
+        setRemoved(true)
+      } else {
+        setError(t('updates.hostsRemoveNothing'))
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -295,9 +325,17 @@ function HostsBlock(): React.JSX.Element {
             {busy === 'apply' ? <Spinner /> : t('updates.applyHosts')}
           </Btn>
         ) : null}
+        {hosts && (hosts.currentHasFirst || hosts.currentHasLast) ? (
+          <Btn variant="danger" onClick={() => void remove()} disabled={busy !== null || !status?.isAdmin}>
+            {busy === 'remove' ? <Spinner /> : t('updates.removeHosts')}
+          </Btn>
+        ) : null}
       </div>
       {applied && hosts && !hosts.needsUpdate ? (
         <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">✓ {t('updates.hostsApplied')}</p>
+      ) : null}
+      {removed ? (
+        <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">✓ {t('updates.hostsRemoved')}</p>
       ) : null}
     </Card>
   )

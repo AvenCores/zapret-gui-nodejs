@@ -56,6 +56,8 @@ const api = {
   updateIPSet: (): Promise<{ lines: number; bytes: number }> => ipcRenderer.invoke(IPC.updateIPSet),
   updateHosts: (): Promise<HostsCheckResult> => ipcRenderer.invoke(IPC.updateHosts),
   applyHosts: (remoteContent: string): Promise<boolean> => ipcRenderer.invoke(IPC.applyHosts, remoteContent),
+  removeHosts: (payload?: { firstLine?: string; lastLine?: string; remoteContent?: string }): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.removeHosts, payload ?? {}),
   updateStrategies: (): Promise<{ tag: string; filesUpdated: string[]; backupDir: string }> =>
     ipcRenderer.invoke(IPC.updateStrategies),
   listEngineReleases: (limit?: number): Promise<EngineRelease[]> =>

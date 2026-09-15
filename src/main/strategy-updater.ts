@@ -285,6 +285,11 @@ export async function applyHosts(remoteContent: string, opts?: { hostsPath?: str
   } else {
     next = `${current.replace(/\s+$/, '')}\n\n${remoteContent}\n`
   }
+  await writeHostsFile(hostsPath, next)
+}
+
+/** Shared writer for the system hosts file (read-only flag + AV-lock fallback). */
+async function writeHostsFile(hostsPath: string, next: string): Promise<void> {
   const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-hosts-')), 'hosts')
   try {
     fs.writeFileSync(tmp, next, 'utf8')
@@ -324,6 +329,107 @@ export async function applyHosts(remoteContent: string, opts?: { hostsPath?: str
       /* best-effort cleanup */
     }
   }
+}
+
+export interface RemoveHostsOptions {
+  hostsPath?: string
+  firstLine?: string
+  lastLine?: string
+  remoteContent?: string
+}
+
+/**
+ * Remove the zapret block from the system hosts file.
+ * Returns `true` when something was removed, `false` when no zapret
+ * entries were found (file left untouched, no backup created).
+ *
+ * Works offline: the renderer passes `firstLine`/`lastLine`/`remoteContent`
+ * from the last check, so no network fetch is needed. When both markers are
+ * present the whole slice is cut; otherwise any lines matching the known
+ * upstream content are filtered out (handles partial installs and outdated
+ * upstreams).
+ */
+export async function removeHosts(opts?: RemoveHostsOptions): Promise<boolean> {
+  const hostsPath = opts?.hostsPath ?? getSystemHostsPath()
+  let current: string
+  try {
+    current = fs.readFileSync(hostsPath, 'utf8')
+  } catch (e) {
+    throw hostsWriteError('read', hostsPath, e)
+  }
+  let first = (opts?.firstLine ?? '').trim()
+  let last = (opts?.lastLine ?? '').trim()
+  const remote = typeof opts?.remoteContent === 'string' ? opts.remoteContent : ''
+  const remoteLines = remote.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0)
+  if (!first && remoteLines.length > 0) first = remoteLines[0] ?? ''
+  if (!last && remoteLines.length > 0) last = remoteLines[remoteLines.length - 1] ?? ''
+  // Fall back to the bundled upstream copy so removal also works when the
+  // renderer never checked (offline, changed upstream, etc.).
+  let reference = new Set(remoteLines)
+  if (reference.size === 0 || (!first && !last)) {
+    try {
+      const bundled = fs.readFileSync(path.join(getBundledAssetsDir(), 'service', 'hosts'), 'utf8')
+      for (const l of bundled.split(/\r?\n/).map((s) => s.trim()).filter((s) => s.length > 0)) {
+        reference.add(l)
+      }
+      const arr = [...reference]
+      if (!first && arr.length > 0) first = arr[0] ?? ''
+      if (!last && arr.length > 0) last = arr[arr.length - 1] ?? ''
+    } catch {
+      /* bundled copy unavailable — marker-only removal below */
+    }
+  }
+
+  let next = current
+  let removed = false
+
+  if (first && last && current.includes(first) && current.includes(last)) {
+    const start = current.indexOf(first)
+    const end = current.indexOf(last, start) + last.length
+    const lineStart = current.lastIndexOf('\n', start) + 1
+    let lineEnd = current.indexOf('\n', end)
+    lineEnd = lineEnd === -1 ? current.length : lineEnd + 1
+    next = current.slice(0, lineStart) + current.slice(lineEnd)
+    removed = true
+  }
+
+  if (reference.size > 0) {
+    const lines = next.split(/\r?\n/)
+    const kept = lines.filter((l) => !reference.has(l.trim()))
+    if (kept.length !== lines.length) {
+      removed = true
+      next = kept.join('\n')
+    }
+  }
+
+  if (!removed) {
+    // Single-marker partial install with no reference match: drop the marker line itself.
+    const markers = [first, last].filter((m) => m.length > 0)
+    if (markers.length > 0) {
+      const lines = next.split(/\r?\n/)
+      const kept = lines.filter((l) => !markers.some((m) => l.includes(m)))
+      if (kept.length !== lines.length) {
+        removed = true
+        next = kept.join('\n')
+      }
+    }
+  }
+
+  if (!removed) return false
+
+  // Collapse the gap left by the removed block, keep a trailing newline.
+  next = next.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+\n/g, '\n')
+  if (next.length > 0 && !next.endsWith('\n')) next += '\n'
+
+  // Keep the very first backup forever (same policy as applyHosts).
+  const backupPath = `${hostsPath}.zapret-gui.bak`
+  try {
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(hostsPath, backupPath)
+  } catch (e) {
+    throw hostsWriteError('back up', hostsPath, e)
+  }
+  await writeHostsFile(hostsPath, next)
+  return true
 }
 
 /**
