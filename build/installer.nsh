@@ -12,7 +12,9 @@
  *    page IS shown, `ZguiOptionsCreate` replaces the sentinels with the
  *    visible defaults (system language + auto theme).
  * 3. Service handling for updates (`customCheckAppRunning` + `customInstall`):
- *    the `zapret` service runs winws.exe from %APPDATA%\zapret-gui\data
+ *    the running GUI itself is terminated first via `taskkill /F` (its
+ *    window only minimizes to tray, so the stock "close the app" prompt
+ *    could never release the exe lock), then the `zapret` service runs winws.exe from %APPDATA%\zapret-gui\data
  *    (never from $INSTDIR), so strictly it cannot lock installer files —
  *    but it is still stopped right before the old version is removed and
  *    the new files are copied, then started again, so an update from the
@@ -64,6 +66,15 @@ Var pid
 ; fails with "unknown variable IsPowerShellAvailable" (warning 6000 is
 ; treated as an error by electron-builder).
 !macro customCheckAppRunning
+  ; Zapret GUI minimizes to tray on window close instead of quitting, so the
+  ; stock "please close the app" dialog can never release the exe lock —
+  ; terminate the GUI outright (hidden, best-effort: a non-zero exit just
+  ; means "not running"). Runs first so the default check below passes
+  ; silently on update.
+  nsExec::ExecToStack `"$SYSDIR\taskkill.exe" /F /IM "${APP_EXECUTABLE_FILENAME}"`
+  Pop $0
+  Pop $1
+
   !insertmacro IS_POWERSHELL_AVAILABLE
   !insertmacro _CHECK_APP_RUNNING
 
