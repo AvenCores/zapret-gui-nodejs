@@ -107,8 +107,8 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
                 alt="Zapret GUI logo"
                 className="h-9 w-9 rounded-xl bg-slate-900 p-0.5 dark:bg-transparent dark:p-0"
               />
-              <span className="absolute -bottom-0.5 -right-0.5 rounded-full ring-2 ring-white dark:ring-slate-800">
-                <Dot tone={dotTone} pulse={running} />
+              <span className="absolute -bottom-0.5 -right-0.5">
+                <Dot tone={dotTone} pulse={running} outline />
               </span>
             </button>
             <button
@@ -140,8 +140,8 @@ export default function Layout(props: { children: React.ReactNode }): React.JSX.
                   alt="Zapret GUI logo"
                   className="h-9 w-9 rounded-xl bg-slate-900 p-0.5 dark:bg-transparent dark:p-0"
                 />
-                <span className="absolute -bottom-0.5 -right-0.5 rounded-full ring-2 ring-white dark:ring-slate-800">
-                  <Dot tone={dotTone} pulse={running} />
+                <span className="absolute -bottom-0.5 -right-0.5">
+                  <Dot tone={dotTone} pulse={running} outline />
                 </span>
               </span>
               <span className="min-w-0">

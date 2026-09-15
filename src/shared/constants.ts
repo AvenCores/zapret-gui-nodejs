@@ -58,6 +58,20 @@ export const URLS = {
   dzen: 'https://dzen.ru/avencores'
 } as const
 
+/**
+ * Status dot colors — single source of truth shared by the tray badge
+ * (`scripts/make-icon.mjs` → `bundled-assets/tray/tray-*.png`) and the
+ * in-app `Dot` (`src/renderer/components/ui.tsx`). Both render these exact
+ * hexes so the indicator looks identical in the tray and on the app logo.
+ * Keep the three places in sync when changing a value.
+ */
+export const STATUS_DOT_COLORS = {
+  running: '#22c55e',
+  stopped: '#ef4444',
+  pending: '#f59e0b',
+  idle: '#9ca3af'
+} as const
+
 export const GAME_FILTER_FLAG = 'game_filter.enabled'
 export const CHECK_UPDATES_FLAG = 'check_updates.enabled'
 export const BYPASS_CHECK_TIMEOUT_MS = 10000

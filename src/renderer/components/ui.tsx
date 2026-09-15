@@ -1,5 +1,6 @@
 /** Tiny presentational primitives (no external component library). */
 import React from 'react'
+import { STATUS_DOT_COLORS } from '../../shared/constants'
 
 export function Card(props: { title?: string; children: React.ReactNode; className?: string; onClose?: () => void; closeLabel?: string }): React.JSX.Element {
   return (
@@ -43,13 +44,34 @@ export function Badge(props: { tone: Tone; children: React.ReactNode }): React.J
   )
 }
 
-export function Dot(props: { tone: Tone; pulse?: boolean }): React.JSX.Element {
-  const bg = props.tone === 'green' ? 'bg-emerald-400' : props.tone === 'red' ? 'bg-red-400' : props.tone === 'yellow' ? 'bg-amber-400' : props.tone === 'blue' ? 'bg-sky-400' : 'bg-slate-400'
-  if (!props.pulse) return <span className={`inline-block h-2.5 w-2.5 rounded-full ${bg}`} />
+/**
+ * Status dot. Renders the exact {@link STATUS_DOT_COLORS} hexes (inline
+ * style, not Tailwind 400-shades) so the in-app indicator matches the tray
+ * badge pixel-for-pixel. `blue` has no tray counterpart (info only).
+ */
+const dotColor: Record<Tone, string> = {
+  green: STATUS_DOT_COLORS.running,
+  red: STATUS_DOT_COLORS.stopped,
+  yellow: STATUS_DOT_COLORS.pending,
+  gray: STATUS_DOT_COLORS.idle,
+  blue: '#38bdf8'
+}
+
+export function Dot(props: { tone: Tone; pulse?: boolean; outline?: boolean }): React.JSX.Element {
+  const bg = dotColor[props.tone]
+  // `outline` mirrors the tray badge (filled dot + contrasting stroke):
+  // a single element, so no transparent gap can read as a dark blob at
+  // small scale. Dark stroke matches the tray badge stroke (#0f172a).
+  const ring = props.outline ? ' ring-2 ring-white dark:ring-slate-950' : ''
+  if (!props.pulse)
+    return <span className={`inline-block h-2.5 w-2.5 rounded-full${ring}`} style={{ backgroundColor: bg }} />
   return (
     <span className="relative flex h-2.5 w-2.5">
-      <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${bg}`} />
-      <span className={`relative inline-block h-2.5 w-2.5 rounded-full ${bg}`} />
+      <span
+        className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60"
+        style={{ backgroundColor: bg }}
+      />
+      <span className={`relative inline-block h-2.5 w-2.5 rounded-full${ring}`} style={{ backgroundColor: bg }} />
     </span>
   )
 }

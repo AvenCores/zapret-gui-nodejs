@@ -43,12 +43,16 @@ try {
   console.log(`wrote ${dest} (${ico.length} bytes, ${SIZES.length} sizes)`)
 
   // Tray icons: app art with a status-colored badge (bottom-right dot).
+  // Hexes must match STATUS_DOT_COLORS in src/shared/constants.ts (used by
+  // the in-app Dot) so tray and app indicators look identical.
   const TRAY_SIZE = 32
   const STATUS_COLORS = {
-    running: '#22c55e',
-    stopped: '#ef4444',
-    'not-installed': '#9ca3af',
-    unknown: '#9ca3af'
+    running: '#22c55e', // STATUS_DOT_COLORS.running
+    stopped: '#ef4444', // STATUS_DOT_COLORS.stopped
+    // Not installed shares the red badge: bypass is down, same as stopped
+    // (the in-app dot is red too — tray must not show gray here).
+    'not-installed': '#ef4444', // STATUS_DOT_COLORS.stopped
+    unknown: '#9ca3af' // STATUS_DOT_COLORS.idle
   }
   const trayDir = path.join(root, 'bundled-assets', 'tray')
   fs.mkdirSync(trayDir, { recursive: true })

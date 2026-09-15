@@ -17,6 +17,7 @@ import type {
   ZapretStatus
 } from '../shared/types'
 import { translate, type I18nKey, type Locale } from '../shared/i18n'
+import { STATUS_DOT_COLORS } from '../shared/constants'
 
 let tray: Tray | null = null
 
@@ -38,7 +39,14 @@ function iconPath(status: ZapretStatus): string {
   const file = path.join(dir, `tray-${status}.png`)
   if (!fs.existsSync(file)) {
     // 16x16 PNG with a single status-colored circle, generated once.
-    const color = status === 'running' ? '#22c55e' : status === 'stopped' ? '#ef4444' : '#9ca3af'
+    // `not-installed` shares the red badge with `stopped` (bypass is down
+    // in both cases) so the tray never disagrees with the in-app red dot.
+    const color =
+      status === 'running'
+        ? STATUS_DOT_COLORS.running
+        : status === 'stopped' || status === 'not-installed'
+          ? STATUS_DOT_COLORS.stopped
+          : STATUS_DOT_COLORS.idle
     const png = renderCirclePng(color)
     fs.writeFileSync(file, png)
   }
