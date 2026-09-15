@@ -4,7 +4,7 @@ import { useUi } from '../store'
 import { Badge, Btn, Card, ProgressBar, Spinner } from '../components/ui'
 import LogsSection from './Logs'
 import { formatDetail } from '../../shared/i18n'
-import type { DiagnosticCheck } from '../../shared/types'
+import type { DiagnosticCheck, Strategy } from '../../shared/types'
 
 function tone(level: DiagnosticCheck['level']): 'green' | 'yellow' | 'red' {
   return level === 'ok' ? 'green' : level === 'warn' ? 'yellow' : 'red'
@@ -188,6 +188,9 @@ function ConfigTesterCard(): React.JSX.Element {
     () => strategies.filter((s) => s.name.toLowerCase().includes(query.toLowerCase())),
     [strategies, query]
   )
+  // Same split as the Strategies page: bundled (flowseal) vs user-imported.
+  const bundled = useMemo(() => filtered.filter((s) => s.origin !== 'imported'), [filtered])
+  const imported = useMemo(() => filtered.filter((s) => s.origin === 'imported'), [filtered])
   // Default: all selected once strategies load.
   const sel: Set<string> = selected ?? new Set(strategies.map((s) => s.id))
 
@@ -243,6 +246,71 @@ function ConfigTesterCard(): React.JSX.Element {
   const serviceConflict = status?.zapret !== 'NOT_INSTALLED'
   const canRun = isAdmin && !serviceConflict && !running && sel.size > 0
   const percent = progress && progress.total > 0 ? (progress.completed / progress.total) * 100 : 0
+
+  function renderTestRow(s: Strategy): React.JSX.Element {
+    const checked = sel.has(s.id)
+    const { base, tag } = splitStrategyName(s.name)
+    return (
+      <label
+        key={s.id}
+        title={s.name}
+        className={[
+          'group flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-[7px] text-left text-[13px] leading-tight outline-none transition-all duration-100',
+          running ? 'cursor-not-allowed opacity-60' : '',
+          checked
+            ? 'border-sky-500/30 bg-sky-500/10 shadow-sm shadow-sky-500/10 dark:border-sky-400/25 dark:bg-sky-400/10'
+            : 'border-transparent hover:border-slate-200 hover:bg-white dark:hover:border-slate-700/60 dark:hover:bg-slate-800/70'
+        ].join(' ')}
+      >
+        <input type="checkbox" checked={checked} disabled={running} onChange={() => toggle(s.id)} className="sr-only" />
+        <span
+          className={[
+            'flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md border transition-all duration-100',
+            checked
+              ? 'border-sky-600 bg-sky-600 text-white shadow-sm shadow-sky-600/30 dark:border-sky-500 dark:bg-sky-500'
+              : 'border-slate-300 bg-white text-transparent group-hover:border-sky-500/60 dark:border-slate-600 dark:bg-slate-800'
+          ].join(' ')}
+        >
+          <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current stroke-[2.5]" aria-hidden="true">
+            <path d="M3 8.5 6.5 12 13 4.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+        <span className="min-w-0 flex-1 truncate">
+          <span className="font-medium text-slate-700 dark:text-slate-200">{base}</span>
+          {tag ? (
+            <span className="ml-1.5 inline-block rounded-md border border-sky-500/25 bg-sky-500/10 px-1.5 py-px align-middle font-mono text-[10.5px] font-semibold tracking-wide text-sky-700 dark:border-sky-400/25 dark:text-sky-300">
+              {tag}
+            </span>
+          ) : null}
+        </span>
+        <span
+          className={[
+            'h-1.5 w-1.5 shrink-0 rounded-full transition-colors',
+            checked ? 'bg-sky-500 dark:bg-sky-400' : 'bg-slate-300/60 group-hover:bg-slate-400/70 dark:bg-slate-600/60'
+          ].join(' ')}
+        />
+      </label>
+    )
+  }
+
+  function renderTestGroup(label: string, items: Strategy[], icon: React.JSX.Element): React.JSX.Element | null {
+    if (items.length === 0) return null
+    return (
+      <div key={label}>
+        <div className="sticky top-0 z-10 -mx-1.5 flex items-center gap-2 bg-slate-50 px-3 pb-1.5 pt-2.5 dark:bg-slate-900">
+          <span className="text-slate-400 dark:text-slate-500">{icon}</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            {label}
+          </span>
+          <span className="rounded-full bg-slate-200/80 px-1.5 py-px text-[10px] font-semibold tabular-nums text-slate-600 dark:bg-slate-700/80 dark:text-slate-300">
+            {items.length}
+          </span>
+          <span className="h-px flex-1 bg-slate-200/70 dark:bg-slate-700/50" />
+        </div>
+        <div className="space-y-0.5 pb-1">{items.map(renderTestRow)}</div>
+      </div>
+    )
+  }
 
   return (
     <Card title={t('diag.configTests')}>
@@ -317,52 +385,23 @@ function ConfigTesterCard(): React.JSX.Element {
           </button>
         ) : null}
       </div>
-      <div className="strategy-scroll mb-3 max-h-[380px] space-y-0.5 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/60 p-1.5 dark:border-slate-700/60 dark:bg-slate-900/40">
-        {filtered.map((s) => {
-          const checked = sel.has(s.id)
-          const { base, tag } = splitStrategyName(s.name)
-          return (
-            <label
-              key={s.id}
-              title={s.name}
-              className={[
-                'group flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-[7px] text-left text-[13px] leading-tight outline-none transition-all duration-100',
-                running ? 'cursor-not-allowed opacity-60' : '',
-                checked
-                  ? 'border-sky-500/30 bg-sky-500/10 shadow-sm shadow-sky-500/10 dark:border-sky-400/25 dark:bg-sky-400/10'
-                  : 'border-transparent hover:border-slate-200 hover:bg-white dark:hover:border-slate-700/60 dark:hover:bg-slate-800/70'
-              ].join(' ')}
-            >
-              <input type="checkbox" checked={checked} disabled={running} onChange={() => toggle(s.id)} className="sr-only" />
-              <span
-                className={[
-                  'flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md border transition-all duration-100',
-                  checked
-                    ? 'border-sky-600 bg-sky-600 text-white shadow-sm shadow-sky-600/30 dark:border-sky-500 dark:bg-sky-500'
-                    : 'border-slate-300 bg-white text-transparent group-hover:border-sky-500/60 dark:border-slate-600 dark:bg-slate-800'
-                ].join(' ')}
-              >
-                <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current stroke-[2.5]" aria-hidden="true">
-                  <path d="M3 8.5 6.5 12 13 4.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-              <span className="min-w-0 flex-1 truncate">
-                <span className="font-medium text-slate-700 dark:text-slate-200">{base}</span>
-                {tag ? (
-                  <span className="ml-1.5 inline-block rounded-md border border-sky-500/25 bg-sky-500/10 px-1.5 py-px align-middle font-mono text-[10.5px] font-semibold tracking-wide text-sky-700 dark:border-sky-400/25 dark:text-sky-300">
-                    {tag}
-                  </span>
-                ) : null}
-              </span>
-              <span
-                className={[
-                  'h-1.5 w-1.5 shrink-0 rounded-full transition-colors',
-                  checked ? 'bg-sky-500 dark:bg-sky-400' : 'bg-slate-300/60 group-hover:bg-slate-400/70 dark:bg-slate-600/60'
-                ].join(' ')}
-              />
-            </label>
-          )
-        })}
+      <div className="mb-3 overflow-hidden rounded-xl border border-slate-200/80 bg-slate-50 dark:border-slate-700/60 dark:bg-slate-900">
+        <div className="strategy-scroll max-h-[380px] overflow-y-auto px-1.5 pb-1.5">
+        {renderTestGroup(
+          t('strategies.bundled'),
+          bundled,
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current stroke-1.5" aria-hidden="true">
+            <path d="M2 5.5 8 2l6 3.5v5L8 14l-6-3.5v-5Z" strokeLinejoin="round" />
+            <path d="M2 5.5 8 9l6-3.5M8 9v5" strokeLinejoin="round" />
+          </svg>
+        )}
+        {renderTestGroup(
+          t('strategies.imported'),
+          imported,
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current stroke-1.5" aria-hidden="true">
+            <path d="M8 2v8m0 0L5 7m3 3 3-3M2.5 12.5h11" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/70 dark:bg-slate-700/50">
@@ -374,6 +413,7 @@ function ConfigTesterCard(): React.JSX.Element {
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('logs.empty')}</p>
           </div>
         ) : null}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
