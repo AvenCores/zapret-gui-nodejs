@@ -35,7 +35,7 @@ jobs:
         # electron-builder downloads Electron + NSIS/winCodeSign tooling from
         # GitHub releases on every cold run; a warm cache turns a transient
         # 504 from that download step into a non-issue.
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -62,7 +62,7 @@ jobs:
       - name: Build installer
         # Retried: the packaging step downloads external toolchain bits and
         # occasionally hits transient HTTP 5xx from the mirror.
-        uses: nick-fields/retry@v4
+        uses: nick-fields/retry@v3
         with:
           timeout_minutes: 25
           max_attempts: 3
@@ -85,61 +85,3 @@ jobs:
         run: npm run build:win:publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node.js 24
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Cache Electron toolchain
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cache/electron
-            ~/.cache/electron-builder
-          key: electron-tools-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            electron-tools-${{ runner.os }}-
-
-      - name: Verify + test
-        run: |
-          npm run generate:strategies
-          test -f bundled-assets/icon.png || (echo 'bundled-assets/icon.png missing (npm run icon)' && exit 1)
-          npm test
-          npm run lint
-
-      - name: Install rpm tooling
-        # electron-builder shells out to `rpmbuild` for the rpm target,
-        # which is not preinstalled on ubuntu-latest runners.
-        run: sudo apt-get update && sudo apt-get install -y rpm
-
-      - name: Build Linux packages
-        uses: nick-fields/retry@v4
-        with:
-          timeout_minutes: 25
-          max_attempts: 3
-          retry_on: error
-          command: npm run build:linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: zapret-gui-linux
-          path: |
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.rpm
-            dist/latest-linux.yml
-          if-no-files-found: error

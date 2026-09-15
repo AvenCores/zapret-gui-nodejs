@@ -20,7 +20,6 @@ import crypto from 'node:crypto'
 import os from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Strategy, ConfigTestMode, ConfigTesterAnalyticsRow, ConfigTesterEvent, ServiceState } from '../shared/types'
-import type { BatchStep } from './linux/elevate'
 import { run, runCmd, runPowershell, isAdmin } from './exec'
 import { queryServiceState, isProcessRunning, resolveGameFilterPorts } from './service-manager'
 import { materializeArgsForSpawn } from './strategy-parser'
@@ -300,21 +299,9 @@ export function headProbe(urlStr: string, timeoutMs: number, variant: TlsVariant
   })
 }
 
-/** ICMP ping. Windows: `ping.exe -n 1 -w`; Linux: `ping -c 1 -W 1`. */
+/** ICMP ping via system `ping.exe`. Returns e.g. `12 ms` or `Timeout`. */
 export async function pingOnce(host: string, timeoutMs = 1000): Promise<{ text: string; ok: boolean }> {
   const safe = String(host).replace(/[^A-Za-z0-9.:_-]/g, '').slice(0, 253) || '127.0.0.1'
-  if (process.platform === 'linux') {
-    const secs = Math.max(1, Math.ceil(timeoutMs / 1000))
-    const r = await run('ping', ['-c', '1', '-W', String(secs), safe], { timeoutMs: timeoutMs + 3000 })
-    const out = `${r.stdout}\n${r.stderr}`
-    const m = out.match(/time=\s*([\d.]+)\s*ms/i)
-    if (r.code === 0 && m) {
-      const ms = Number(m[1])
-      return { text: ms < 1 ? '<1 ms' : `${Math.round(ms)} ms`, ok: true }
-    }
-    if (r.code === 0 && /1 received|1 packets received/i.test(out)) return { text: '<1 ms', ok: true }
-    return { text: 'Timeout', ok: false }
-  }
   const r = await run('ping.exe', ['-n', '1', '-w', String(timeoutMs), safe], { timeoutMs: timeoutMs + 3000 })
   const out = `${r.stdout}\n${r.stderr}`
   const m = out.match(/time[=<]\s*(\d+)\s*ms/i) ?? out.match(/время[=<]\s*(\d+)\s*мс/i)
@@ -500,11 +487,7 @@ interface WinwsSnapshotEntry {
 }
 
 async function getWinwsSnapshot(): Promise<WinwsSnapshotEntry[]> {
-  if (process.platform === 'linux') {
-    // Linux tester requires a stopped service (precheck below), so there is
-    // nothing to snapshot/restore — keep it a no-op (no sudo pgrep needed).
-    return []
-  }  try {
+  try {
     const r = await runPowershell(
       `(Get-CimInstance Win32_Process -Filter "Name='winws.exe'" -ErrorAction SilentlyContinue | Select-Object ProcessId,CommandLine,ExecutablePath | ConvertTo-Json -Compress -ErrorAction SilentlyContinue)`,
       10000
@@ -531,7 +514,6 @@ async function getWinwsSnapshot(): Promise<WinwsSnapshotEntry[]> {
 }
 
 async function restoreWinwsSnapshot(snapshot: WinwsSnapshotEntry[], emit: (e: ConfigTesterEvent) => void): Promise<void> {
-  if (process.platform === 'linux') return
   if (snapshot.length === 0) return
   emit({ kind: 'log', level: 'info', text: 'Restoring previously running winws instances...' })
   let current = ''
@@ -548,51 +530,6 @@ async function restoreWinwsSnapshot(snapshot: WinwsSnapshotEntry[], emit: (e: Co
     } catch {
       /* best-effort */
     }
-  }
-}
-
-/**
- * Build foreground `nfqws` argv for the config tester (Linux): parse the
- * strategy's `--wf-*`/filter blocks with the current game-filter ports and
- * materialize paths. Falls back to a best-effort arg mapping when the
- * strategy has no `--wf-*` ports (older/custom strategies).
- */
-async function buildLinuxTesterArgs(
-  s: Strategy,
-  opts: { binDir: string; listsDir: string; gameTcp: string; gameUdp: string }
-): Promise<string[]> {
-  const { parseStrategyArgsForLinux, buildNfqwsArgv } = await import('./linux/strategy-linux')
-  try {
-    const parsed = parseStrategyArgsForLinux(s.args, {
-      useGameFilterTcp: opts.gameTcp === '1024-65535',
-      useGameFilterUdp: opts.gameUdp === '1024-65535',
-      binDir: opts.binDir,
-      listsDir: opts.listsDir
-    })
-    return buildNfqwsArgv(parsed, { binDir: opts.binDir, listsDir: opts.listsDir, daemon: false })
-  } catch {
-    // Fallback: reuse the Windows arg mapping, swap the binary-specific
-    // bits (drop --wf-*, add fwmark/qnum) so custom strategies still run.
-    const mapped = materializeArgsForSpawn(s.args, opts)
-      .filter((a) => !/^--wf-(tcp|udp)=/i.test(a))
-      .map((a) => a.replace(/"/g, ''))
-    // Same owner-uid pin as buildNfqwsArgv: without it nfqws drops to
-    // UID 2147483647 (or stays a cap-stripped root) and cannot read lists
-    // under ~/.config.
-    const hasUserPin = mapped.some((a) => /^--(user|uid)(=|$)/.test(a))
-    let runUid = '0:0'
-    try {
-      const { resolveDataOwnerUid } = await import('./linux/config')
-      runUid = resolveDataOwnerUid(path.dirname(opts.binDir))
-    } catch {
-      /* last-resort pin stands */
-    }
-    return [
-      '--dpi-desync-fwmark=0x40000000',
-      '--qnum=220',
-      ...(hasUserPin ? [] : [`--uid=${runUid}`]),
-      ...mapped
-    ]
   }
 }
 
@@ -622,31 +559,13 @@ function splitArgs(cmdline: string): string[] {
 
 let activeChild: ChildProcess | null = null
 
-/** Kill the tracked child only (no privilege needed — own wrapper process). */
-function killActiveChild(): void {
+async function killWinws(): Promise<void> {
   try {
     activeChild?.kill()
   } catch {
     /* ignore */
   }
   activeChild = null
-}
-
-async function killWinws(): Promise<void> {
-  killActiveChild()
-  if (process.platform === 'linux') {
-    await run('pkill', ['-x', 'nfqws'], { timeoutMs: 8000 }).catch(() => ({ stdout: '', stderr: '', code: 1 }))
-    try {
-      // Single batched pkill (one prompt at most, silent with NOPASSWD).
-      const { runBatch } = await import('./linux/elevate')
-      await runBatch([{ kind: 'exec', file: 'pkill', args: ['-x', 'nfqws'], ignoreFailure: true }], {
-        timeoutMs: 15000
-      }).catch(() => undefined)
-    } catch {
-      /* best-effort */
-    }
-    return
-  }
   await runCmd('taskkill /IM winws.exe /F >nul 2>&1', 8000)
 }
 
@@ -675,21 +594,12 @@ async function waitWinwsReady(
       const sig = state.exit?.signal ?? child.signalCode
       const tail = getErrTail().trim().slice(-500)
       const tailPart = tail ? ` — ${tail}` : ''
-      const engine = process.platform === 'linux' ? 'nfqws' : 'winws'
-      return { ok: false, detail: `${engine} exited immediately (code=${code ?? '?'}, signal=${sig ?? '?'})${tailPart}` }
+      return { ok: false, detail: `winws exited immediately (code=${code ?? '?'}, signal=${sig ?? '?'})${tailPart}` }
     }
     const elapsed = Date.now() - start
     if (elapsed >= 1200) {
       try {
-        if (process.platform === 'linux') {
-          const running = await run('pgrep', ['-x', 'nfqws'], { timeoutMs: 5000 }).then(
-            (r) => r.code === 0 && r.stdout.trim().length > 0
-          ).catch(() => false)
-          if (running) {
-            await new Promise((r) => setTimeout(r, 300))
-            return { ok: true }
-          }
-        } else if (await isProcessRunning(WINWS_EXE)) {
+        if (await isProcessRunning(WINWS_EXE)) {
           await new Promise((r) => setTimeout(r, 300))
           return { ok: true }
         }
@@ -703,8 +613,7 @@ async function waitWinwsReady(
     await new Promise((r) => setTimeout(r, 250))
   }
   const tail = getErrTail().trim().slice(-500)
-  const engine = process.platform === 'linux' ? 'nfqws' : 'winws'
-  return { ok: false, detail: tail ? `${engine} not detected within timeout — ${tail}` : `${engine} process not found within timeout` }
+  return { ok: false, detail: tail ? `winws not detected within timeout — ${tail}` : 'winws process not found within timeout' }
 }
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>, signal: AbortSignal): Promise<R[]> {
@@ -737,7 +646,6 @@ async function queryWindivertState(svc: string): Promise<ServiceState> {
 
 /** Snapshot WinDivert presence before tests (best-effort, never throws). */
 export async function snapshotWindivert(): Promise<WindivertSnapshot> {
-  if (process.platform === 'linux') return {}
   const snap: WindivertSnapshot = {}
   for (const svc of WINDIVERT_SERVICES) {
     snap[svc] = await queryWindivertState(svc)
@@ -771,7 +679,6 @@ export async function restoreWindivert(
   before: WindivertSnapshot,
   emit: (e: ConfigTesterEvent) => void
 ): Promise<void> {
-  if (process.platform === 'linux') return
   for (const svc of WINDIVERT_SERVICES) {
     const prev = before[svc] ?? 'UNKNOWN'
     const after = await queryWindivertState(svc)
@@ -823,42 +730,12 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
   const maxParallel = opts.maxParallel ?? Math.min(16, Math.max(8, (osCpuCount() * 2) | 0))
 
   if (strategies.length === 0) throw new Error('No strategies selected for testing')
-  if (!(await isAdmin())) {
-    throw new Error(
-      process.platform === 'linux'
-        ? 'Cannot elevate privileges for tests (nfqws + firewall): install sudo/doas or polkit (pkexec), or run Strategies → "Set up passwordless operation" first'
-        : 'Administrator rights are required to run tests'
-    )
-  }
-  const isLinux = process.platform === 'linux'
-  if (isLinux) {
-    const { getLinuxStatus } = await import('./linux/service')
-    // getLinuxStatus needs the data dir; binDir/listsDir live under it.
-    const dataDirGuess = path.dirname(binDir)
-    try {
-      const { snapshot } = await getLinuxStatus(dataDirGuess)
-      if (snapshot.zapret === 'RUNNING' || snapshot.winwsRunning) {
-        throw new Error("zapret service is running — remove/stop it before running tests")
-      }
-    } catch (e) {
-      if (e instanceof Error && /remove\/stop/.test(e.message)) throw e
-      /* status check is best-effort */
-    }
-  } else if ((await queryServiceState('zapret')) !== 'NOT_INSTALLED') {
+  if (!(await isAdmin())) throw new Error('Administrator rights are required to run tests')
+  if ((await queryServiceState('zapret')) !== 'NOT_INSTALLED') {
     throw new Error("Windows service 'zapret' is installed — remove the service before running tests")
   }
-  const exe = isLinux ? path.join(binDir, 'nfqws') : path.join(binDir, WINWS_EXE)
-  if (!fs.existsSync(exe)) {
-    throw new Error(isLinux ? `nfqws not found in ${binDir} — download Linux deps first` : `winws.exe not found in ${binDir}`)
-  }
-  if (isLinux) {
-    // Fail fast: unloadable binary would only die per strategy.
-    const { checkNfqwsLaunchable } = await import('./linux/service')
-    const deps = await checkNfqwsLaunchable(exe)
-    if (!deps.ok) {
-      throw new Error(`nfqws cannot start — ${deps.list}. ${deps.hint}`)
-    }
-  }
+  const exe = path.join(binDir, WINWS_EXE)
+  if (!fs.existsSync(exe)) throw new Error(`winws.exe not found in ${binDir}`)
 
   healLeftoverFlag(dataDir, listsDir)
 
@@ -922,66 +799,14 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
     }
 
     let completed = 0
-    // Linux firewall backend for the whole run (resolved once; conf.env may
-    // be absent when the service was never installed → auto).
-    let linuxBackend: 'nftables' | 'iptables' | null = null
-    let linuxIface = 'any'
-    if (isLinux) {
-      const { detectFirewallBackend } = await import('./linux/firewall')
-      const { loadLinuxConf } = await import('./linux/config')
-      const conf = loadLinuxConf(dataDir)
-      linuxIface = conf?.interface ?? 'any'
-      linuxBackend = await detectFirewallBackend(conf?.firewall_backend ?? 'auto')
-      emit({ kind: 'log', level: 'info', text: `Firewall backend: ${linuxBackend} (iface ${linuxIface})` })
-    }
     for (let idx = 0; idx < strategies.length; idx++) {
       if (signal.aborted) break
       const s = strategies[idx] as Strategy
       emit({ kind: 'config-start', index: idx + 1, total: strategies.length, configName: s.name, mode })
       emit({ kind: 'progress', completed, total: strategies.length, current: s.name })
-      if (!isLinux) await killWinws()
+      await killWinws()
 
-      const args = isLinux
-        ? await buildLinuxTesterArgs(s, { binDir, listsDir, gameTcp: tcp, gameUdp: udp })
-        : materializeArgsForSpawn(s.args, { binDir, listsDir, gameTcp: tcp, gameUdp: udp })
-      if (isLinux) {
-        // Fail fast per strategy: missing list/fake files would only die
-        // inside the daemon with a confusing log.
-        const { extractNfqwsFileRefs, missingFiles } = await import('./linux/service')
-        const missingRefs = missingFiles(extractNfqwsFileRefs(args))
-        if (missingRefs.length > 0) {
-          emit({ kind: 'log', level: 'error', text: `Strategy references missing files, skipping ${s.name}: ${missingRefs.join(', ').slice(0, 200)}` })
-          continue
-        }
-      }
-      if (isLinux && linuxBackend) {
-        // One batch (single prompt at most): drop the previous strategy's
-        // daemon, clear stale rules, set up this strategy's rules.
-        try {
-          const { buildFirewallClearSteps, buildFirewallSetupSteps } = await import('./linux/firewall')
-          const { parseStrategyArgsForLinux } = await import('./linux/strategy-linux')
-          const { runBatch } = await import('./linux/elevate')
-          const parsed = parseStrategyArgsForLinux(s.args, {
-            useGameFilterTcp: tcp === '1024-65535',
-            useGameFilterUdp: udp === '1024-65535',
-            binDir,
-            listsDir
-          })
-          killActiveChild()
-          const preSteps: BatchStep[] = [
-            { kind: 'exec', file: 'pkill', args: ['-x', 'nfqws'], ignoreFailure: true },
-            ...buildFirewallClearSteps(linuxBackend),
-            ...buildFirewallSetupSteps(linuxBackend, { tcp: parsed.tcpPorts, udp: parsed.udpPorts, interface: linuxIface })
-          ]
-          const pre = await runBatch(preSteps, { timeoutMs: 120000 })
-          if (pre.code !== 0) {
-            throw new Error(`firewall batch failed${pre.failedStep !== null ? ` (step ${pre.failedStep + 1}/${preSteps.length})` : ''}: ${(pre.stdout + pre.stderr).trim().slice(0, 200)}`)
-          }
-        } catch (e) {
-          emit({ kind: 'log', level: 'error', text: `Firewall setup failed for ${s.name}: ${(e as Error).message.slice(0, 200)}. Skipping...` })
-          continue
-        }
-      }
+      const args = materializeArgsForSpawn(s.args, { binDir, listsDir, gameTcp: tcp, gameUdp: udp })
       let child: ChildProcess | null = null
       let errTail = ''
       const getErrTail = (): string => errTail
@@ -989,14 +814,7 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
         // Pipe (not ignore) stderr: if winws dies on startup (driver load,
         // bad args) the tail explains WHY instead of a generic "not found".
         // Streams are drained so a chatty winws can never block on a full pipe.
-        // On Linux nfqws needs root: elevate per call (passwordless sudo when
-        // configured, else one pkexec prompt) while the app stays as the user.
-        if (isLinux) {
-          const { spawnElevated } = await import('./linux/elevate')
-          child = await spawnElevated(exe, args, { cwd: binDir, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
-        } else {
-          child = spawn(exe, args, { cwd: binDir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
-        }
+        child = spawn(exe, args, { cwd: binDir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
         activeChild = child
         child.stdout?.resume()
         child.stderr?.on('data', (d: Buffer) => {
@@ -1073,23 +891,7 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
         }
       }
 
-      killActiveChild()
-      if (isLinux && linuxBackend) {
-        // Single batched cleanup (one prompt at most) per strategy.
-        try {
-          const { buildFirewallClearSteps } = await import('./linux/firewall')
-          const { runBatch } = await import('./linux/elevate')
-          const postSteps: BatchStep[] = [
-            { kind: 'exec', file: 'pkill', args: ['-x', 'nfqws'], ignoreFailure: true },
-            ...buildFirewallClearSteps(linuxBackend)
-          ]
-          await runBatch(postSteps, { timeoutMs: 60000 }).catch(() => undefined)
-        } catch {
-          /* ignore */
-        }
-      } else {
-        await killWinws()
-      }
+      await killWinws()
       completed++
       emit({ kind: 'config-done', index: idx + 1, total: strategies.length, configName: s.name })
       emit({ kind: 'progress', completed, total: strategies.length, current: s.name })
@@ -1102,22 +904,7 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
     emit({ kind: 'done', cancelled, best, filePath, rows })
     return { best, filePath, rows }
   } finally {
-    killActiveChild()
-    if (isLinux) {
-      try {
-        const { buildFirewallClearSteps, listAvailableBackends } = await import('./linux/firewall')
-        const { runBatch } = await import('./linux/elevate')
-        const finalSteps: BatchStep[] = [{ kind: 'exec', file: 'pkill', args: ['-x', 'nfqws'], ignoreFailure: true }]
-        for (const b of await listAvailableBackends().catch(() => [] as Array<'nftables' | 'iptables'>)) {
-          finalSteps.push(...buildFirewallClearSteps(b))
-        }
-        await runBatch(finalSteps, { timeoutMs: 60000 }).catch(() => undefined)
-      } catch {
-        /* ignore */
-      }
-    } else {
-      await killWinws()
-    }
+    await killWinws()
     await restoreWindivert(windivertBefore, emit).catch(() => undefined)
     await restoreWinwsSnapshot(snapshot, emit).catch(() => undefined)
     if (ipsetSwitched) {

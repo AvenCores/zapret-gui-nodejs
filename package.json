@@ -11,8 +11,6 @@
     "build": "npm run generate:strategies && electron-vite build",
     "build:win": "npm run build && electron-builder --win nsis --publish never",
     "build:win:publish": "npm run build && electron-builder --win nsis --publish always",
-    "build:linux": "npm run generate:strategies && npm run icon && electron-vite build && electron-builder --linux --publish never",
-    "build:linux:dir": "npm run generate:strategies && electron-vite build && electron-builder --linux dir --publish never",
     "clean": "node scripts/clean.mjs",
     "rebuild": "npm run clean && npm run build:win",
     "preview": "electron-vite preview",
@@ -21,7 +19,6 @@
     "test:watch": "vitest",
     "lint": "tsc --noEmit -p tsconfig.json && echo OK",
     "generate:strategies": "node scripts/generate-strategies.mjs",
-    "deps:engine-bins": "node scripts/download-engine-bins.mjs",
     "icon": "node scripts/make-icon.mjs",
     "postinstall": "electron-builder install-app-deps"
   },

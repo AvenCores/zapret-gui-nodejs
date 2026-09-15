@@ -1,4 +1,2 @@
 # Auto detect text files and perform LF normalization
 * text=auto
-# Linux engine binaries: never touch (ELF, keep exec bit via `git update-index --chmod=+x`)
-bundled-assets/bin-linux/** binary

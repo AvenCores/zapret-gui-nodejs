@@ -15,8 +15,6 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SRC = path.join(root, 'zapret-discord-youtube-main')
-const LINUX_EXAMPLE = path.join(root, 'zapret-discord-youtube-linux-master')
-const LINUX_CUSTOM = path.join(LINUX_EXAMPLE, 'custom-strategies')
 const BUNDLED = path.join(root, 'bundled-assets')
 
 const KNOWN_METHODS = [
@@ -152,62 +150,23 @@ if (fs.existsSync(SRC)) {
   for (const f of fs.readdirSync(SRC)) {
     if (f.toLowerCase().endsWith('.bat')) fs.copyFileSync(path.join(SRC, f), path.join(BUNDLED, 'bat', f))
   }
-  // Linux example custom strategies (tested with nfqws, e.g. general_nix1):
-  // copy them into the .bat pool so they ship as GUI strategies too.
-  if (fs.existsSync(LINUX_CUSTOM)) {
-    for (const f of fs.readdirSync(LINUX_CUSTOM)) {
-      if (!f.toLowerCase().endsWith('.bat')) continue
-      const dest = path.join(BUNDLED, 'bat', f)
-      if (!fs.existsSync(dest)) {
-        fs.copyFileSync(path.join(LINUX_CUSTOM, f), dest)
-        console.log(`  + linux custom strategy: ${f}`)
-      }
-    }
-  }
 } else {
   console.log('No upstream checkout found — using committed bundled-assets/.')
 }
 
 // 2. (Re)generate strategies/*.json from .bat sources.
-// Without an upstream checkout the pool is `bundled-assets/bat/`; the Linux
-// example's custom strategies are merged in when present.
-if (fs.existsSync(LINUX_CUSTOM)) {
-  fs.mkdirSync(path.join(BUNDLED, 'bat'), { recursive: true })
-  for (const f of fs.readdirSync(LINUX_CUSTOM)) {
-    if (!f.toLowerCase().endsWith('.bat')) continue
-    const dest = path.join(BUNDLED, 'bat', f)
-    if (!fs.existsSync(dest)) {
-      fs.copyFileSync(path.join(LINUX_CUSTOM, f), dest)
-      console.log(`  + linux custom strategy: ${f}`)
-    }
-  }
-}
 const batDir = fs.existsSync(SRC) ? SRC : path.join(BUNDLED, 'bat')
 const stratDir = path.join(BUNDLED, 'strategies')
 fs.mkdirSync(stratDir, { recursive: true })
-let bats = fs.existsSync(batDir)
+const bats = fs.existsSync(batDir)
   ? fs.readdirSync(batDir).filter((f) => f.toLowerCase().endsWith('.bat') && !/^service/i.test(f))
   : []
-// Merge Linux custom strategies into the pool (read from their own dir).
-let linuxBatDir = null
-if (fs.existsSync(SRC) && fs.existsSync(LINUX_CUSTOM)) {
-  linuxBatDir = LINUX_CUSTOM
-  for (const f of fs.readdirSync(LINUX_CUSTOM)) {
-    if (f.toLowerCase().endsWith('.bat') && !bats.includes(f)) bats.push(f)
-  }
-}
-function readBatSource(bat) {
-  if (linuxBatDir && fs.existsSync(path.join(linuxBatDir, bat)) && !fs.existsSync(path.join(batDir, bat))) {
-    return fs.readFileSync(path.join(linuxBatDir, bat), 'utf8')
-  }
-  return fs.readFileSync(path.join(batDir, bat), 'utf8')
-}
 if (bats.length === 0) {
   console.log('No .bat sources found — keeping existing strategies/*.json.')
 } else {
   let n = 0
   for (const bat of bats) {
-    const content = readBatSource(bat)
+    const content = fs.readFileSync(path.join(batDir, bat), 'utf8')
     const id = bat.replace(/\.bat$/i, '')
     const { args, warnings } = extractArgs(content)
     const methods = detectMethods(args)

@@ -1,7 +1,6 @@
 /**
- * Regenerate app art from the committed source (`build/app-icon.png`):
+ * Regenerate Windows art from the committed source (`build/app-icon.png`):
  * - `bundled-assets/icon.ico` (multi-size, exe/installer/window icon)
- * - `bundled-assets/icon.png` (512x512, Linux window + electron-builder icon)
  * - `bundled-assets/tray/tray-<status>.png` (app art + status dot for the tray,
  *   pre-rendered so the runtime needs no image dependencies)
  *
@@ -42,14 +41,6 @@ try {
   const ico = await pngToIco(files)
   fs.writeFileSync(dest, ico)
   console.log(`wrote ${dest} (${ico.length} bytes, ${SIZES.length} sizes)`)
-
-  // Linux icon: 512x512 PNG for the window icon + electron-builder.
-  const iconPng = path.join(root, 'bundled-assets', 'icon.png')
-  await sharp(src)
-    .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toFile(iconPng)
-  console.log(`wrote ${iconPng}`)
 
   // Tray icons: app art with a status-colored badge (bottom-right dot).
   const TRAY_SIZE = 32

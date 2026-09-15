@@ -18,17 +18,6 @@ win:
   requestedExecutionLevel: requireAdministrator
   # Apply icon + metadata via rcedit, but skip code signing (no certificate).
   signExecutable: false
-linux:
-  icon: bundled-assets/icon.png
-  category: Network
-  target:
-    - AppImage
-    - deb
-    - rpm
-  maintainer: avencores
-  description: Desktop GUI for zapret DPI bypass (Discord / YouTube) — nfqws + nftables/iptables
-# `sudo`/`pkexec` prompts happen at runtime (per-action elevation like the
-# Windows UAC flow); the package itself must NOT force root on launch.
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

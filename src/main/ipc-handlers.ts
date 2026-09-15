@@ -53,28 +53,6 @@ import type { ConfigTestMode } from '../shared/types'
 let testProc: ChildProcess | null = null
 let configTesterAbort: AbortController | null = null
 
-/**
- * Only one mutating service operation at a time (install/remove/start/stop/
- * permissions/test). A second concurrent call would stack a second `pkexec`
- * prompt on top of the first — polkit agents drop/replace the earlier
- * dialog, which looks like "the password prompt vanishes after a few
- * seconds". Reject immediately with a clear message instead.
- * (Longer-lived safety net: `runBatch` additionally serializes batches.)
- */
-let serviceOpBusy = false
-
-async function guardServiceOp<T>(fn: () => Promise<T>): Promise<T> {
-  if (serviceOpBusy) {
-    throw new Error('Another service operation is already in progress — wait for its password prompt to finish')
-  }
-  serviceOpBusy = true
-  try {
-    return await fn()
-  } finally {
-    serviceOpBusy = false
-  }
-}
-
 function win(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null
 }
@@ -94,20 +72,6 @@ function sendLog(source: 'app' | 'winws' | 'updater' | 'diag', level: 'info' | '
   const line =
     level === 'error' ? err(source, text) : level === 'warn' ? warn(source, text) : info(source, text)
   safeSend(IPC.onLog, line)
-}
-
-/**
- * Game-filter flags seeded from the flag file, for a fresh partial conf.env
- * (preferences picked before the first strategy Apply). Keeps the Strategies
- * page game-filter card and conf.env in sync regardless of which setting the
- * user touches first.
- */
-function gameFilterFlags(dataDir: string): { gamefiltertcp: boolean; gamefilterudp: boolean } {
-  const mode = getGameFilterMode(dataDir)
-  return {
-    gamefiltertcp: mode === 'all' || mode === 'tcp',
-    gamefilterudp: mode === 'all' || mode === 'udp'
-  }
 }
 
 /** Read strategies from data dir (seeded from bundled assets on first run). */
@@ -142,43 +106,34 @@ function findStrategy(id: string): Strategy | null {
 
 export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.getStatus, async () => getStatus(await isAdmin()))
-  ipcMain.handle(IPC.getPlatform, async () => process.platform)
 
   ipcMain.handle(IPC.listStrategies, async () => listStrategies())
 
   ipcMain.handle(IPC.installStrategy, async (_e, strategyId: string) => {
-    return guardServiceOp(async () => {
-      const s = findStrategy(strategyId)
-      if (!s) throw new Error(`Strategy not found: ${strategyId}`)
-      sendLog('app', 'info', `Installing strategy "${s.name}"...`)
-      await installStrategy(s, getDataDir(), (t) => sendLog('app', 'info', t))
-      saveSettings({ activeStrategyId: s.id })
-      return true
-    })
+    const s = findStrategy(strategyId)
+    if (!s) throw new Error(`Strategy not found: ${strategyId}`)
+    sendLog('app', 'info', `Installing strategy "${s.name}"...`)
+    await installStrategy(s, getDataDir(), (t) => sendLog('app', 'info', t))
+    saveSettings({ activeStrategyId: s.id })
+    return true
   })
 
   ipcMain.handle(IPC.removeServices, async () => {
-    return guardServiceOp(async () => {
-      sendLog('app', 'info', 'Removing services...')
-      await removeServices((t) => sendLog('app', 'info', t))
-      return true
-    })
+    sendLog('app', 'info', 'Removing services...')
+    await removeServices((t) => sendLog('app', 'info', t))
+    return true
   })
 
   ipcMain.handle(IPC.startService, async () => {
-    return guardServiceOp(async () => {
-      await startService((t) => sendLog('app', 'info', t))
-      sendLog('app', 'info', 'Service started.')
-      return true
-    })
+    await startService()
+    sendLog('app', 'info', 'Service started.')
+    return true
   })
 
   ipcMain.handle(IPC.stopService, async () => {
-    return guardServiceOp(async () => {
-      await stopService()
-      sendLog('app', 'info', 'Service stopped.')
-      return true
-    })
+    await stopService()
+    sendLog('app', 'info', 'Service stopped.')
+    return true
   })
 
   ipcMain.handle(IPC.importStrategy, async () => {
@@ -216,106 +171,48 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.testStrategy, async (_e, strategyId: string) => {
-    // Guarded too: test start prompts once (merged setup+spawn batch).
-    return guardServiceOp(async () => {
-      stopTestInternal()
-      const s = findStrategy(strategyId)
-      if (!s) throw new Error(`Strategy not found: ${strategyId}`)
-      if (process.platform === 'linux') {
-        const { testLinuxStrategy } = await import('./linux/service')
-        const proc = await testLinuxStrategy(
-          s,
-          getDataDir(),
-          (t) => sendLog('winws', 'info', t),
-          (stream, text) => safeSend(IPC.onTestOutput, { stream, text })
-        )
-        testProc = proc as unknown as ChildProcess
-        proc.on('error', (e: Error) => {
-          sendLog('winws', 'error', `Test process failed to start: ${String(e).slice(0, 300)}`)
-          if (testProc === (proc as unknown as ChildProcess)) testProc = null
-          safeSend(IPC.onTestOutput, { stream: 'exit', text: '1' })
-        })
-        proc.on('exit', (code: number | null) => {
-          sendLog('winws', 'info', `Test process exited with code ${code}`)
-          if (testProc === (proc as unknown as ChildProcess)) testProc = null
-          safeSend(IPC.onTestOutput, { stream: 'exit', text: String(code ?? '') })
-        })
-        return true
-      }
-      const { tcp, udp } = resolveGameFilterPorts(getDataDir())
-      // Direct spawn (no shell): strip the .bat-era quotes, otherwise winws
-      // receives literal `"` inside argv and fails to open list/bin files.
-      const args = materializeArgsForSpawn(s.args, { binDir: getBinDir(), listsDir: getListsDir(), gameTcp: tcp, gameUdp: udp })
-      const exe = path.join(getBinDir(), WINWS_EXE)
-      if (!fs.existsSync(exe)) throw new Error(`winws.exe not found in ${getBinDir()}`)
-      sendLog('winws', 'info', `Starting foreground test: winws.exe ${args.map(quoteArg).join(' ')}`)
-      const proc = spawnLong(exe, args, getBinDir())
-      testProc = proc
-      proc.stdout?.on('data', (d: Buffer) => safeSend(IPC.onTestOutput, { stream: 'stdout', text: String(d) }))
-      proc.stderr?.on('data', (d: Buffer) => safeSend(IPC.onTestOutput, { stream: 'stderr', text: String(d) }))
-      proc.on('error', (e) => {
-        // ENOENT (missing winws.exe / AV quarantine) otherwise throws an
-        // unhandled 'error' event and crashes the main process.
-        sendLog('winws', 'error', `Test process failed to start: ${String(e).slice(0, 300)}`)
-        if (testProc === proc) testProc = null
-        safeSend(IPC.onTestOutput, { stream: 'exit', text: '1' })
-      })
-      proc.on('exit', (code) => {
-        sendLog('winws', 'info', `Test process exited with code ${code}`)
-        // Only clear our own reference: a newer test may already be running
-        // (stopTestInternal kills without waiting for 'exit').
-        if (testProc === proc) testProc = null
-        safeSend(IPC.onTestOutput, { stream: 'exit', text: String(code ?? '') })
-      })
-      return true
+    stopTestInternal()
+    const s = findStrategy(strategyId)
+    if (!s) throw new Error(`Strategy not found: ${strategyId}`)
+    const { tcp, udp } = resolveGameFilterPorts(getDataDir())
+    // Direct spawn (no shell): strip the .bat-era quotes, otherwise winws
+    // receives literal `"` inside argv and fails to open list/bin files.
+    const args = materializeArgsForSpawn(s.args, { binDir: getBinDir(), listsDir: getListsDir(), gameTcp: tcp, gameUdp: udp })
+    const exe = path.join(getBinDir(), WINWS_EXE)
+    if (!fs.existsSync(exe)) throw new Error(`winws.exe not found in ${getBinDir()}`)
+    sendLog('winws', 'info', `Starting foreground test: winws.exe ${args.map(quoteArg).join(' ')}`)
+    const proc = spawnLong(exe, args, getBinDir())
+    testProc = proc
+    proc.stdout?.on('data', (d: Buffer) => safeSend(IPC.onTestOutput, { stream: 'stdout', text: String(d) }))
+    proc.stderr?.on('data', (d: Buffer) => safeSend(IPC.onTestOutput, { stream: 'stderr', text: String(d) }))
+    proc.on('error', (e) => {
+      // ENOENT (missing winws.exe / AV quarantine) otherwise throws an
+      // unhandled 'error' event and crashes the main process.
+      sendLog('winws', 'error', `Test process failed to start: ${String(e).slice(0, 300)}`)
+      if (testProc === proc) testProc = null
+      safeSend(IPC.onTestOutput, { stream: 'exit', text: '1' })
     })
+    proc.on('exit', (code) => {
+      sendLog('winws', 'info', `Test process exited with code ${code}`)
+      // Only clear our own reference: a newer test may already be running
+      // (stopTestInternal kills without waiting for 'exit').
+      if (testProc === proc) testProc = null
+      safeSend(IPC.onTestOutput, { stream: 'exit', text: String(code ?? '') })
+    })
+    return true
   })
 
   ipcMain.handle(IPC.stopTest, async () => {
-    if (process.platform === 'linux') {
-      const { stopLinuxTest } = await import('./linux/service')
-      stopLinuxTest()
-      testProc = null
-      return true
-    }
     stopTestInternal()
     return true
   })
 
-  ipcMain.handle(IPC.getGameFilter, async () => {
-    const mode = getGameFilterMode(getDataDir())
-    if (process.platform === 'linux') {
-      // conf.env is authoritative for the service; adopt it when present so
-      // the Strategies page never shows a stale flag-file value.
-      const { loadLinuxConf } = await import('./linux/config')
-      const conf = loadLinuxConf(getDataDir())
-      if (conf) {
-        if (conf.gamefiltertcp && conf.gamefilterudp) return 'all' as const
-        if (conf.gamefiltertcp) return 'tcp' as const
-        if (conf.gamefilterudp) return 'udp' as const
-        return 'disabled' as const
-      }
-    }
-    return mode
-  })
+  ipcMain.handle(IPC.getGameFilter, async () => getGameFilterMode(getDataDir()))
   ipcMain.handle(IPC.setGameFilter, async (_e, mode: GameFilterMode) => {
     if (mode !== 'disabled' && mode !== 'all' && mode !== 'tcp' && mode !== 'udp') {
       throw new Error(`Invalid game filter mode: ${String(mode).slice(0, 50)}`)
     }
     setGameFilterMode(getDataDir(), mode)
-    if (process.platform === 'linux') {
-      // Keep conf.env in sync (the Linux service reads gamefiltertcp/udp
-      // from there, not from the flag file).
-      const { loadLinuxConf, saveLinuxConf } = await import('./linux/config')
-      const prev = loadLinuxConf(getDataDir())
-      if (prev) {
-        saveLinuxConf(getDataDir(), {
-          ...prev,
-          gamefiltertcp: mode === 'all' || mode === 'tcp',
-          gamefilterudp: mode === 'all' || mode === 'udp'
-        })
-      }
-    }
     sendLog('app', 'info', `Game filter → ${mode}. Restart zapret to apply.`)
     return true
   })
@@ -357,20 +254,12 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.updateHosts, async () => checkHosts())
   ipcMain.handle(IPC.applyHosts, async (_e, remoteContent: string) => {
-    return guardServiceOp(async () => {
-      if (!(await isAdmin())) {
-        throw new Error(
-          process.platform === 'linux'
-            ? 'No privilege escalation tool found (install sudo/doas or polkit/pkexec) — cannot update /etc/hosts.'
-            : 'Administrator rights are required to update the system hosts file. Click "Restart as administrator" and retry.'
-        )
-      }
-      // On Linux the write itself elevates (single batched prompt at most)
-      // while the app keeps running as the user (see strategy-updater).
-      await applyHosts(remoteContent)
-      sendLog('app', 'info', 'System Hosts updated (backup: hosts.zapret-gui.bak).')
-      return true
-    })
+    if (!(await isAdmin())) {
+      throw new Error('Administrator rights are required to update the system hosts file. Click "Restart as administrator" and retry.')
+    }
+    await applyHosts(remoteContent)
+    sendLog('app', 'info', 'System Hosts updated (backup: hosts.zapret-gui.bak).')
+    return true
   })
 
   ipcMain.handle(IPC.updateStrategies, async () => {
@@ -394,20 +283,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.checkBypass, async (_e, id: BypassTargetId) => checkBypassTarget(id))
 
   ipcMain.handle(IPC.clearDiscordCache, async () => {
-    if (process.platform === 'linux') {
-      const { clearDiscordCacheLinux } = await import('./discord-cache-linux')
-      return clearDiscordCacheLinux((t) => sendLog('app', 'info', t), loadSettings().locale)
-    }
     const lines = await clearDiscordCache(process.env.APPDATA ?? '', (t) => sendLog('app', 'info', t), loadSettings().locale)
     return lines
   })
 
   ipcMain.handle(IPC.removeConflicts, async () => {
-    if (process.platform === 'linux') {
-      // No GoodbyeDPI-style services on Linux; report none (keeps UI working).
-      sendLog('app', 'info', 'No conflicting services on Linux.')
-      return []
-    }    const removed = await removeConflictingServices((t) => sendLog('app', 'info', t), loadSettings().locale)
+    const removed = await removeConflictingServices((t) => sendLog('app', 'info', t), loadSettings().locale)
     return removed
   })
 
@@ -503,111 +384,6 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.getSettings, async () => loadSettings())
   ipcMain.handle(IPC.saveSettings, async (_e, patch: Partial<AppSettings>) => saveSettings(patch))
 
-  // ---- Linux: interfaces / firewall / init / permissions / deps ----
-  ipcMain.handle(IPC.listInterfaces, async () => {
-    if (process.platform !== 'linux') return []
-    const { listNetworkInterfaces } = await import('./linux/service')
-    return listNetworkInterfaces()
-  })
-
-  ipcMain.handle(IPC.setInterface, async (_e, iface: string) => {
-    if (process.platform !== 'linux') throw new Error('Network interface is Linux-only')
-    const name = String(iface ?? '').slice(0, 32)
-    if (!/^[A-Za-z0-9._-]+$/.test(name) && name !== 'any') throw new Error(`Invalid interface: ${name.slice(0, 32)}`)
-    const { loadLinuxConf, saveLinuxConf } = await import('./linux/config')
-    // No strategy required: preferences can be picked before the first Apply
-    // (partial conf with an empty strategy). The first Apply picks them up.
-    const prev = loadLinuxConf(getDataDir()) ?? {
-      interface: 'any',
-      ...gameFilterFlags(getDataDir()),
-      strategy: '',
-      firewall_backend: 'auto' as const
-    }
-    saveLinuxConf(getDataDir(), { ...prev, interface: name })
-    sendLog('app', 'info', `Network interface → ${name}. ${prev.strategy ? 'Restart zapret to apply.' : 'Will apply on first strategy Apply.'}`)
-    return name
-  })
-
-  ipcMain.handle(IPC.getFirewallBackend, async () => {
-    if (process.platform !== 'linux') return 'auto'
-    const { loadLinuxConf } = await import('./linux/config')
-    return loadLinuxConf(getDataDir())?.firewall_backend ?? 'auto'
-  })
-
-  ipcMain.handle(IPC.setFirewallBackend, async (_e, backend: string) => {
-    if (process.platform !== 'linux') throw new Error('Firewall backend is Linux-only')
-    if (backend !== 'auto' && backend !== 'nftables' && backend !== 'iptables') {
-      throw new Error(`Invalid firewall backend: ${String(backend).slice(0, 30)}`)
-    }
-    const { loadLinuxConf, saveLinuxConf } = await import('./linux/config')
-    // No strategy required: preferences can be picked before the first Apply
-    // (partial conf with an empty strategy). The first Apply picks them up.
-    const prev = loadLinuxConf(getDataDir()) ?? {
-      interface: 'any',
-      ...gameFilterFlags(getDataDir()),
-      strategy: '',
-      firewall_backend: 'auto' as const
-    }
-    saveLinuxConf(getDataDir(), { ...prev, firewall_backend: backend as 'auto' | 'nftables' | 'iptables' })
-    sendLog('app', 'info', `Firewall backend → ${backend}. ${prev.strategy ? 'Restart zapret to apply.' : 'Will apply on first strategy Apply.'}`)
-    return backend
-  })
-
-  ipcMain.handle(IPC.listFirewallBackends, async () => {
-    if (process.platform !== 'linux') return []
-    const { listAvailableBackends } = await import('./linux/firewall')
-    return listAvailableBackends()
-  })
-
-  ipcMain.handle(IPC.getInitSystem, async () => {
-    if (process.platform !== 'linux') return 'unknown'
-    const { detectInitSystem } = await import('./linux/init-system')
-    return detectInitSystem()
-  })
-
-  ipcMain.handle(IPC.getPermissionsStatus, async () => {
-    if (process.platform !== 'linux') throw new Error('Permissions setup is Linux-only')
-    const { getLinuxPermissionsStatus } = await import('./linux/service')
-    return getLinuxPermissionsStatus(getDataDir())
-  })
-
-  ipcMain.handle(IPC.setupPermissions, async () => {
-    return guardServiceOp(async () => {
-      if (process.platform !== 'linux') throw new Error('Permissions setup is Linux-only')
-      const { setupLinuxPermissions } = await import('./linux/service')
-      sendLog('app', 'info', 'Configuring passwordless sudo/doas (NOPASSWD)...')
-      await setupLinuxPermissions(getDataDir(), (t) => sendLog('app', 'info', t))
-      return true
-    })
-  })
-
-  ipcMain.handle(IPC.downloadEngineDeps, async (_e, version?: string) => {
-    const { LINUX_ZAPRET_RECOMMENDED_VERSION } = await import('./linux/constants')
-    const want = String(version ?? LINUX_ZAPRET_RECOMMENDED_VERSION).slice(0, 64) || LINUX_ZAPRET_RECOMMENDED_VERSION
-    const binDir = getBinDir()
-    if (process.platform === 'linux') {
-      const { downloadNfqws, currentPlatformDir } = await import('./linux/download')
-      sendLog('updater', 'info', `Downloading nfqws ${want} ...`)
-      const nfqwsPath = await downloadNfqws(want, binDir, {
-        onLog: (t) => sendLog('updater', 'info', t),
-        onProgress: (p) => safeSend(IPC.onDownloadProgress, { percent: p.percent, transferred: 0, total: null })
-      })
-      return { enginePath: nfqwsPath, engineVersion: want, platformDir: currentPlatformDir() }
-    }
-    const { downloadWinws, currentWindowsPlatformDir } = await import('./win-engine')
-    sendLog('updater', 'info', `Downloading winws.exe ${want} ...`)
-    const enginePath = await downloadWinws(want, binDir, {
-      onLog: (t) => sendLog('updater', 'info', t),
-      onProgress: (p) => safeSend(IPC.onDownloadProgress, { percent: p.percent, transferred: 0, total: null })
-    })
-    return { enginePath, engineVersion: want, platformDir: currentWindowsPlatformDir() }
-  })
-
-  ipcMain.handle(IPC.listZapretVersions, async () => {
-    const { listZapretVersions } = await import('./linux/download')
-    return listZapretVersions()
-  })
-
   ipcMain.handle(IPC.listUserLists, async () => listUserLists(getListsDir()))
   ipcMain.handle(IPC.readUserList, async (_e, name: string) => readUserList(getListsDir(), name))
   ipcMain.handle(IPC.saveUserList, async (_e, name: string, content: string) => {
@@ -617,8 +393,6 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.relaunchAsAdmin, async () => {
-    // On Linux this throws by design (the app never relaunches as a whole
-    // under root); on Windows it restarts elevated via UAC.
     const exe = process.execPath
     const ok = await relaunchAppAsAdmin(exe, process.argv.slice(1))
     if (ok && app.isPackaged) {
@@ -656,10 +430,6 @@ export function registerIpcHandlers(): void {
 }
 
 function stopTestInternal(): void {
-  if (process.platform === 'linux') {
-    // Elevated nfqws tests need pkill + firewall cleanup, not just child.kill().
-    void import('./linux/service').then(({ stopLinuxTest }) => stopLinuxTest()).catch(() => undefined)
-  }
   if (testProc && !testProc.killed) {
     try {
       testProc.kill()

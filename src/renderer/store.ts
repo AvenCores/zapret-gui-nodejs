@@ -63,8 +63,6 @@ interface UiState {
   t: (key: I18nKey) => string
   settings: AppSettings | null
   status: StatusSnapshot | null
-  /** Runtime platform (`win32` / `linux`), null until loaded. */
-  platform: string | null
   strategies: Strategy[]
   logs: LogLine[]
   busy: Record<string, boolean>
@@ -73,7 +71,6 @@ interface UiState {
   setError: (e: string | null) => void
   init: () => Promise<void>
   refreshStatus: () => Promise<void>
-  refreshPlatform: () => Promise<void>
   refreshStrategies: () => Promise<void>
   pushLog: (l: LogLine) => void
   clearLogs: () => void
@@ -114,7 +111,6 @@ export const useUi = create<UiState>((set, get) => ({
   t: (key) => translate(get().locale, key),
   settings: null,
   status: null,
-  platform: null,
   strategies: [],
   logs: [],
   busy: {},
@@ -185,28 +181,12 @@ export const useUi = create<UiState>((set, get) => ({
       syncThemeClass(settings.theme)
     }
     await get().refreshStatus()
-    await get().refreshPlatform()
     await get().refreshStrategies()
   },
 
   refreshStatus: async () => {
     const status = await call('status', () => window.zapret.getStatus(), set, get)
-    if (status) {
-      set({ status })
-      if (status.platform && !get().platform) set({ platform: status.platform })
-      else if (status.platform) set({ platform: status.platform })
-    }
-  },
-
-  refreshPlatform: async () => {
-    try {
-      const platform = await window.zapret.getPlatform()
-      set({ platform })
-    } catch {
-      // Older main without getPlatform (dev mismatch) — infer from status.
-      const status = get().status
-      set({ platform: status?.platform ?? 'win32' })
-    }
+    if (status) set({ status })
   },
 
   refreshStrategies: async () => {

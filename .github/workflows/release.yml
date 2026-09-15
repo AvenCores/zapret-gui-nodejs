@@ -29,7 +29,7 @@ jobs:
       - name: Cache Electron toolchain
         # See build.yml: warm cache + retries survive transient 5xx while
         # electron-builder fetches its NSIS/winCodeSign toolchain.
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -39,7 +39,7 @@ jobs:
             electron-tools-${{ runner.os }}-
 
       - name: Build
-        uses: nick-fields/retry@v4
+        uses: nick-fields/retry@v3
         with:
           timeout_minutes: 25
           max_attempts: 3
@@ -70,69 +70,10 @@ jobs:
             ${{ steps.changelog.outputs.notes }}
 
             ### Install
-            - Windows: download `Zapret GUI-*-setup.exe` and run as Administrator.
-            - Linux: download the `.AppImage` (any distro), `.deb` (Debian/Ubuntu)
-              or `.rpm` (Fedora/RHEL/openSUSE).
-              On first run use Updates → “Download Linux dependencies” to fetch `nfqws`,
-              then apply a strategy (`nftables`/`iptables` + `sudo`/`doas` required).
+            - Download `Zapret GUI-*-setup.exe` and run as Administrator.
           files: |
             dist/*.exe
             dist/latest.yml
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  release-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js 24
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Cache Electron toolchain
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cache/electron
-            ~/.cache/electron-builder
-          key: electron-tools-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            electron-tools-${{ runner.os }}-
-
-      - name: Install rpm tooling
-        # electron-builder shells out to `rpmbuild` for the rpm target,
-        # which is not preinstalled on ubuntu-latest runners.
-        run: sudo apt-get update && sudo apt-get install -y rpm
-
-      - name: Build Linux packages
-        uses: nick-fields/retry@v4
-        with:
-          timeout_minutes: 25
-          max_attempts: 3
-          retry_on: error
-          command: npm run build:linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Append Linux packages to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.rpm
-            dist/latest-linux.yml
           draft: false
           prerelease: false
         env:

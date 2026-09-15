@@ -1,13 +1,10 @@
 /**
  * Process execution helpers: plain exec, admin detection and UAC elevation.
  *
- * Privilege model: on Windows the app asks to run elevated once (button
- * "relaunch as admin") and service/hosts operations then run directly.
- * On Linux the app always stays under the user — only root-dependent parts
- * elevate per call via `sudo -n`/`doas -n` (after the one-time NOPASSWD
- * setup) or a single `pkexec` prompt (see `linux/elevate`).
- * For single-shot elevation without restart on Windows, {@link runElevated}
- * re-launches a command via `powershell Start-Process -Verb RunAs`.
+ * Strategy: the app asks to run elevated once (button "relaunch as admin").
+ * Service/hosts operations then run directly. For single-shot elevation
+ * without restart, {@link runElevated} re-launches a command via
+ * `powershell Start-Process -Verb RunAs`.
  * @module main/exec
  */
 import { spawn, execFile } from 'node:child_process'
@@ -59,21 +56,8 @@ export function runPowershell(script: string, timeoutMs = 30000): Promise<ExecRe
   return run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `${utf8}${script}`], { timeoutMs })
 }
 
-/**
- * True when service/hosts operations are available: elevated on Windows,
- * root or able to elevate per call (sudo/doas/pkexec) on Linux. On Linux
- * this does NOT mean the app itself runs as root — the app always stays
- * under the user and only privileged calls elevate.
- */
+/** True when the current process runs elevated (admin). */
 export async function isAdmin(): Promise<boolean> {
-  if (process.platform === 'linux') {
-    try {
-      const { isRoot, checkElevateAvailable } = await import('./linux/elevate')
-      return isRoot() || checkElevateAvailable()
-    } catch {
-      return false
-    }
-  }
   // `net session` succeeds only for admins.
   const r = await runCmd('net session >nul 2>&1')
   return r.code === 0
@@ -91,16 +75,8 @@ export async function runElevated(command: string, args: string[], cwd?: string)
   return r.code === 0
 }
 
-/** Relaunch the whole Electron app elevated (Windows UAC flow only). */
+/** Relaunch the whole Electron app elevated (used by the dashboard button). */
 export async function relaunchAppAsAdmin(appPath: string, appArgs: string[]): Promise<boolean> {
-  if (process.platform === 'linux') {
-    // By design the Linux app never relaunches as a whole under root:
-    // privileged calls elevate individually (pkexec prompt or passwordless
-    // sudo) while the app keeps running as the user.
-    throw new Error(
-      'Restarting the whole app as root is not used on Linux — privileged actions ask for elevation individually (a single system prompt), and "Set up passwordless operation" on the Strategies tab removes even that.'
-    )
-  }
   const ps =
     `Start-Process -FilePath '${appPath.replace(/'/g, "''")}'` +
     (appArgs.length > 0 ? ` -ArgumentList '${appArgs.map((a) => a.replace(/'/g, "''")).join("','")}'` : '') +
@@ -109,90 +85,7 @@ export async function relaunchAppAsAdmin(appPath: string, appArgs: string[]): Pr
   return r.code === 0
 }
 
-/**
- * Append `--no-sandbox` for a process that runs as root (Chromium refuses
- * to run as root with the sandbox on). Kept as a tested helper; the Linux
- * app itself no longer relaunches as a whole under root.
- * Pure.
- */
-export function ensureNoSandbox(args: string[]): string[] {
-  return args.includes('--no-sandbox') ? [...args] : [...args, '--no-sandbox']
-}
-
-/**
- * GUI/session env to forward through `pkexec env ...` (pkexec scrubs
- * everything else). Display vars for X11/Wayland plus the session bus:
- * without `DBUS_SESSION_BUS_ADDRESS` the elevated copy cannot register its
- * tray icon with the user's StatusNotifierWatcher and the icon silently
- * never appears. Pure — covered by unit tests.
- */
-export function pickGuiEnv(env: Record<string, string | undefined>): string[] {
-  const out: string[] = []
-  for (const k of [
-    'DISPLAY',
-    'WAYLAND_DISPLAY',
-    'XDG_RUNTIME_DIR',
-    'XAUTHORITY',
-    'XDG_SESSION_TYPE',
-    'DBUS_SESSION_BUS_ADDRESS'
-  ]) {
-    const v = env[k]
-    if (typeof v === 'string' && v !== '') out.push(`${k}=${v}`)
-  }
-  return out
-}
-
-export type GuiTerminalMode = 'dd' | 'e' | 'direct'
-
-export interface GuiTerminal {
-  cmd: string
-  mode: GuiTerminalMode
-}
-
-/**
- * Find a GUI terminal for a password prompt. Order: $TERMINAL override,
- * freedesktop dispatcher, GNOME (Terminal/Console/Ptyxis-era), KDE,
- * Xfce/MATE/LXDE, GPU terminals, then X11 fallbacks. Pure (injectable
- * lookup) — covered by unit tests.
- */
-export function findGuiTerminal(has: (name: string) => boolean): GuiTerminal | null {
-  const custom = (process.env.TERMINAL ?? '').trim().split(/\s+/)[0] ?? ''
-  if (custom !== '' && has(custom)) return { cmd: custom, mode: 'e' }
-  const list: Array<[string, GuiTerminalMode]> = [
-    ['xdg-terminal-exec', 'direct'],
-    ['gnome-terminal', 'dd'],
-    ['ptyxis', 'dd'],
-    ['kgx', 'e'],
-    ['konsole', 'e'],
-    ['xfce4-terminal', 'e'],
-    ['mate-terminal', 'e'],
-    ['lxterminal', 'e'],
-    ['alacritty', 'e'],
-    ['kitty', 'direct'],
-    ['xterm', 'e'],
-    ['uxterm', 'e']
-  ]
-  for (const [name, mode] of list) {
-    if (has(name)) return { cmd: name, mode }
-  }
-  return null
-}
-
-/**
- * Build the terminal argv that runs `elevCmd <target...>` inside it.
- * `dd` terminals take `-- cmd...`, `e` terminals take `-e cmd...`,
- * `direct` ones (kitty, xdg-terminal-exec) take the command as-is. Pure.
- */
-export function buildTerminalArgs(spec: GuiTerminal, elevCmd: string, target: string[]): string[] {
-  if (spec.mode === 'dd') return ['--', elevCmd, ...target]
-  if (spec.mode === 'e') return ['-e', elevCmd, ...target]
-  return [elevCmd, ...target]
-}
-
-/** Spawn a long-lived child (foreground winws/nfqws test / test script). */
+/** Spawn a long-lived child (foreground winws test / test script). */
 export function spawnLong(file: string, args: string[], cwd?: string) {
-  if (process.platform === 'linux') {
-    return spawn(file, args, { cwd })
-  }
   return spawn(file, args, { windowsHide: false, cwd })
 }

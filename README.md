@@ -140,8 +140,8 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
   * `bin/` — `winws.exe`, `WinDivert64.sys`, `WinDivert.dll`, `cygwin1.dll`, `tls_clienthello_*.bin` / `quic_initial_*.bin` / `stun*.bin` / `ACTIVE_*.bin`
   * `lists/` — `ipset-all.txt`, `list-general.txt`, `list-google.txt`, `list-exclude.txt`, `ipset-exclude.txt` + создаваемые `*-user.txt` заглушки
   * `utils/` — `targets.txt`, результаты `test results/`, флаги `check_updates.enabled` / `game_filter.enabled`
-  * `strategies/` — 25 × `*.json`
- * Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`)
+  * `strategies/` — 22 × `*.json`
+* Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`)
 * Лог: `%APPDATA%\zapret-gui\app.log`
 * Dev-режим: `bundled-assets` из репозитория, данные в `<repo>/.data`, `userData` изолирован в `zapret-gui-dev` во избежание лока кэша Chromium
 
@@ -155,47 +155,6 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
 * Без ESU-обновлений (патч KB3033929) стоковые драйверы из `bin/` на Windows 7 не загрузятся
 * Полноценная поддержка Windows 7 потребовала бы отдельной сборки на Electron 22 + проверки `winws.exe` / `cygwin1.dll` на Win7 — пока не делается
 
-## 🐧 Linux (полноценная поддержка, по примеру `zapret-discord-youtube-linux-master/`)
-
-Приложение собирается и работает на Linux (AppImage + deb + rpm, `npm run build:linux`).
-Движок — `nfqws` + nftables/iptables + системный сервис, поведение повторяет `service.sh`:
-
-* **Зависимости**: `nfqws` **вшит в установщик** (`bundled-assets/bin-linux/<платформа>/nfqws`, v72.13,
-  десктопные `linux-x86_64` + `linux-x86`)
-  и копируется в `data/bin/` при первом запуске — обход работает полностью офлайн из коробки
-  (пользователь за DPI-блокировкой может вообще ничего не скачать).
-  Секция `Настройки → Обновления → «DPI-движок»` (рядом с обновлением стратегий) обновляет движок
-  до другой версии из релизов `bol-van/zapret` — на Linux (`nfqws`) и на Windows (`winws.exe`).
-  Обновление скрипта поставки: `node scripts/download-engine-bins.mjs <путь-к-распакованному-binaries> <версия>`.
-  Стратегии те же `.bat`
-  (25 × JSON, включая кастомные `general_nix1`, `general_SIMPLE_FAKE`, `minecraft_hypixel_etc` из `custom-strategies/`)
-* **Применение стратегии**: парсинг `.bat` → `--wf-tcp/--wf-udp` уходят в файрвол, `--filter-* … --new` блоки уходят в
-  `nfqws --dpi-desync-fwmark=0x40000000 --qnum=220 …` foreground через `exec` в раннере
-  ( supervised main-процесс для `Type=simple`; прямой старт в install-батче — с `--daemon`); пишется `conf.env`
-  (`interface`, `gamefiltertcp/udp`, `strategy`, `firewall_backend`) + генерируется `zapret-linux-run.sh` (`daemon`/`kill`)
-* **Файрвол**: авто-детект (сначала nftables, потом iptables), выбор вручную во вкладке «Стратегии»
-  (карточка «Интерфейс / Бэкенд файрвола»), правила повторяют `00-nftables.sh` / `01-iptables.sh`
-  (mangle/postrouting + prerouting, `queue num 220 bypass`, connbytes 1:6 / 1:3)
-* **Сервис/автозапуск**: systemd / OpenRC / runit / s6 / dinit (детект как в `init.sh` по `/proc/1/*` и `/run/*`);
-  без известной init-системы работает разовый запуск демона без автозапуска
-* **Права**: приложение всегда работает под обычным пользователем и никогда не перезапускается
-  целиком под root. Root-зависимые *операции* (применить/запустить/остановить/удалить сервис, hosts,
-  тесты) повышают права целиком, а не покомандно: при настроенном NOPASSWD шаги идут тихо по одному
-  через `sudo -n`/`doas -n` (ноль промптов),   иначе вся операция выполняется одним скриптом
-  `pkexec bash -c` — ровно один системный диалог на операцию вместо десятка. Операции глобально
-  сериализуются (FIFO-мьютекс + reject повторных кликов на IPC): два живых `pkexec` одновременно
-  невозможны, иначе polkit-агент сносит ранний диалог. Фоновый опрос статуса
-  (`systemctl is-active`, `nft list`, …) промптов не показывает никогда. В root — напрямую;
-  кнопка «Настроить работу без пароля» пишет `/etc/sudoers.d/zapret` (с проверкой `visudo -c`) или правила `doas.conf`
-  — аналог `service.sh setup-permissions` — и покрывает файрвол, `nfqws`, управление сервисами,
-  установку unit-файлов и `/etc/hosts`
-* **Интерфейсы**: селектор (`any` + `/sys/class/net`) — аналог интерактивного выбора в `run`/`config`
-* **Диагностика**: 8 Linux-проверок (root/sudo, nftables+iptables, `nfqws`, `conf.env`, init-сервис, правила файрвола,
-  списки, записи YouTube в `/etc/hosts`); тестер стратегий и foreground-тест работают через `nfqws` + настройку файрвола
-  на каждую стратегию с очисткой после; кэш Discord чистится из `~/.config/discord*`
-* **Данные**: `~/.config/zapret-gui/data/{bin/nfqws,lists,utils,strategies,conf.env,zapret-linux-run.sh}`,  системный hosts — `/etc/hosts`, обновление стратегий распаковывается через `unzip`/`python3` вместо `Expand-Archive`
-* **Требования**: `nftables` или `iptables` + `ip6tables`, `curl`, `git`, `tar`, `pkexec` или настроенный `sudo`/`doas`
-
 ## 🛠️ Разработка
 
 ```powershell
@@ -206,12 +165,9 @@ npm run test:watch           # vitest watch
 npm run lint                 # typecheck (tsc --noEmit)
 npm run typecheck            # то же самое
 npm run generate:strategies  # перепарсить bundled-assets/bat/*.bat → bundled-assets/strategies/*.json
-npm run deps:engine-bins      # обновить движки (bin-linux/nfqws + bin/winws.exe) из распакованного релиза zapret (нужен путь к binaries/)
 npm run build                # generate:strategies + electron-vite build
 npm run build:win            # установщик NSIS в dist/ (--publish never)
 npm run build:win:publish    # то же + публикация в GitHub Releases (--publish always)
-npm run build:linux          # AppImage + deb + rpm в dist/ (generate:strategies + icon + electron-vite build)
-npm run build:linux:dir      # распакованная Linux-сборка (dir) для отладки
 npm run clean                # удалить out/ и dist/ (scripts/clean.mjs)
 npm run rebuild              # clean + полная пересборка из исходников
 npm run icon                 # сгенерировать иконки (scripts/make-icon.mjs)
@@ -221,7 +177,7 @@ npm run preview              # electron-vite preview
 `npm run generate:strategies` автоматически выполняется перед каждой сборкой.
 В CI `bundled-assets/` уже закоммичен, скрипт только идемпотентно пересинхронизирует JSON-конфиги.
 
-Тесты (vitest, 14 файлов): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `paths-win7`, `linux` (+ `setup.ts`).
+Тесты (vitest, 9 файлов): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `paths-win7` (+ `setup.ts`).
 
 CI (`.github/workflows/`): `build.yml` + `release.yml`.
 
@@ -245,15 +201,11 @@ src/
                 components/ Layout.tsx (сайдбар, пикер языка с флагами SVG, темы, AboutModal с донатом) + ui.tsx
                 pages/ Dashboard Strategies Settings Updates Diagnostics Logs
                 assets/ app-icon.png
-   shared/       types.ts (ServiceState, Strategy, StatusSnapshot + linux-поля, DiagnosticCheck, UpdateInfo, AppSettings, IPC)
-                 constants.ts (SERVICE_NAME=zapret, UPSTREAM_OWNER=Flowseal, URLS, CONFLICTING_SERVICES, FAKE_*.bin)
-                 i18n.ts + locales/ (28 словарей)
-   main/linux/   platform.ts constants.ts elevate.ts config.ts strategy-linux.ts firewall.ts init-system.ts download.ts service.ts
-                 (nfqws + nftables/iptables + systemd/OpenRC/runit/s6/dinit + conf.env + NOPASSWD — порт service.sh)
-   main/         win-engine.ts (обновление winws.exe из релизов zapret)
-                 diagnostics-linux.ts discord-cache-linux.ts
-bundled-assets/ bin/ (winws.exe v72.13 + WinDivert + cygwin1.dll + .bin-фейки) bin-win7/ (WinDivert с подписью для Win7) bin-linux/ (nfqws v72.13: linux-x86_64 + linux-x86, offline-first) lists/ utils/ strategies/ (25 JSON) bat/ (исходные .bat + custom-strategies из Linux-примера) service/ (version.txt + hosts) tray/ icon.ico icon.png
-scripts/        generate-strategies.mjs + download-engine-bins.mjs + clean.mjs + make-icon.mjs
+  shared/       types.ts (ServiceState, Strategy, StatusSnapshot, DiagnosticCheck, UpdateInfo, AppSettings, IPC)
+                constants.ts (SERVICE_NAME=zapret, UPSTREAM_OWNER=Flowseal, URLS, CONFLICTING_SERVICES, FAKE_*.bin)
+                i18n.ts + locales/ (28 словарей)
+bundled-assets/ bin/ bin-win7/ (WinDivert с подписью для Win7) lists/ utils/ strategies/ (22 JSON) bat/ (исходные .bat) service/ (version.txt + hosts) tray/ icon.ico
+scripts/        generate-strategies.mjs + clean.mjs + make-icon.mjs
 tests/          9 x *.test.ts + setup.ts
 .github/workflows/ build.yml release.yml
 electron-builder.yml electron.vite.config.ts tailwind.config.js postcss.config.cjs

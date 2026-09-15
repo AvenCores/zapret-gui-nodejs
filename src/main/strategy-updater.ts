@@ -11,7 +11,6 @@ import { execFile } from 'node:child_process'
 import { app } from 'electron'
 import { URLS, UPSTREAM_BRANCH } from '../shared/constants'
 import type { DownloadProgress, UpdateInfo } from '../shared/types'
-import type { BatchStep } from './linux/elevate'
 import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir, getBundledAssetsDir, applyWin7Drivers, isWindows7 } from './paths'
 import { parseBatContent } from './strategy-parser'
 
@@ -210,7 +209,6 @@ export async function checkHosts(): Promise<HostsCheck> {
 
 /** Absolute path of the Windows system hosts file. */
 export function getSystemHostsPath(): string {
-  if (process.platform === 'linux') return '/etc/hosts'
   return path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'drivers', 'etc', 'hosts')
 }
 
@@ -231,66 +229,18 @@ function clearReadonlyFlag(p: string): void {
   }
 }
 
-/**
- * Whether a failed atomic `rename(tmp, hosts)` should fall back to a
- * copy-overwrite instead of surfacing the error.
- * - `EPERM/EACCES/EBUSY/EROFS`: read-only/locked hosts (Windows AV, attrs).
- * - `EXDEV`: staging tmp (`os.tmpdir()`, often a separate tmpfs) lives on
- *   another filesystem than the hosts file — rename across devices is
- *   impossible by design (seen on Linux: `/tmp/...` → `/etc/hosts`).
- * Exported for unit tests.
- */
-export function isAccessError(e: unknown): boolean {
+function isAccessError(e: unknown): boolean {
   const code = (e as NodeJS.ErrnoException)?.code
-  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || code === 'EROFS' || code === 'EXDEV'
+  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || code === 'EROFS'
 }
 
 function hostsWriteError(what: string, hostsPath: string, e: unknown): Error {
   const detail = e instanceof Error ? e.message : String(e)
-  const priv =
-    process.platform === 'linux'
-      ? 'Allow the privilege prompt when it appears (or configure passwordless operation via Strategies → Setup), then retry. ' +
-        'If it keeps failing, check for an immutable flag (lsattr /etc/hosts) or a read-only /etc.'
-      : 'Run the app as administrator and allow hosts-file changes in your antivirus ' +
-        '(Defender "Controlled folder access" / hosts protection), then retry.'
-  return new Error(`Cannot ${what} the system hosts file (${hostsPath}): ${detail}. ${priv}`)
-}
-
-/** True when the current user can rewrite the hosts file without elevation. */
-function canWriteHostsDirectly(hostsPath: string): boolean {
-  try {
-    fs.accessSync(hostsPath, fs.constants.W_OK)
-    const backupPath = `${hostsPath}.zapret-gui.bak`
-    if (!fs.existsSync(backupPath)) fs.accessSync(path.dirname(hostsPath), fs.constants.W_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * Linux elevated hosts write: the app keeps running as the user, only the
- * file update elevates — one batch (backup + write), i.e. a single auth
- * prompt (passwordless `tee` when NOPASSWD was configured, else `pkexec`).
- */
-async function applyHostsElevated(hostsPath: string, current: string, next: string): Promise<void> {
-  const { runBatch, batchFailWhat, batchOut } = await import('./linux/elevate')
-  const backupPath = `${hostsPath}.zapret-gui.bak`
-  try {
-    let needBackup = true
-    try {
-      needBackup = !fs.existsSync(backupPath)
-    } catch {
-      needBackup = true
-    }
-    const steps: BatchStep[] = []
-    if (needBackup) steps.push({ kind: 'write', dest: backupPath, content: current, mode: '0644' })
-    steps.push({ kind: 'write', dest: hostsPath, content: next, mode: '0644' })
-    const r = await runBatch(steps, { timeoutMs: 60000 })
-    if (r.code !== 0) throw new Error(`${batchFailWhat(r, steps)}: ${batchOut(r)}`.trim())
-  } catch (e) {
-    throw hostsWriteError('write', hostsPath, e)
-  }
+  return new Error(
+    `Cannot ${what} the system hosts file (${hostsPath}): ${detail}. ` +
+      'Run the app as administrator and allow hosts-file changes in your antivirus ' +
+      '(Defender "Controlled folder access" / hosts protection), then retry.'
+  )
 }
 
 /**
@@ -319,6 +269,14 @@ export async function applyHosts(remoteContent: string, opts?: { hostsPath?: str
   const remoteLines = remoteContent.split(/\r?\n/).filter((l) => l.length > 0)
   const first = remoteLines[0] ?? ''
   const last = remoteLines[remoteLines.length - 1] ?? ''
+  // Keep the very first backup forever: overwriting it on every apply would
+  // destroy the original hosts after the first run.
+  const backupPath = `${hostsPath}.zapret-gui.bak`
+  try {
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(hostsPath, backupPath)
+  } catch (e) {
+    throw hostsWriteError('back up', hostsPath, e)
+  }
   let next: string
   if (first && last && current.includes(first) && current.includes(last)) {
     const start = current.indexOf(first)
@@ -326,28 +284,6 @@ export async function applyHosts(remoteContent: string, opts?: { hostsPath?: str
     next = `${current.slice(0, start)}${remoteContent}\n${current.slice(end)}`
   } else {
     next = `${current.replace(/\s+$/, '')}\n\n${remoteContent}\n`
-  }
-  // Linux as a regular user: only the file update elevates (single prompt
-  // at most) instead of requiring the whole app to run as root. Custom
-  // test paths always stay direct (unit tests must never prompt).
-  const elevatedFallback = process.platform === 'linux' && !opts?.hostsPath
-  if (elevatedFallback && !canWriteHostsDirectly(hostsPath)) {
-    await applyHostsElevated(hostsPath, current, next)
-    return
-  }
-  // Keep the very first backup forever: overwriting it on every apply would
-  // destroy the original hosts after the first run.
-  const backupPath = `${hostsPath}.zapret-gui.bak`
-  try {
-    if (!fs.existsSync(backupPath)) fs.copyFileSync(hostsPath, backupPath)
-  } catch (e) {
-    // Writability probes can lie (ACLs, SELinux, cross-device ...): an
-    // access failure mid-flow still falls back to the elevated write.
-    if (elevatedFallback && isAccessError(e)) {
-      await applyHostsElevated(hostsPath, current, next)
-      return
-    }
-    throw hostsWriteError('back up', hostsPath, e)
   }
   const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-hosts-')), 'hosts')
   try {
@@ -365,15 +301,9 @@ export async function applyHosts(remoteContent: string, opts?: { hostsPath?: str
       if (!isAccessError(renameErr)) throw renameErr
       // Windows fallback: rename into drivers/etc is rejected with EPERM
       // for read-only/locked hosts — overwrite the content in place instead.
-      // On Linux EXDEV (/tmp → /etc across filesystems) always lands here;
-      // any access failure still falls back to the elevated write.
       try {
         fs.copyFileSync(tmp, hostsPath)
       } catch (copyErr) {
-        if (elevatedFallback && isAccessError(copyErr)) {
-          await applyHostsElevated(hostsPath, current, next)
-          return
-        }
         throw hostsWriteError('write', hostsPath, copyErr)
       }
     }
@@ -519,7 +449,6 @@ async function copyRecursive(src: string, dest: string): Promise<void> {
 }
 
 function expandArchive(zipPath: string, dest: string): Promise<void> {
-  if (process.platform === 'linux') return expandArchiveLinux(zipPath, dest)
   return new Promise((resolve, reject) => {
     // Paths come from %APPDATA% and may contain `'` (e.g. `O'Brien`).
     // PowerShell single-quoted strings escape `'` by doubling it (`''`).
@@ -533,27 +462,6 @@ function expandArchive(zipPath: string, dest: string): Promise<void> {
         else resolve()
       }
     )
-  })
-}
-
-function expandArchiveLinux(zipPath: string, dest: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Prefer `unzip` (present on most distros); fall back to python3 zipfile.
-    execFile('unzip', ['-q', zipPath, '-d', dest], { timeout: 120000 }, (err, _stdout, stderr) => {
-      if (!err) {
-        resolve()
-        return
-      }
-      execFile(
-        'python3',
-        ['-c', 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', zipPath, dest],
-        { timeout: 120000 },
-        (err2, _o2, stderr2) => {
-          if (err2) reject(new Error(`unzip failed: ${String(stderr || err.message).slice(0, 300)}; python fallback: ${String(stderr2 || err2.message).slice(0, 300)}`))
-          else resolve()
-        }
-      )
-    })
   })
 }
 

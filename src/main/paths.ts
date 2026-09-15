@@ -10,7 +10,6 @@ import { app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
-import { currentPlatformDir } from './linux/download'
 
 /**
  * Driver files with a Win7-compatible (dual SHA1+SHA256) signature.
@@ -46,8 +45,6 @@ export function getBundledAssetsDir(): string {
 
 /** Writable per-user data directory: `%APPDATA%/zapret-gui/data`. */
 export function getDataDir(): string {
-  // On Linux `appData` is `~/.config`, so this becomes
-  // `~/.config/zapret-gui/data` (XDG-friendly, no extra dependency).
   return path.join(app.getPath('appData'), 'zapret-gui', 'data')
 }
 
@@ -92,7 +89,8 @@ function copyDirRecursive(src: string, dest: string): void {
  * first-run seeding): driver files are not user config, and upstream
  * strategy updates may have restored the Win10-only variants.
  * @returns names of the files that were replaced
- */export function applyWin7Drivers(bundledDir: string, dataBinDir: string): string[] {
+ */
+export function applyWin7Drivers(bundledDir: string, dataBinDir: string): string[] {
   const srcDir = path.join(bundledDir, 'bin-win7')
   if (!fs.existsSync(srcDir)) return []
   const replaced: string[] = []
@@ -107,90 +105,10 @@ function copyDirRecursive(src: string, dest: string): void {
 }
 
 /**
- * Seed the Linux `nfqws` engine from `bundled-assets/bin-linux/<platform>/`.
- * The binary ships with the app so bypass works fully offline (a user behind
- * DPI blocks may be unable to download anything on first run).
- * Never overwrites an existing `data/bin/nfqws` (the user may have fetched a
- * newer version via Updates). Always ensures the exec bit.
- * @returns the data `nfqws` path, or null when nothing was seeded
- */
-export function seedLinuxNfqws(bundledDir: string, dataBinDir: string, platformDir?: string): string | null {
-  let plat: string | null = platformDir ?? null
-  if (!plat) {
-    try {
-      plat = currentPlatformDir()
-    } catch {
-      return null
-    }
-  }
-  const src = path.join(bundledDir, 'bin-linux', plat, 'nfqws')
-  if (!fs.existsSync(src)) return null
-  const dest = path.join(dataBinDir, 'nfqws')
-  try {
-    fs.mkdirSync(dataBinDir, { recursive: true })
-    if (!fs.existsSync(dest)) fs.copyFileSync(src, dest)
-    fs.chmodSync(dest, 0o755)
-    return dest
-  } catch {
-    return null
-  }
-}
-/**
- * Ensure the user-owned data dir is actually writable by this (non-root)
- * process. Users migrating from the old "run the whole app as root" model
- * often have a root-owned `~/.config/zapret-gui` tree, which would otherwise
- * fail later with cryptic EACCES errors.
- *
- * When the dir is not writable, ownership is repaired with a *single*
- * elevated call (`chown -R uid:gid`, one pkexec prompt at most, silent with
- * passwordless sudo) instead of relaunching the app as root.
- *
- * @returns `ok` when writable, `root` when running as root (nothing to do),
- * `unwritable` when the repair failed or was declined.
- */
-export async function ensureUserOwnsDataDir(): Promise<'ok' | 'root' | 'unwritable'> {
-  if (process.platform !== 'linux') return 'ok'
-  try {
-    if (typeof process.geteuid === 'function' && process.geteuid() === 0) return 'root'
-  } catch {
-    /* fall through to the writability probe */
-  }
-  const base = path.join(app.getPath('appData'), 'zapret-gui')
-  const probe = (): boolean => {
-    try {
-      fs.mkdirSync(base, { recursive: true })
-      const probeFile = path.join(base, '.write-test')
-      fs.writeFileSync(probeFile, 'ok', 'utf8')
-      fs.rmSync(probeFile, { force: true })
-      return true
-    } catch {
-      return false
-    }
-  }
-  if (probe()) return 'ok'
-  try {
-    if (typeof process.getuid !== 'function' || typeof process.getgid !== 'function') return 'unwritable'
-    const { runBatch } = await import('./linux/elevate')
-    const r = await runBatch(
-      [{ kind: 'exec', file: 'chown', args: ['-R', `${process.getuid()}:${process.getgid()}`, base] }],
-      { timeoutMs: 60000 }
-    )
-    if (r.code !== 0) return 'unwritable'
-  } catch {
-    return 'unwritable'
-  }
-  return probe() ? 'ok' : 'unwritable'
-}
-
-/**
  * First-run seeding: copy bundled `bin/`, `lists/`, `utils/`, `strategies/`
  * into the writable data dir (never overwrites user-modified files,
  * except that missing files are restored). Also creates `*-user.txt`
  * stubs exactly like `service.bat :load_user_lists`.
- *
- * On Linux the native `nfqws` engine is additionally seeded from
- * `bundled-assets/bin-linux/<platform>/` (offline-first: a user behind DPI
- * blocks may be unable to download anything on first run).
  */
 export function ensureDataDirSeeded(): void {
   const bundled = getBundledAssetsDir()
@@ -222,10 +140,5 @@ export function ensureDataDirSeeded(): void {
   // overlay the dual-signed variants (upstream install_win7.cmd).
   if (isWindows7()) {
     applyWin7Drivers(bundled, getBinDir())
-  }
-  // On Linux seed the prebuilt nfqws engine (offline-first, never overwrites
-  // a previously fetched binary).
-  if (process.platform === 'linux') {
-    seedLinuxNfqws(bundled, getBinDir())
   }
 }

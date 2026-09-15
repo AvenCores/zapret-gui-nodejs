@@ -14,7 +14,7 @@ function splitName(name: string): { base: string; tag: string | null } {
 }
 
 export default function Strategies(): React.JSX.Element {
-  const { t, strategies, refreshStrategies, refreshStatus, busy, setError, status, settings, applySettings, platform } = useUi()
+  const { t, strategies, refreshStrategies, refreshStatus, busy, setError, status, settings, applySettings } = useUi()
   const [selected, setSelected] = useState<string>('')
   const [testing, setTesting] = useState<string | null>(null)
   const [testOut, setTestOut] = useState<string>('')
@@ -294,7 +294,6 @@ export default function Strategies(): React.JSX.Element {
           {t('strategies.import')}
         </Btn>
       </div>
-      {(platform ?? status?.platform) === 'linux' ? <LinuxTuning /> : null}
       {status?.ownership === 'foreign' ? (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-slate-700 dark:text-slate-200">
           <span className="font-semibold">⚠ {t('dashboard.foreignTitle')}: </span>
@@ -458,125 +457,6 @@ export default function Strategies(): React.JSX.Element {
 
       <TuningCards />
     </div>
-  )
-}
-
-/**
- * Linux tuning: network interface + firewall backend + NOPASSWD status.
- * Mirrors `service.sh config` / `setup-permissions` (conf.env).
- */
-function LinuxTuning(): React.JSX.Element {
-  const { t, setError, status, refreshStatus } = useUi()
-  const [interfaces, setInterfaces] = useState<string[]>(['any'])
-  const [iface, setIface] = useState<string>(status?.linuxInterface ?? 'any')
-  const [backend, setBackend] = useState<string>('auto')
-  const [available, setAvailable] = useState<string[]>([])
-  const [perms, setPerms] = useState<{ sudoers: boolean; doas: boolean; elevateCmd: string; nopass: boolean } | null>(null)
-  const [busyKey, setBusyKey] = useState<string | null>(null)
-
-  useEffect(() => {
-    setIface(status?.linuxInterface ?? 'any')
-  }, [status?.linuxInterface])
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [ifs, be, avail] = await Promise.all([
-          window.zapret.listInterfaces(),
-          window.zapret.getFirewallBackend(),
-          window.zapret.listFirewallBackends()
-        ])
-        setInterfaces(ifs.length > 0 ? ifs : ['any'])
-        setBackend(be)
-        setAvailable(avail)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
-      }
-      try {
-        setPerms(await window.zapret.getPermissionsStatus())
-      } catch {
-        setPerms(null)
-      }
-    })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function wrap(key: string, fn: () => Promise<unknown>): Promise<void> {
-    setBusyKey(key)
-    try {
-      await fn()
-      await refreshStatus()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusyKey(null)
-    }
-  }
-
-  const disabled = !status?.isAdmin || busyKey !== null
-  const permsOk = perms !== null && (perms.nopass || perms.sudoers || perms.doas)
-
-  return (
-    <Card title={`${t('linux.interface')} / ${t('linux.firewallBackend')}`}>
-      <Row label={t('linux.interface')}>
-        <select
-          value={iface}
-          disabled={disabled}
-          onChange={(e) => {
-            const v = e.target.value
-            setIface(v)
-            void wrap('iface', () => window.zapret.setInterface(v))
-          }}
-          className="rounded-md bg-slate-200 px-2 py-1 text-xs dark:bg-slate-700"
-        >
-          {interfaces.map((i) => (
-            <option key={i} value={i}>
-              {i}
-            </option>
-          ))}
-        </select>
-      </Row>
-      <Row label={t('linux.firewallBackend')}>
-        <span className="flex flex-wrap gap-2">
-          {(['auto', 'nftables', 'iptables'] as const).map((b) => {
-            const installed = b === 'auto' || available.includes(b)
-            return (
-              <Btn
-                key={b}
-                variant={backend === b ? 'primary' : 'secondary'}
-                disabled={disabled || !installed}
-                onClick={() => {
-                  setBackend(b)
-                  void wrap('fw', () => window.zapret.setFirewallBackend(b))
-                }}
-              >
-                {b === 'auto' ? t('linux.firewallAuto') : b}
-              </Btn>
-            )
-          })}
-        </span>
-      </Row>
-      <Row label={t('linux.permissions')}>
-        <span className="flex flex-wrap items-center gap-2">
-          <Badge tone={permsOk ? 'green' : 'yellow'}>
-            {perms === null ? '…' : permsOk ? t('linux.permissionsOk') : t('linux.permissionsMissing')}
-          </Badge>
-          <Btn
-            variant="secondary"
-            disabled={busyKey !== null}
-            onClick={() =>
-              void wrap('perms', async () => {
-                await window.zapret.setupPermissions()
-                setPerms(await window.zapret.getPermissionsStatus())
-              })
-            }
-          >
-            {busyKey === 'perms' ? <Spinner /> : t('linux.setupPermissions')}
-          </Btn>
-        </span>
-      </Row>
-      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('linux.permissionsHint')}</p>
-    </Card>
   )
 }
 

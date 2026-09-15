@@ -7,7 +7,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
-import { ensureDataDirSeeded, ensureUserOwnsDataDir, getDataDir, getAppLogPath, getBundledAssetsDir, getListsDir } from './paths'
+import { ensureDataDirSeeded, getDataDir, getAppLogPath, getBundledAssetsDir, getListsDir } from './paths'
 import { initLogger, info, err, onLog, getBufferedLogs } from './logger'
 import { registerIpcHandlers, listStrategies } from './ipc-handlers'
 import { setupTray, getTrayLabels, destroyTray, type TrayContext } from './tray'
@@ -26,18 +26,6 @@ import { isAdmin, relaunchAppAsAdmin } from './exec'
 import { IPC } from '../shared/types'
 import { translate } from '../shared/i18n'
 import type { GameFilterMode, IPSetMode, TrayPage, ZapretStatus } from '../shared/types'
-
-// stdout/stderr can be broken pipes (pkexec relaunch, closed terminal):
-// any console.* write — including Electron's own logging of an IPC handler
-// error — would otherwise throw EPIPE and surface as an "Uncaught
-// Exception" crash dialog on top of the real error. Swallow them globally.
-for (const stream of [process.stdout, process.stderr]) {
-  try {
-    stream?.on('error', () => undefined)
-  } catch {
-    /* extremely early failure — nothing to do */
-  }
-}
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -132,12 +120,7 @@ async function refreshTray(): Promise<void> {
     }
     // Labels follow the app language (also refreshed by the 15s timer,
     // so a language switch applies to the tray shortly after).
-    const labels = getTrayLabels(settings.locale, zs)
-    if (process.platform === 'linux') {
-      labels.relaunchAdmin = translate(settings.locale, 'dashboard.relaunchRoot')
-      labels.autoLaunch = translate(settings.locale, 'settings.autoLaunchLinux')
-    }
-    setupTray(zs, labels, ctx, trayCallbacks())
+    setupTray(zs, getTrayLabels(settings.locale, zs), ctx, trayCallbacks())
   } catch {
     /* tray refresh is best-effort */
   } finally {
@@ -211,11 +194,11 @@ async function serviceAction(kind: 'start' | 'stop' | 'restart'): Promise<void> 
       navigateTo('dashboard')
       return
     }
-    if (kind === 'start') await startService((t) => info('app', t))
+    if (kind === 'start') await startService()
     else if (kind === 'stop') await stopService()
     else {
       await stopService().catch(() => undefined)
-      await startService((t) => info('app', t))
+      await startService()
     }
     info('app', `Service ${kind} from tray: OK.`)
   } catch (e) {
@@ -309,22 +292,10 @@ function trayCallbacks() {
     },
     onRelaunchAdmin: () => {
       void (async () => {
-        let ok = false
-        try {
-          ok = await relaunchAppAsAdmin(process.execPath, process.argv.slice(1))
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e)
-          err('app', `Relaunch as admin failed: ${msg.slice(0, 200)}`)
-          dialog.showErrorBox('Zapret GUI', msg.slice(0, 500))
-          return
-        }
+        const ok = await relaunchAppAsAdmin(process.execPath, process.argv.slice(1))
         if (ok && app.isPackaged) {
           info('app', 'Restarting with administrator rights — closing this instance.')
           setTimeout(() => app.quit(), 500).unref?.()
-        } else if (!ok) {
-          const msg = translate(loadSettings().locale, 'dashboard.relaunchFailed')
-          err('app', `Relaunch as admin failed: ${msg.slice(0, 200)}`)
-          dialog.showErrorBox('Zapret GUI', msg)
         }
       })()
     },
@@ -360,16 +331,6 @@ function trayCallbacks() {
 
 function createWindow(): void {
   const settings = loadSettings()
-  const bundledDir = getBundledAssetsDir()
-  let appIcon = path.join(bundledDir, 'icon.ico')
-  if (process.platform === 'linux') {
-    const png = path.join(bundledDir, 'icon.png')
-    try {
-      if (fs.existsSync(png)) appIcon = png
-    } catch {
-      /* keep .ico fallback */
-    }
-  }
   mainWindow = new BrowserWindow({
     width: 1625,
     height: 935,
@@ -378,7 +339,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'Zapret GUI',
-    icon: appIcon,
+    icon: path.join(getBundledAssetsDir(), 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -510,40 +471,11 @@ if (!app.requestSingleInstanceLock()) {
     showMainWindow()
   })
 
-  app.whenReady().then(async () => {
+  app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.zapret.gui')
     app.on('browser-window-created', (_, window) => {
       optimizer.watchWindowShortcuts(window)
     })
-
-    if (process.platform === 'linux') {
-      // Migration from the old "run the whole app as root" model: a
-      // root-owned data dir is repaired with a single elevated `chown`
-      // instead of forcing the app itself under root.
-      try {
-        const st = await ensureUserOwnsDataDir()
-        if (st === 'unwritable') {
-          const home = process.env.HOME ?? '~'
-          dialog.showErrorBox(
-            'Zapret GUI',
-            `Data directory is not writable (likely left over from running the app as root).\n` +
-              `Fix it once with:\n  sudo chown -R $(id -u):$(id -g) ${home}/.config/zapret-gui`
-          )
-        }
-      } catch {
-        /* best-effort: seeding below reports real failures */
-      }
-      // Stale generated runner (`pkill -f nfqws`) assassinates our own
-      // elevated batches — patch to `-x` (user-writable file, no prompt).
-      try {
-        const { migrateStaleRunner } = await import('./linux/service')
-        if (migrateStaleRunner(getDataDir())) {
-          info('app', 'Migrated stale runner pkill to -x (batch self-kill fix).')
-        }
-      } catch {
-        /* best-effort */
-      }
-    }
 
     try {
       initLogger(getAppLogPath())
@@ -576,11 +508,6 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on('window-all-closed', () => {
-  // Keep running in tray while the tray icon is enabled (all platforms).
-  try {
-    if (loadSettings().showTrayIcon) return
-  } catch {
-    /* fall through to platform default */
-  }
-  if (process.platform !== 'darwin') app.quit()
+  // Keep running in tray on Windows.
+  if (process.platform !== 'win32') app.quit()
 })

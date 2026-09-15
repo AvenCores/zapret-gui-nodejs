@@ -304,7 +304,7 @@ function HostsBlock(): React.JSX.Element {
 }
 
 export default function Dashboard(): React.JSX.Element {
-  const { t, status, refreshStatus, busy, setError, settings, setPage, strategies, platform } = useUi()
+  const { t, status, refreshStatus, busy, setError, settings, setPage, strategies } = useUi()
   const [foreignExpanded, setForeignExpanded] = useState(false)
   const [acting, setActing] = useState<null | 'start' | 'stop' | 'restart' | 'remove'>(null)
 
@@ -370,10 +370,6 @@ export default function Dashboard(): React.JSX.Element {
   }
 
   const running = status.zapret === 'RUNNING'
-  const isLinux = (platform ?? status.platform) === 'linux'
-  // On Linux the app itself runs as the user (privileged calls elevate
-  // individually), so the badge reflects the real EUID, not manageability.
-  const rootLike = isLinux ? (status.isRoot ?? status.isAdmin) : status.isAdmin
   const zapretInstalled = status.zapret !== 'NOT_INSTALLED'
   // Remove only makes sense when there is something to remove: an installed
   // service or a stray winws.exe process.
@@ -395,18 +391,6 @@ export default function Dashboard(): React.JSX.Element {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">{t('dashboard.title')}</h1>
-
-      {isLinux && !status.linuxNfqws ? (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
-          <div className="font-semibold text-amber-800 dark:text-amber-200">⚠ {t('linux.nfqwsMissing')}</div>
-          <div className="mt-1 text-slate-700 dark:text-slate-200">{t('linux.downloadHint')}</div>
-          <div className="mt-2">
-            <Btn variant="secondary" onClick={() => setPage('settings')}>
-              {t('linux.downloadDeps')}
-            </Btn>
-          </div>
-        </div>
-      ) : null}
 
       {foreign ? (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
@@ -439,50 +423,18 @@ export default function Dashboard(): React.JSX.Element {
             {serviceLabel}
           </Badge>
         </Row>
-        {isLinux ? (
-          <>
-            <Row label={t('dashboard.firewall')}>
-              <Badge tone={stateTone(status.windivert)}>
-                <Dot tone={stateTone(status.windivert)} pulse={status.windivert === 'RUNNING'} />
-                {status.windivert === 'RUNNING'
-                  ? t('status.running')
-                  : t(`status.${stateKey(status.windivert)}`)}
-                {status.firewallResolved ? ` · ${status.firewallResolved}` : ''}
-              </Badge>
-            </Row>
-            <Row label={t('dashboard.nfqws')}>
-              <Badge tone={status.winwsRunning ? 'green' : 'red'}>
-                <Dot tone={status.winwsRunning ? 'green' : 'red'} pulse={status.winwsRunning} />
-                {status.winwsRunning ? t('status.running') : t('status.stopped')}
-              </Badge>
-            </Row>
-            <Row label={t('dashboard.interface')}>
-              <span className="font-mono text-sm text-slate-900 dark:text-slate-100">
-                {status.linuxInterface ?? 'any'}
-              </span>
-            </Row>
-            <Row label={t('dashboard.initSystem')}>
-              <span className="font-mono text-sm text-slate-900 dark:text-slate-100">
-                {status.initSystem ?? t('linux.unknown')}
-              </span>
-            </Row>
-          </>
-        ) : (
-          <>
-            <Row label={t('dashboard.windivert')}>
-              <Badge tone={stateTone(status.windivert)}>
-                <Dot tone={stateTone(status.windivert)} pulse={status.windivert === 'RUNNING'} />
-                {status.windivert === 'RUNNING' ? t('status.running') : t(`status.${stateKey(status.windivert)}`)}
-              </Badge>
-            </Row>
-            <Row label={t('dashboard.winws')}>
-              <Badge tone={status.winwsRunning ? 'green' : 'red'}>
-                <Dot tone={status.winwsRunning ? 'green' : 'red'} pulse={status.winwsRunning} />
-                {status.winwsRunning ? t('status.running') : t('status.stopped')}
-              </Badge>
-            </Row>
-          </>
-        )}
+        <Row label={t('dashboard.windivert')}>
+          <Badge tone={stateTone(status.windivert)}>
+            <Dot tone={stateTone(status.windivert)} pulse={status.windivert === 'RUNNING'} />
+            {status.windivert === 'RUNNING' ? t('status.running') : t(`status.${stateKey(status.windivert)}`)}
+          </Badge>
+        </Row>
+        <Row label={t('dashboard.winws')}>
+          <Badge tone={status.winwsRunning ? 'green' : 'red'}>
+            <Dot tone={status.winwsRunning ? 'green' : 'red'} pulse={status.winwsRunning} />
+            {status.winwsRunning ? t('status.running') : t('status.stopped')}
+          </Badge>
+        </Row>
         <Row label={t('dashboard.strategy')}>
           <span className="text-sm text-slate-900 dark:text-slate-100">
             {status.activeStrategy ?? settings?.activeStrategyId ?? t('dashboard.none')}
@@ -496,10 +448,8 @@ export default function Dashboard(): React.JSX.Element {
             </span>
           </Row>
         ) : null}
-        <Row label={isLinux ? t('dashboard.root') : t('dashboard.admin')}>
-          <Badge tone={rootLike ? 'green' : 'yellow'}>
-            {rootLike ? t(isLinux ? 'dashboard.rootYes' : 'dashboard.adminYes') : t(isLinux ? 'dashboard.rootNo' : 'dashboard.adminNo')}
-          </Badge>
+        <Row label={t('dashboard.admin')}>
+          <Badge tone={status.isAdmin ? 'green' : 'yellow'}>{status.isAdmin ? t('dashboard.adminYes') : t('dashboard.adminNo')}</Badge>
         </Row>
 
         <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-700/60">
