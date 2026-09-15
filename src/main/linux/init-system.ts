@@ -87,8 +87,12 @@ export function buildSystemdUnit(opts: { runnerPath: string; workDir: string; de
   return [
     '[Unit]',
     `Description=${opts.description ?? 'Zapret DPI bypass (nfqws + firewall)'}`,
-    'After=network-online.target',
-    'Wants=network-online.target',
+    // NOTE: `network.target` (stack up), NOT `network-online.target`:
+    // on desktops without NetworkManager-wait-online the online target may
+    // never activate and the start job hangs in "activating" forever.
+    // nfqws/NFQUEUE needs no outbound connectivity, only the local stack.
+    'After=network.target',
+    'Wants=network.target',
     '',
     '[Service]',
     'Type=simple',
@@ -216,6 +220,62 @@ export async function queryLinuxServiceState(
     }
   } catch {
     return 'UNKNOWN'
+  }
+}
+
+export interface SystemdDetails {
+  activeState: string
+  subState: string
+  result: string
+  execMainStatus: string
+  nRestarts: number
+  mainPid: number
+}
+
+/**
+ * Parse `systemctl show` KEY=VALUE output. Pure — covered by unit tests.
+ * Unknown/missing keys yield empty strings (0 for numbers).
+ */
+export function parseSystemdShow(text: string): SystemdDetails {
+  const get = (key: string): string => {
+    const m = String(text ?? '').match(new RegExp(`^${key}=(.*)$`, 'm'))
+    return (m?.[1] ?? '').trim()
+  }
+  const num = (key: string): number => {
+    const n = Number(get(key))
+    return Number.isFinite(n) ? n : 0
+  }
+  return {
+    activeState: get('ActiveState'),
+    subState: get('SubState'),
+    result: get('Result'),
+    execMainStatus: get('ExecMainStatus'),
+    nRestarts: num('NRestarts'),
+    mainPid: num('MainPID')
+  }
+}
+
+/**
+ * Read systemd unit details (state, substate, restart counter, main PID).
+ * Unprivileged `systemctl show` read — never prompts, never throws
+ * (null when unavailable). Used for start-failure forensics: it tells a
+ * stuck start job (SubState=start, MainPID=0) apart from a restart loop
+ * (SubState=auto-restart, NRestarts climbing) without root.
+ */
+export async function getSystemdDetails(serviceName = LINUX_SERVICE_NAME): Promise<SystemdDetails | null> {
+  try {
+    const r = await shOut('systemctl', [
+      'show',
+      serviceName,
+      '-p',
+      'ActiveState,SubState,Result,ExecMainStatus,NRestarts,MainPID'
+    ])
+    if (r.code !== 0 && r.out.trim() === '') return null
+    const d = parseSystemdShow(r.out)
+    if (!d.activeState && !d.subState) return null
+    return d
+  } catch {
+    return null
   }
 }
 

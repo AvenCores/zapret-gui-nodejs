@@ -29,7 +29,8 @@ import {
   buildInstallSteps,
   buildStartSteps,
   buildStopSteps,
-  buildRemoveSteps
+  buildRemoveSteps,
+  parseSystemdShow
 } from '../src/main/linux/init-system'
 import { buildSudoersContent, buildDoasRules, isAuthFailure, noAuthMessage, withPathVariants } from '../src/main/linux/elevate'
 import {
@@ -276,6 +277,33 @@ describe('init-system builders', () => {
     const unit = buildSystemdUnit({ runnerPath: '/data/zapret-linux-run.sh', workDir: '/data' })
     expect(unit).toContain('ExecStart=/usr/bin/env bash /data/zapret-linux-run.sh daemon')
     expect(unit).toContain('WantedBy=multi-user.target')
+  })
+  it('waits on network.target, not network-online.target (hangs desktops)', () => {
+    const unit = buildSystemdUnit({ runnerPath: '/data/run.sh', workDir: '/data' })
+    expect(unit).toContain('After=network.target')
+    expect(unit).not.toContain('network-online')
+  })
+  it('parses systemctl show details (start-failure forensics)', () => {
+    expect(
+      parseSystemdShow(
+        'ActiveState=activating\nSubState=start\nResult=success\nExecMainStatus=0\nNRestarts=3\nMainPID=0\n'
+      )
+    ).toEqual({
+      activeState: 'activating',
+      subState: 'start',
+      result: 'success',
+      execMainStatus: '0',
+      nRestarts: 3,
+      mainPid: 0
+    })
+    expect(parseSystemdShow('')).toEqual({
+      activeState: '',
+      subState: '',
+      result: '',
+      execMainStatus: '',
+      nRestarts: 0,
+      mainPid: 0
+    })
   })
   it('builds a dinit service', () => {
     expect(buildDinitConf({ runnerPath: '/data/run.sh' })).toContain('type = process')

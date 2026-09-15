@@ -58,8 +58,11 @@ import {
   buildRemoveSteps,
   buildStartSteps,
   buildStopSteps,
+  buildSystemdUnit,
   detectInitSystem,
-  queryLinuxServiceState
+  getSystemdDetails,
+  queryLinuxServiceState,
+  type SystemdDetails
 } from './init-system'
 import { buildNfqwsArgv, parseStrategyArgsForLinux } from './strategy-linux'
 
@@ -175,8 +178,8 @@ async function collectUnitFailureContext(serviceName: string): Promise<string> {
  * alive (polled — the daemon fork takes a moment under load), firewall
  * rules present *when readable without a prompt* (root/NOPASSWD; an
  * unprivileged `nft list` fails and must not count as "absent").
- * Throws a detailed error (with unit context) instead of leaving a green
- * "RUNNING" service with dead workers.
+ * Throws a detailed error (with unit forensics + journal when available)
+ * instead of leaving a green "RUNNING" service with dead workers.
  */
 async function verifyLinuxRunning(
   dataDir: string,
@@ -185,18 +188,30 @@ async function verifyLinuxRunning(
   onLog?: (t: string) => void
 ): Promise<void> {
   void dataDir
+  // Baseline for restart-loop detection (unprivileged reads).
+  const d0 = init === 'systemd' ? await getSystemdDetails().catch(() => null) : null
   let alive = await isNfqwsRunning()
   for (let i = 0; !alive && i < 11; i++) {
     await sleepMs(500)
     alive = await isNfqwsRunning()
   }
-  let unitState: ServiceState = 'UNKNOWN'
-  if (init !== 'unknown') {
-    try {
-      unitState = await queryLinuxServiceState(init)
-    } catch {
-      unitState = 'UNKNOWN'
+  const sampleUnit = async (): Promise<{ state: ServiceState; details: SystemdDetails | null }> => {
+    let state: ServiceState = 'UNKNOWN'
+    if (init !== 'unknown') {
+      try {
+        state = await queryLinuxServiceState(init)
+      } catch {
+        state = 'UNKNOWN'
+      }
     }
+    const details = init === 'systemd' ? await getSystemdDetails().catch(() => null) : null
+    return { state, details }
+  }
+  let { state: unitState, details } = await sampleUnit()
+  // Transient start/stop windows are not verdicts — resample before failing.
+  for (let i = 0; (unitState === 'START_PENDING' || unitState === 'STOP_PENDING') && i < 2; i++) {
+    await sleepMs(1500)
+    ;({ state: unitState, details } = await sampleUnit())
   }
   // Firewall reads need privileges; without them the check would lie.
   let fwOk: boolean | null = null
@@ -214,12 +229,47 @@ async function verifyLinuxRunning(
   if (!serviceOk) parts.push(`service state is ${unitState}`)
   if (!alive) parts.push('nfqws process is not running')
   if (fwOk === false) parts.push(`no ${backend} firewall rules detected`)
+  // Forensics need no privileges: exact SubState, restart counter delta and
+  // the stuck main process cmdline tell a stuck start job apart from a
+  // restart loop.
+  const forensics: string[] = []
+  if (details) {
+    const sub = details.subState ? `${details.activeState}/${details.subState}` : details.activeState
+    let line = `systemd: ${sub || unitState}`
+    if (details.result && details.result !== 'success') line += ` (result: ${details.result})`
+    forensics.push(line)
+    if (d0 && details.nRestarts !== d0.nRestarts) {
+      forensics.push(
+        `service restarted ${d0.nRestarts}→${details.nRestarts} times during the check — the runner exits right after start, see the journal: journalctl -u ${LINUX_SERVICE_NAME} -n 50`
+      )
+    } else if (details.subState === 'start' || unitState === 'START_PENDING') {
+      forensics.push(
+        `start job is stuck (MainPID=${details.mainPid || 'none'}) — often a hung After= dependency; check: systemctl status ${LINUX_SERVICE_NAME}`
+      )
+    }
+    if (details.mainPid > 0) {
+      const cmd = readProcCmdline(details.mainPid)
+      if (cmd) forensics.push(`main process: ${cmd}`)
+    }
+  }
   onLog?.(`Start verification failed: ${parts.join('; ')}. Collecting service logs...`)
   let ctx = ''
   if (init !== 'unknown' && (isRoot() || (await canElevateWithoutPassword().catch(() => false)))) {
     ctx = await collectUnitFailureContext(LINUX_SERVICE_NAME)
   }
-  throw new Error(`Zapret did not start properly (${parts.join('; ')})${ctx}`)
+  const forensicsText = forensics.length > 0 ? `\n--- diagnosis ---\n${forensics.join('\n').slice(0, 1200)}` : ''
+  throw new Error(`Zapret did not start properly (${parts.join('; ')})${forensicsText}${ctx}`)
+}
+
+/** `/proc/<pid>/cmdline` as a readable string (world-readable). Never throws. */
+function readProcCmdline(pid: number): string | null {
+  try {
+    if (!Number.isInteger(pid) || pid <= 0) return null
+    const raw = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim()
+    return raw ? raw.slice(0, 300) : null
+  } catch {
+    return null
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -645,12 +695,32 @@ export async function startLinuxService(dataDir: string, onLog?: (t: string) => 
   } catch {
     unitState = 'UNKNOWN'
   }
-  if (unitState === 'NOT_INSTALLED') {
-    const runner = getLinuxRunnerPath(dataDir)
+  const runner = getLinuxRunnerPath(dataDir)
+  let needReinstall = unitState === 'NOT_INSTALLED'
+  // Stale-unit migration (systemd): an existing unit whose content differs
+  // from what the current app generates (old After=, old paths, ...) is
+  // rewritten — otherwise a broken unit would linger forever and every
+  // start would fail the same way. Unit files are world-readable.
+  if (!needReinstall && init === 'systemd' && fs.existsSync(runner)) {
+    try {
+      const dest = `/etc/systemd/system/${LINUX_SERVICE_NAME}.service`
+      const onDisk = fs.readFileSync(dest, 'utf8')
+      const expected = buildSystemdUnit({ runnerPath: runner, workDir: dataDir })
+      if (onDisk !== expected) {
+        onLog?.('Service unit differs from the generated one, reinstalling...')
+        needReinstall = true
+      }
+    } catch {
+      /* unreadable — proceed with a plain start */
+    }
+  }
+  if (needReinstall) {
     if (!fs.existsSync(runner)) {
       throw new Error('Service is not installed — apply a strategy on the Strategies tab first')
     }
-    onLog?.(`Service unit is missing, reinstalling ${init} service (${LINUX_SERVICE_NAME})...`)
+    if (unitState === 'NOT_INSTALLED') {
+      onLog?.(`Service unit is missing, reinstalling ${init} service (${LINUX_SERVICE_NAME})...`)
+    }
     steps.push(...buildInstallSteps(init, { runnerPath: runner, workDir: dataDir }))
   }
   steps.push(...buildStartSteps(init))
