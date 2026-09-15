@@ -1161,7 +1161,7 @@ function Flag(props: { code: Locale }): React.JSX.Element {
  * shows "Download / Install and restart" instead of a silent log line.
  */
 function AppUpdateBanner(): React.JSX.Element | null {
-  const { t, setPage } = useUi()
+  const { t, setPage, setError } = useUi()
   const [available, setAvailable] = useState<string | null>(null)
   const [downloaded, setDownloaded] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
@@ -1207,7 +1207,9 @@ function AppUpdateBanner(): React.JSX.Element | null {
   }
 
   function install(): void {
-    void window.zapret.installAppUpdate().catch(() => undefined)
+    void window.zapret
+      .installAppUpdate()
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
 
   const isDownloaded = downloaded !== null
@@ -1282,7 +1284,7 @@ function AppUpdateBanner(): React.JSX.Element | null {
 }
 
 function AdminBanner(): React.JSX.Element | null {
-  const { status, t } = useUi()
+  const { status, t, setError } = useUi()
   const [dismissed, setDismissed] = useState(false)
   const [pending, setPending] = useState(false)
   if (!status || status.isAdmin || dismissed) return null
@@ -1292,9 +1294,11 @@ function AdminBanner(): React.JSX.Element | null {
     setPending(true)
     try {
       await window.zapret.relaunchAsAdmin()
-    } catch {
-      // Success quits the app; a failure just re-enables the button.
+    } catch (e) {
+      // Success quits the app; a failure re-enables the button and surfaces
+      // the reason instead of failing silently.
       setPending(false)
+      setError(e instanceof Error ? e.message : String(e))
     }
   }
 

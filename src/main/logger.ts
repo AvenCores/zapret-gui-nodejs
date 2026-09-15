@@ -10,10 +10,40 @@ const MAX_BUFFER = 2000
 const buffer: LogLine[] = []
 const listeners = new Set<(line: LogLine) => void>()
 
+/** Cap for app.log: config-tester runs emit hundreds of lines per minute. */
+const MAX_FILE_BYTES = 2 * 1024 * 1024
+/** Bytes appended since the last size check (stat on every line is wasteful). */
+let bytesSinceStat = 0
+const STAT_EVERY_BYTES = 256 * 1024
+
 let filePath: string | null = null
 
 export function initLogger(path: string): void {
   filePath = path
+  // Force a size check on the first line (previous session may have left a huge file).
+  bytesSinceStat = STAT_EVERY_BYTES
+}
+
+/** Rotate app.log → app.log.1 once it exceeds the cap. Best-effort. */
+function maybeRotate(): void {
+  if (!filePath || bytesSinceStat < STAT_EVERY_BYTES) return
+  bytesSinceStat = 0
+  try {
+    if (fs.statSync(filePath).size < MAX_FILE_BYTES) return
+    const prev = `${filePath}.1`
+    try {
+      fs.rmSync(prev, { force: true })
+    } catch {
+      /* ignore */
+    }
+    try {
+      fs.renameSync(filePath, prev)
+    } catch {
+      /* ignore */
+    }
+  } catch {
+    /* missing file — nothing to rotate */
+  }
 }
 
 export function onLog(listener: (line: LogLine) => void): () => void {
@@ -40,7 +70,10 @@ export function log(source: LogLine['source'], level: LogLine['level'], text: st
   }
   if (filePath) {
     try {
-      fs.appendFileSync(filePath, `[${line.ts}] [${source}/${level}] ${text}\n`, 'utf8')
+      maybeRotate()
+      const textLine = `[${line.ts}] [${source}/${level}] ${text}\n`
+      fs.appendFileSync(filePath, textLine, 'utf8')
+      bytesSinceStat += Buffer.byteLength(textLine, 'utf8')
     } catch {
       /* disk errors are non-fatal */
     }

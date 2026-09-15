@@ -13,7 +13,7 @@ vi.mock('node:child_process', async (importOriginal) => {
 })
 
 import { execFile } from 'node:child_process'
-import { parseScState, mapServiceStatus, queryServiceState, getIPSetMode, setIPSetMode, getGameFilterMode, setGameFilterMode, expandEnvVars, normalizeWindowsPath, extractExePathFromImagePath, detectServiceOwnership, friendlyServiceError } from '../src/main/service-manager'
+import { parseScState, mapServiceStatus, queryServiceState, getIPSetMode, setIPSetMode, getGameFilterMode, setGameFilterMode, expandEnvVars, normalizeWindowsPath, extractExePathFromImagePath, detectServiceOwnership, friendlyServiceError, buildServiceImagePath, quoteImagePathForSc } from '../src/main/service-manager'
 import { compareVersions } from '../src/main/strategy-updater'
 
 const execFileMock = execFile as unknown as ReturnType<typeof vi.fn>
@@ -190,5 +190,46 @@ describe('foreign zapret ownership detection', () => {
     const own = 'C:\\Users\\Me\\AppData\\Roaming\\zapret-gui\\data\\bin'
     expect(detectServiceOwnership('RUNNING', '"C:\\zapret\\bin\\winws.exe" --wf-tcp=80', own)).toBe('foreign')
     expect(detectServiceOwnership('RUNNING', '"D:\\Flowseal\\zapret\\winws.exe"', own)).toBe('foreign')
+  })
+})
+
+describe('buildServiceImagePath', () => {
+  it('quotes only the exe, keeps args outside (paths with spaces)', () => {
+    expect(buildServiceImagePath('C:\\Users\\Ivan Petrov\\bin\\winws.exe', ['--wf-tcp=80'])).toBe(
+      '"C:\\Users\\Ivan Petrov\\bin\\winws.exe" --wf-tcp=80'
+    )
+  })
+  it('preserves already-quoted args with spaces', () => {
+    expect(buildServiceImagePath('C:\\bin\\winws.exe', ['--ipset="C:\\my lists\\ipset.txt"'])).toBe(
+      '"C:\\bin\\winws.exe" --ipset="C:\\my lists\\ipset.txt"'
+    )
+  })
+  it('strips newlines/quotes from the exe path (injection)', () => {
+    expect(buildServiceImagePath('C:\\bin\\winws.exe"\r\nnet user x', [])).toBe('"C:\\bin\\winws.exenet user x"')
+  })
+  it('round-trips through extractExePathFromImagePath', () => {
+    const img = buildServiceImagePath('C:\\Users\\Me\\AppData\\Roaming\\zapret-gui\\data\\bin\\winws.exe', ['--wf-tcp=80'])
+    expect(extractExePathFromImagePath(img)).toBe('C:\\Users\\Me\\AppData\\Roaming\\zapret-gui\\data\\bin\\winws.exe')
+  })
+})
+
+describe('quoteImagePathForSc', () => {
+  it('wraps the whole value in one outer pair of quotes', () => {
+    expect(quoteImagePathForSc('"C:\\bin\\winws.exe" --wf-tcp=80')).toBe(
+      '"\\"C:\\bin\\winws.exe\\" --wf-tcp=80"'
+    )
+  })
+  it('escapes inner quotes with backslashes (MSVCRT argv rules)', () => {
+    expect(quoteImagePathForSc('"C:\\a b\\winws.exe" --ipset="C:\\my lists\\x.txt"')).toBe(
+      '"\\"C:\\a b\\winws.exe\\" --ipset=\\"C:\\my lists\\x.txt\\""'
+    )
+  })
+  it('doubles backslash runs preceding a quote', () => {
+    expect(quoteImagePathForSc('"C:\\dir\\" --x')).toBe('"\\"C:\\dir\\\\\\" --x"')
+  })
+  it('leaves %VAR% untouched (doubling corrupts the common case)', () => {
+    expect(quoteImagePathForSc('"C:\\bin\\winws.exe" --foo=%BAR%')).toBe(
+      '"\\"C:\\bin\\winws.exe\\" --foo=%BAR%"'
+    )
   })
 })

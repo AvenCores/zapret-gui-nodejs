@@ -75,3 +75,19 @@ export async function relaunchAppAsAdmin(appPath: string, appArgs: string[]): Pr
 export function spawnLong(file: string, args: string[], cwd?: string) {
   return spawn(file, args, { windowsHide: false, cwd })
 }
+
+/**
+ * Force-kill a process tree by PID (`taskkill /PID x /F /T`).
+ * `ChildProcess.kill()` is routinely ignored by winws.exe on Windows, so a
+ * PID-targeted taskkill is the reliable fallback. Unlike `/IM <image>` it
+ * never touches foreign processes with the same image name.
+ * Best-effort: never throws.
+ */
+export async function killPidTree(pid: number): Promise<void> {
+  if (!Number.isInteger(pid) || pid <= 0) return
+  try {
+    await runCmd(`taskkill /PID ${pid} /F /T >nul 2>&1`, 8000)
+  } catch {
+    /* already dead */
+  }
+}

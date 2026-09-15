@@ -116,7 +116,11 @@ interface UiState {
 async function call<T>(key: string, fn: () => Promise<T>, set: (p: Partial<UiState>) => void, get: () => UiState): Promise<T | null> {
   get().setBusy(key, true)
   try {
-    return await fn()
+    const result = await fn()
+    // A success clears the previous failure — otherwise the red banner
+    // from an old error hangs around until manually dismissed.
+    set({ error: null })
+    return result
   } catch (e) {
     set({ error: e instanceof Error ? e.message : String(e) })
     return null

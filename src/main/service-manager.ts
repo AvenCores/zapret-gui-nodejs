@@ -181,31 +181,49 @@ async function enableTcpTimestamps(): Promise<void> {
   await runCmd('chcp 437 >nul & netsh interface tcp show global | findstr /i "timestamps" | findstr /i "enabled" >nul || netsh interface tcp set global timestamps=enabled >nul 2>&1')
 }
 
+/** One shared in-flight snapshot (see getStatus). */
+let statusInflight: Promise<StatusSnapshot> | null = null
+
 /** Full dashboard snapshot. */
 export async function getStatus(isAdmin: boolean): Promise<StatusSnapshot> {
-  const [zapret, windivert, winwsRunning, reg, winwsPath] = await Promise.all([
-    scQuery(SERVICE_NAME),
-    scQuery(WINDIVERT_SERVICE),
-    isProcessRunning(WINWS_EXE),
-    readStrategyRegistry(),
-    getWinwsProcessPath()
-  ])
-  let ownBinDir = ''
-  try {
-    ownBinDir = getBinDir()
-  } catch {
-    ownBinDir = ''
+  // De-duplicate overlapping calls: the tray tick (15s) and the dashboard
+  // often fire together, and each snapshot spawns ~5 powershell/cmd
+  // processes — without sharing they pile up when the shell is slow.
+  if (statusInflight) {
+    const shared = await statusInflight
+    return { ...shared, isAdmin }
   }
-  const ownership = ownBinDir === '' ? 'unknown' : detectServiceOwnership(zapret, reg.binPath, ownBinDir)
-  return {
-    zapret,
-    windivert,
-    winwsRunning,
-    activeStrategy: reg.strategy,
-    serviceBinPath: reg.binPath,
-    winwsPath,
-    ownership,
-    isAdmin
+  const current = (async (): Promise<StatusSnapshot> => {
+    const [zapret, windivert, winwsRunning, reg, winwsPath] = await Promise.all([
+      scQuery(SERVICE_NAME),
+      scQuery(WINDIVERT_SERVICE),
+      isProcessRunning(WINWS_EXE),
+      readStrategyRegistry(),
+      getWinwsProcessPath()
+    ])
+    let ownBinDir = ''
+    try {
+      ownBinDir = getBinDir()
+    } catch {
+      ownBinDir = ''
+    }
+    const ownership = ownBinDir === '' ? 'unknown' : detectServiceOwnership(zapret, reg.binPath, ownBinDir)
+    return {
+      zapret,
+      windivert,
+      winwsRunning,
+      activeStrategy: reg.strategy,
+      serviceBinPath: reg.binPath,
+      winwsPath,
+      ownership,
+      isAdmin
+    }
+  })()
+  statusInflight = current
+  try {
+    return await current
+  } finally {
+    if (statusInflight === current) statusInflight = null
   }
 }
 
@@ -236,7 +254,17 @@ export function setGameFilterMode(dataDir: string, mode: GameFilterMode): void {
 /** Derive IPSet mode from `lists/ipset-all.txt` (mirrors `:ipset_switch_status`). */
 export function getIPSetMode(listsDir: string): IPSetMode {
   const listFile = path.join(listsDir, 'ipset-all.txt')
-  if (!fs.existsSync(listFile)) return 'any'
+  let size: number
+  try {
+    size = fs.statSync(listFile).size
+  } catch {
+    return 'any'
+  }
+  if (size === 0) return 'any'
+  // Fast path: the `none` marker file is 19 bytes and `any` is empty, so any
+  // multi-MB file can only be a loaded list — don't block the main thread
+  // reading megabytes on every tray tick.
+  if (size > 1024 * 1024) return 'loaded'
   const content = fs.readFileSync(listFile, 'utf8')
   const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0)
   if (lines.length === 0) return 'any'
@@ -279,6 +307,51 @@ export function setAutoUpdateCheck(dataDir: string, enabled: boolean): void {
 }
 
 /**
+ * Build the SCM ImagePath value for `sc create`: `"exe" args` — the exe
+ * quoted on its own, args appended after it.
+ * Wrapping the whole `exe + args` in one pair of quotes makes Windows look
+ * for an executable literally named `winws.exe --args...` and the service
+ * never starts (breaks on any path with spaces, e.g. `Ivan Petrov`).
+ * `args` are expected to come from {@link quoteArg} (no newlines or inner
+ * quotes, args with spaces already wrapped in balanced quotes).
+ * Pure — covered by unit tests.
+ */
+export function buildServiceImagePath(exePath: string, args: string[]): string {
+  const exe = String(exePath).replace(/[\r\n"]/g, '')
+  const tail = args.join(' ').replace(/[\r\n]+/g, ' ')
+  return tail === '' ? `"${exe}"` : `"${exe}" ${tail}`
+}
+
+/**
+ * Wrap an ImagePath value for `sc create binPath= ...` so it survives the
+ * whole transport chain as ONE argument: cmd.exe tokenizing → MSVCRT argv
+ * parsing → sc.exe.
+ *
+ * - cmd.exe only understands `"...`" toggling (no backslash escapes), so the
+ *   whole ImagePath is wrapped in one outer pair of quotes;
+ * - MSVCRT understands `\"` (and `\\` before a quote), so every inner `"`
+ *   is backslash-escaped (a preceding backslash run is doubled first).
+ *
+ * NOTE: `%VAR%` is left as-is. cmd.exe expands *defined* variables even
+ * inside quotes (verified empirically) — but doubling to `%%` is worse: it
+ * corrupts the common case, turning a literal `%BAR%` into `%%BAR%%`,
+ * while a single `%BAR%` passes through untouched. Leftover `%...%` can
+ * only come from unknown variables in hand-crafted imports (all known
+ * placeholders are substituted beforehand).
+ *
+ * A naive `binPath= "exe args"` (quotes stripped) breaks on paths with
+ * spaces; a naive `binPath= "exe" args` splits into several argv elements
+ * and sc.exe answers with its USAGE text instead of creating the service.
+ * Pure — covered by unit tests.
+ */
+export function quoteImagePathForSc(imagePath: string): string {
+  const escaped = String(imagePath)
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/(\\*)"/g, (_m, bs: string) => `${bs}${bs}\\"`)
+  return `"${escaped}"`
+}
+
+/**
  * Install a strategy as the `zapret` Windows service.
  * Stops/deletes the old service first, then `sc create ... start= auto`,
  * writes the strategy name to the registry and starts the service.
@@ -302,13 +375,11 @@ export async function installStrategy(
   await runCmd(`net stop ${SERVICE_NAME} >nul 2>&1`)
   await runCmd(`sc delete ${SERVICE_NAME} >nul 2>&1`)
 
-  const binPath = `"${path.join(binDir, WINWS_EXE)}" ${args.join(' ')}`
   say(`Creating service: sc create ${SERVICE_NAME} ...`)
-  // NOTE: `runCmd` passes the string verbatim to `cmd /c` (no backslash
-  // escaping). Inner `"` must be stripped, not `\"`-escaped — cmd.exe does
-  // not understand `\"` and it would break out of quoting (injection).
-  const safeBinPath = binPath.replace(/[\r\n"]/g, '')
-  const created = await runCmd(`sc create ${SERVICE_NAME} binPath= "${safeBinPath}" DisplayName= "zapret" start= auto`)
+  // See quoteImagePathForSc: the value must reach sc.exe as a single argv
+  // element with the exe quoted on its own (`"exe" args`).
+  const imagePath = buildServiceImagePath(path.join(binDir, WINWS_EXE), args)
+  const created = await runCmd(`sc create ${SERVICE_NAME} binPath= ${quoteImagePathForSc(imagePath)} DisplayName= "zapret" start= auto`)
   if (created.code !== 0 && !/FAILED 1072|already exists|marked for deletion/i.test(created.stdout + created.stderr)) {
     throw new Error(`sc create failed: ${(created.stdout + created.stderr).trim().slice(0, 500)}`)
   }

@@ -31,9 +31,13 @@ export function checkBypassUrl(urlStr: string, timeoutMs = BYPASS_CHECK_TIMEOUT_
   return new Promise((resolve) => {
     const started = Date.now()
     let settled = false
+    let fallback: NodeJS.Timeout | null = null
+    let bodyGuard: NodeJS.Timeout | null = null
     const done = (r: { ok: boolean; latencyMs: number; httpStatus: number | null; error: string | null }): void => {
       if (settled) return
       settled = true
+      if (fallback) clearTimeout(fallback)
+      if (bodyGuard) clearTimeout(bodyGuard)
       resolve(r)
     }
     let url: URL
@@ -59,14 +63,14 @@ export function checkBypassUrl(urlStr: string, timeoutMs = BYPASS_CHECK_TIMEOUT_
           done({ ok: httpStatus != null && httpStatus >= 200 && httpStatus < 400, latencyMs, httpStatus, error: null })
         })
         // Safety: if the server never ends the body, still succeed on headers.
-        setTimeout(() => {
+        bodyGuard = setTimeout(() => {
           try {
             res.destroy()
           } catch {
             /* ignore */
           }
           done({ ok: httpStatus != null && httpStatus >= 200 && httpStatus < 400, latencyMs, httpStatus, error: null })
-        }, 3000).unref?.()
+        }, 3000).unref?.() ?? null
       }
     )
     req.on('timeout', () => {
@@ -76,14 +80,14 @@ export function checkBypassUrl(urlStr: string, timeoutMs = BYPASS_CHECK_TIMEOUT_
       done({ ok: false, latencyMs: Date.now() - started, httpStatus: null, error: shortError(e) })
     })
     // Hard fallback in case neither response nor error fires.
-    setTimeout(() => {
+    fallback = setTimeout(() => {
       try {
         req.destroy(new Error(`timeout after ${timeoutMs}ms`))
       } catch {
         /* ignore */
       }
       done({ ok: false, latencyMs: Date.now() - started, httpStatus: null, error: `timeout after ${timeoutMs}ms` })
-    }, timeoutMs + 1000).unref?.()
+    }, timeoutMs + 1000).unref?.() ?? null
   })
 }
 

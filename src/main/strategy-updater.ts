@@ -13,6 +13,7 @@ import { URLS, UPSTREAM_BRANCH, ENGINE_WIN64_DIR, ENGINE_FAKES_DIR, ENGINE_BIN_F
 import type { DownloadProgress, EngineRelease, EngineVersionInfo, UpdateInfo } from '../shared/types'
 import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir, getBundledAssetsDir, applyWin7Drivers, isWindows7 } from './paths'
 import { parseBatContent } from './strategy-parser'
+import { getIPSetMode, setIPSetMode } from './service-manager'
 
 export type ProgressCb = (p: DownloadProgress) => void
 
@@ -31,7 +32,14 @@ function fetchText(url: string, timeoutMs = 15000, redirects = 0): Promise<strin
             reject(new Error(`Too many redirects fetching ${url}`))
             return
           }
-          fetchText(res.headers.location, timeoutMs, redirects + 1).then(resolve, reject)
+          let next: string
+          try {
+            next = new URL(res.headers.location, url).href
+          } catch {
+            reject(new Error(`Bad redirect location fetching ${url}`))
+            return
+          }
+          fetchText(next, timeoutMs, redirects + 1).then(resolve, reject)
           return
         }
         if (res.statusCode !== 200) {
@@ -61,14 +69,26 @@ function fetchText(url: string, timeoutMs = 15000, redirects = 0): Promise<strin
   })
 }
 
-/** Download a file with progress events. Follows one redirect. */
+/** Download a file with progress events. Follows redirects (capped). */
 export function downloadFile(url: string, dest: string, onProgress?: ProgressCb, timeoutMs = 120000): Promise<void> {
   return new Promise((resolve, reject) => {
-    const doGet = (u: string): void => {
+    const doGet = (u: string, redirects: number): void => {
       const req = https.get(u, { headers: { 'User-Agent': 'zapret-gui' }, timeout: timeoutMs }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume()
-          doGet(res.headers.location)
+          if (redirects >= MAX_REDIRECTS) {
+            reject(new Error(`Too many redirects downloading ${u}`))
+            return
+          }
+          // Upstream may answer with a relative Location — resolve it.
+          let next: string
+          try {
+            next = new URL(res.headers.location, u).href
+          } catch {
+            reject(new Error(`Bad redirect location downloading ${u}`))
+            return
+          }
+          doGet(next, redirects + 1)
           return
         }
         if (res.statusCode !== 200) {
@@ -78,7 +98,15 @@ export function downloadFile(url: string, dest: string, onProgress?: ProgressCb,
         }
         const total = res.headers['content-length'] ? Number(res.headers['content-length']) : null
         let transferred = 0
-        fs.mkdirSync(path.dirname(dest), { recursive: true })
+        try {
+          fs.mkdirSync(path.dirname(dest), { recursive: true })
+        } catch (e) {
+          // Thrown from an event-emitter callback this would escape the
+          // Promise as an uncaught exception and crash main — route to reject.
+          res.resume()
+          reject(e instanceof Error ? e : new Error(String(e)))
+          return
+        }
         const out = fs.createWriteStream(dest)
         const onError = (e: Error): void => {
           try {
@@ -107,14 +135,16 @@ export function downloadFile(url: string, dest: string, onProgress?: ProgressCb,
       req.on('timeout', () => req.destroy(new Error('download timeout')))
       req.on('error', reject)
     }
-    doGet(url)
+    doGet(url, 0)
   })
 }
 
-/** Compare `X.Y.Z` versions. Returns 1 if a > b, -1 if a < b, 0 if equal. */
+/** Compare `X.Y.Z` versions (leading `v` tolerated). Returns 1 if a > b, -1 if a < b, 0 if equal. */
 export function compareVersions(a: string, b: string): number {
-  const pa = a.trim().split('.').map(Number)
-  const pb = b.trim().split('.').map(Number)
+  // GitHub tags sometimes arrive as `v1.10.2`: without stripping, `Number('v1')`
+  // is NaN and every comparison silently returns 0.
+  const pa = a.trim().replace(/^[vV]/, '').split('.').map(Number)
+  const pb = b.trim().replace(/^[vV]/, '').split('.').map(Number)
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const x = pa[i] ?? 0
     const y = pb[i] ?? 0
@@ -169,14 +199,27 @@ export async function updateIPSetList(): Promise<{ lines: number; bytes: number 
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
   const looksLikeIpList = lines.length > 0 && lines.filter((l) => /^\s*[0-9a-fA-F.:/ ]/.test(l)).length >= lines.length / 2
   if (!looksLikeIpList) throw new Error('Downloaded IPSet data does not look like an IP list — aborting')
-  const dest = path.join(getListsDir(), 'ipset-all.txt')
+  const listsDir = getListsDir()
+  const dest = path.join(listsDir, 'ipset-all.txt')
   fs.mkdirSync(path.dirname(dest), { recursive: true })
+  // Remember the user's mode: a refresh replaces the underlying data, not
+  // the mode choice — `none`/`any` must survive the update instead of being
+  // silently reset to `loaded`. A missing file means "never configured"
+  // (not `any`), so leave it loaded.
+  const hadFile = fs.existsSync(dest)
+  const prevMode = hadFile ? getIPSetMode(listsDir) : 'loaded'
   // Atomic write: readers (getIPSetMode/winws) never see a half-written file.
-  const tmp = `${dest}.tmp-${process.pid}`
+  // Unique temp name — two concurrent updates must not share `.tmp-<pid>`
+  // and truncate each other's file.
+  const tmp = `${dest}.tmp-${process.pid}-${Date.now().toString(36)}-${Math.floor(Math.random() * 0xffffffff).toString(36)}`
   fs.writeFileSync(tmp, text, 'utf8')
   fs.renameSync(tmp, dest)
   // Drop stale backup so "loaded" mode detection stays consistent.
-  fs.rmSync(path.join(getListsDir(), 'ipset-all.txt.backup'), { force: true })
+  fs.rmSync(path.join(listsDir, 'ipset-all.txt.backup'), { force: true })
+  if (prevMode === 'none' || prevMode === 'any') {
+    // Re-apply the user's mode on top of the fresh list (fresh backup for `none`).
+    setIPSetMode(listsDir, prevMode)
+  }
   return { lines: lines.length, bytes: Buffer.byteLength(text, 'utf8') }
 }
 
@@ -231,7 +274,9 @@ function clearReadonlyFlag(p: string): void {
 
 function isAccessError(e: unknown): boolean {
   const code = (e as NodeJS.ErrnoException)?.code
-  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || code === 'EROFS'
+  // EXDEV (cross-device rename, e.g. TMP on another drive) is handled by the
+  // same copy-overwrite fallback as permission errors.
+  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || code === 'EROFS' || code === 'EXDEV'
 }
 
 function hostsWriteError(what: string, hostsPath: string, e: unknown): Error {
@@ -486,6 +531,7 @@ export async function updateStrategiesFromGithub(
       await copyRecursive(src, path.join(backupDir, sub))
     }
   }
+  pruneOldBackups(dataDir)
   say(`Backup saved to ${backupDir}`)
 
   const extractDir = path.join(tmp, 'extracted')
@@ -527,14 +573,31 @@ export async function updateStrategiesFromGithub(
   }
 
   // 2. refresh strategies/*.json from *.bat at archive root
-  const batFiles = fs.readdirSync(root).filter((f) => f.toLowerCase().endsWith('.bat') && !/^service/i.test(f))
+  let batFiles: string[]
+  try {
+    batFiles = fs.readdirSync(root).filter((f) => f.toLowerCase().endsWith('.bat') && !/^service/i.test(f))
+  } catch (e) {
+    throw new Error(`Strategy snapshot is empty or unreadable: ${e instanceof Error ? e.message : String(e)}`)
+  }
   const stratDir = getStrategiesDir()
   fs.mkdirSync(stratDir, { recursive: true })
   for (const bat of batFiles) {
     const content = fs.readFileSync(path.join(root, bat), 'utf8')
     const { strategy } = parseBatContent(content, bat)
     strategy.origin = 'bundled'
-    fs.writeFileSync(path.join(stratDir, `${strategy.id}.json`), JSON.stringify(strategy, null, 2), 'utf8')
+    const dest = path.join(stratDir, `${strategy.id}.json`)
+    // Never clobber a user-imported strategy that happens to share the id —
+    // it would be silently lost on every update.
+    try {
+      const existing = JSON.parse(fs.readFileSync(dest, 'utf8')) as { origin?: unknown }
+      if (existing?.origin === 'imported') {
+        say(`Keeping imported strategy "${strategy.id}" (bundled refresh skipped).`)
+        continue
+      }
+    } catch {
+      /* missing or broken — write the bundled file */
+    }
+    fs.writeFileSync(dest, JSON.stringify(strategy, null, 2), 'utf8')
     if (!filesUpdated.includes(`strategies/${strategy.id}.json`)) filesUpdated.push(`strategies/${strategy.id}.json`)
   }
 
@@ -551,6 +614,31 @@ async function copyRecursive(src: string, dest: string): Promise<void> {
     const d = path.join(dest, e.name)
     if (e.isDirectory()) await copyRecursive(s, d)
     else fs.copyFileSync(s, d)
+  }
+}
+
+/**
+ * Keep only the newest `keep` entries under `data/_backup`.
+ * Every strategies/engine update snapshots all of bin/lists/utils/
+ * strategies — without pruning this grows without bound (disk leak).
+ * Backup names are ISO timestamps, so lexicographic order is chronological.
+ * Best-effort: pruning must never fail the update itself.
+ */
+function pruneOldBackups(dataDir: string, keep = 5): void {
+  try {
+    const root = path.join(dataDir, '_backup')
+    if (!fs.existsSync(root)) return
+    const entries = fs.readdirSync(root).sort()
+    const stale = entries.slice(0, Math.max(0, entries.length - keep))
+    for (const name of stale) {
+      try {
+        fs.rmSync(path.join(root, name), { recursive: true, force: true })
+      } catch {
+        /* best-effort */
+      }
+    }
+  } catch {
+    /* best-effort */
   }
 }
 
@@ -572,7 +660,12 @@ function expandArchive(zipPath: string, dest: string): Promise<void> {
 }
 
 function singleChildDir(dir: string): string | null {
-  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return null
+  }
   if (entries.length === 1 && entries[0].isDirectory()) return path.join(dir, entries[0].name)
   return null
 }
@@ -794,6 +887,7 @@ export async function updateEngineToTag(
   const dataBin = path.join(dataDir, 'bin')
   if (fs.existsSync(dataBin)) {
     await copyRecursive(dataBin, path.join(backupDir, 'bin'))
+    pruneOldBackups(dataDir)
     say(`Backup saved to ${backupDir}`)
   }
 

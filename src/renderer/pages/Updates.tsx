@@ -1,5 +1,5 @@
 /** Updates page: app / zapret-data / engine version checks with update offers. */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useUi } from '../store'
 import { Badge, Btn, Card, ProgressBar, Row, Spinner } from '../components/ui'
 import type { AppUpdateInfo, DownloadProgress, EngineRelease, EngineVersionInfo, UpdateInfo } from '../../shared/types'
@@ -26,6 +26,33 @@ export default function Updates(): React.JSX.Element {
   const [appChecking, setAppChecking] = useState<boolean>(false)
   const [appDownloading, setAppDownloading] = useState<boolean>(false)
   const [appProgress, setAppProgress] = useState<DownloadProgress | null>(null)
+  // Mirror of appCurrent for IPC callbacks: the mount effect closure would
+  // otherwise capture the initial '…' forever (stale closure).
+  const appCurrentRef = useRef<string>('…')
+  function setAppCurrentTracked(v: string): void {
+    appCurrentRef.current = v
+    setAppCurrent(v)
+  }
+  // Unsubscribe fns of an in-flight app download (cleanup on unmount).
+  const appDlOff = useRef<Array<() => void> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      // Unmount mid-download: drop listeners so they never setState on an
+      // unmounted component (progress resumes via fresh subscribe on return).
+      if (appDlOff.current) {
+        for (const off of appDlOff.current) {
+          try {
+            off()
+          } catch {
+            /* ignore */
+          }
+        }
+        appDlOff.current = null
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     void (async () => {
@@ -37,12 +64,12 @@ export default function Updates(): React.JSX.Element {
         setAutoCheckLoading(false)
       }
     })()
-    void window.zapret.getAppVersion().then(setAppCurrent).catch(() => undefined)
+    void window.zapret.getAppVersion().then(setAppCurrentTracked).catch(() => undefined)
     // Background auto-check (main process) must be reflected here too:
     // a new release always re-opens the offer, even without manual check.
     const offAvailable = window.zapret.onAppUpdateAvailable((v) => {
       setAppInfo((prev) => ({
-        currentVersion: prev?.currentVersion ?? appCurrent,
+        currentVersion: prev?.currentVersion ?? appCurrentRef.current,
         availableVersion: v,
         updateAvailable: true,
         downloaded: false,
@@ -54,7 +81,7 @@ export default function Updates(): React.JSX.Element {
       setAppDownloading(false)
       setAppProgress(null)
       setAppInfo((prev) => ({
-        currentVersion: prev?.currentVersion ?? appCurrent,
+        currentVersion: prev?.currentVersion ?? appCurrentRef.current,
         availableVersion: v,
         updateAvailable: true,
         downloaded: true,
@@ -126,7 +153,7 @@ export default function Updates(): React.JSX.Element {
   }
 
   function updateEngineTo(tag: string): void {
-    if (tag === '') return
+    if (tag === '' || busyKey !== null) return
     setSelectedTag(tag)
     setBusyKey('engine')
     setEngineResult(null)
@@ -158,6 +185,9 @@ export default function Updates(): React.JSX.Element {
   }
 
   function updateStrategiesNow(): void {
+    // The global onDownloadProgress channel is shared with engine updates —
+    // don't run both at once or the bars show each other's percents.
+    if (busyKey !== null) return
     setProgress({ percent: 0, transferred: 0, total: null })
     const off = window.zapret.onDownloadProgress(setProgress)
     void wrap('strategies', async () => {
@@ -181,28 +211,35 @@ export default function Updates(): React.JSX.Element {
       .checkAppUpdates()
       .then((v) => {
         setAppInfo(v)
-        setAppCurrent(v.currentVersion)
+        setAppCurrentTracked(v.currentVersion)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setAppChecking(false))
   }
 
   function downloadApp(): void {
+    if (appDownloading) return
     setAppDownloading(true)
     setAppProgress({ percent: 0, transferred: 0, total: null })
     const offProgress = window.zapret.onDownloadProgress(setAppProgress)
-    const offDone = window.zapret.onAppUpdateDownloaded(() => {
+    const finishDownloadListeners = (): void => {
       offProgress()
       offDone()
+      appDlOff.current = null
+    }
+    const offDone = window.zapret.onAppUpdateDownloaded(() => {
+      setAppDownloading(false)
+      setAppProgress(null)
+      finishDownloadListeners()
     })
+    appDlOff.current = [offProgress, offDone]
     window.zapret
       .downloadAppUpdate()
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : String(e))
         setAppDownloading(false)
         setAppProgress(null)
-        offProgress()
-        offDone()
+        finishDownloadListeners()
       })
   }
 

@@ -498,13 +498,13 @@ export default function Dashboard(): React.JSX.Element {
           ) : (
             <>
               <Btn onClick={() => void doAction('start')} disabled={busy['status'] || acting !== null || running || !status.isAdmin}>
-                {t('action.start')}
+                {acting === 'start' ? <Spinner /> : t('action.start')}
               </Btn>
               <Btn onClick={() => void doAction('stop')} disabled={busy['status'] || acting !== null || !running || !status.isAdmin} variant="secondary">
-                {t('action.stop')}
+                {acting === 'stop' ? <Spinner /> : t('action.stop')}
               </Btn>
-              <Btn onClick={() => void doAction('restart')} disabled={busy['status'] || acting !== null || !status.isAdmin} variant="secondary">
-                {acting ? <Spinner /> : t('action.restart')}
+              <Btn onClick={() => void doAction('restart')} disabled={busy['status'] || acting !== null || !status.isAdmin || !zapretInstalled} variant="secondary">
+                {acting === 'restart' ? <Spinner /> : t('action.restart')}
               </Btn>
             </>
           )}

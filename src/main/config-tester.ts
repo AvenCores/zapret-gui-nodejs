@@ -20,7 +20,7 @@ import crypto from 'node:crypto'
 import os from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Strategy, ConfigTestMode, ConfigTesterAnalyticsRow, ConfigTesterEvent, ServiceState } from '../shared/types'
-import { run, runCmd, runPowershell, isAdmin } from './exec'
+import { run, runCmd, runPowershell, isAdmin, killPidTree } from './exec'
 import { queryServiceState, isProcessRunning, resolveGameFilterPorts } from './service-manager'
 import { materializeArgsForSpawn } from './strategy-parser'
 import { WINWS_EXE, WINDIVERT_SERVICE } from '../shared/constants'
@@ -256,9 +256,11 @@ export function headProbe(urlStr: string, timeoutMs: number, variant: TlsVariant
       ...tlsOptions(variant)
     }
     let settled = false
+    let fallback: NodeJS.Timeout | null = null
     const done = (p: HttpProbe): void => {
       if (settled) return
       settled = true
+      if (fallback) clearTimeout(fallback)
       resolve(p)
     }
     let req: ReturnType<typeof lib.request>
@@ -283,14 +285,14 @@ export function headProbe(urlStr: string, timeoutMs: number, variant: TlsVariant
     req.on('error', (e: Error) => {
       done({ variant, kind: classifyHttpError(e.message), httpStatus: null })
     })
-    setTimeout(() => {
+    fallback = setTimeout(() => {
       done({ variant, kind: 'ERROR', httpStatus: null })
       try {
         req.destroy()
       } catch {
         /* ignore */
       }
-    }, timeoutMs + 2000).unref?.()
+    }, timeoutMs + 2000).unref?.() ?? null
     try {
       req.end()
     } catch (e) {
@@ -326,9 +328,11 @@ export function fetchDpiSuite(timeoutMs = 5000): Promise<DpiSuiteEntry[]> {
   const url = 'https://hyperion-cs.github.io/dpi-checkers/ru/tcp-16-20/suite.v2.json'
   return new Promise((resolve) => {
     let settled = false
+    let fallback: NodeJS.Timeout | null = null
     const done = (v: DpiSuiteEntry[]): void => {
       if (settled) return
       settled = true
+      if (fallback) clearTimeout(fallback)
       resolve(v)
     }
     let req: ReturnType<typeof https.get>
@@ -378,7 +382,7 @@ export function fetchDpiSuite(timeoutMs = 5000): Promise<DpiSuiteEntry[]> {
       done([])
     })
     req.on('error', () => done([]))
-    setTimeout(() => done([]), timeoutMs + 2000).unref?.()
+    fallback = setTimeout(() => done([]), timeoutMs + 2000).unref?.() ?? null
   })
 }
 
@@ -393,9 +397,11 @@ export function dpiProbe(host: string, payload: Buffer, rangeBytes: number, time
     const started = Date.now()
     const rangeSpec = `bytes=0-${rangeBytes - 1}`
     let settled = false
+    let fallback: NodeJS.Timeout | null = null
     const finish = (partial: Omit<DpiProbeLine, 'label' | 'upKB' | 'downKB'>): void => {
       if (settled) return
       settled = true
+      if (fallback) clearTimeout(fallback)
       resolve({ ...partial, label: variant, upKB: Math.round((partial.upBytes / 1024) * 10) / 10, downKB: Math.round((partial.downBytes / 1024) * 10) / 10 })
     }
     const upBytes = payload.length
@@ -462,14 +468,14 @@ export function dpiProbe(host: string, payload: Buffer, rangeBytes: number, time
       }
       finish({ code: 'ERR', upBytes, downBytes: 0, time, status: 'FAIL' })
     })
-    setTimeout(() => {
+    fallback = setTimeout(() => {
       finish({ code: 'ERR', upBytes, downBytes: 0, time: (Date.now() - started) / 1000, status: 'FAIL' })
       try {
         req.destroy()
       } catch {
         /* ignore */
       }
-    }, timeoutSec * 3000 + 5000).unref?.()
+    }, timeoutSec * 3000 + 5000).unref?.() ?? null
     try {
       req.write(payload)
       req.end()
@@ -526,7 +532,13 @@ async function restoreWinwsSnapshot(snapshot: WinwsSnapshotEntry[], emit: (e: Co
     try {
       if (current.includes(p.exe) && p.args && current.includes(p.args.slice(0, 40))) continue
       const args = p.args ? splitArgs(p.args) : []
-      spawn(p.exe, args, { cwd: path.dirname(p.exe), windowsHide: true, stdio: 'ignore', detached: true }).unref?.()
+      // An 'error' event (e.g. ENOENT when the exe was quarantined mid-run)
+      // is an EventEmitter throw — without a listener it crashes main.
+      const child = spawn(p.exe, args, { cwd: path.dirname(p.exe), windowsHide: true, stdio: 'ignore', detached: true })
+      child.on('error', () => {
+        /* best-effort restore */
+      })
+      child.unref?.()
     } catch {
       /* best-effort */
     }
@@ -540,8 +552,10 @@ function splitArgs(cmdline: string): string[] {
   for (let i = 0; i < cmdline.length; i++) {
     const ch = cmdline[i]
     if (ch === '"') {
+      // Drop the quote char: each element is already exactly one argv entry
+      // for a direct spawn (no shell tokenizing to protect against), and
+      // literal `"` inside argv breaks winws file lookup.
       inQ = !inQ
-      cur += ch
       continue
     }
     if (!inQ && (ch === ' ' || ch === '\t')) {
@@ -985,10 +999,17 @@ export function writeResultsFile(
 
 /** Abort the currently running winws child (best-effort). Exported for IPC stop. */
 export function abortActiveChild(): void {
+  const child = activeChild
+  activeChild = null
+  if (!child) return
   try {
-    activeChild?.kill()
+    child.kill()
   } catch {
     /* ignore */
   }
-  activeChild = null
+  // winws.exe routinely ignores SIGTERM — finish it by PID (never by image
+  // name: that would kill foreign winws processes too).
+  if (typeof child.pid === 'number' && child.pid > 0) {
+    void killPidTree(child.pid)
+  }
 }

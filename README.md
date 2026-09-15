@@ -97,10 +97,10 @@
 * `updateStrategiesFromGithub()`:
   1. Снапшот исходников ветки `UPSTREAM_BRANCH` через `codeload.github.com/.../zip/refs/heads/<branch>` (не release-ассеты) + `branchHeadApi` для SHA
   2. Скачивание с прогрессом `zapret:on-download-progress` (0–80%)
-  3. Бэкап `bin/lists/utils/strategies` → `data/_backup/<timestamp>`
+  3. Бэкап `bin/lists/utils/strategies` → `data/_backup/<timestamp>` (хранятся последние 5)
   4. `Expand-Archive` через PowerShell, обход одного top-level каталога
   5. Копирование только изменённых файлов (сравнение по размеру + хешу), `lists/*-user.txt` никогда не затираются
-  6. Регенерация `strategies/*.json` из `*.bat` корня архива (`origin: 'bundled'`, `service.bat` исключён), поверх накатываются Win7-драйверы при необходимости
+  6. Регенерация `strategies/*.json` из `*.bat` корня архива (`origin: 'bundled'`, `service.bat` исключён, импортированные стратегии с тем же id не затираются), поверх накатываются Win7-драйверы при необходимости
 * Движок `bol-van/zapret` (`listEngineReleases/checkEngineUpdates/updateEngineToTag`):
   выбор тега `/^v\d[\w.\-]{0,31}$/` → `zapret-<tag>.zip` → синхронизация только allowlist `ENGINE_BIN_FILES`
   (`winws.exe`, `WinDivert.dll`, `WinDivert64.sys`, `cygwin1.dll`, `mdig.exe`, `ip2net.exe`, `killall.exe`)
@@ -125,7 +125,7 @@
 | 12 | VPN-сервисы | `sc query` + фильтр `/vpn/i` |
 | 13 | Secure DNS | `DohFlags > 0` в `Dnscache\InterfaceSpecificParameters` — OK, если настроен DoH |
 | 14 | Записи YouTube в hosts | `youtube.com` / `youtu.be` в системном hosts |
-| 15 | Залипший WinDivert | `winws` не запущен, а `WinDivert` активен → автоудаление stale-службы |
+| 15 | Залипший WinDivert | `winws` не запущен, а `WinDivert` активен → fail, только отчёт (удаление — кнопкой «Удалить конфликтующие сервисы») |
 | 16 | Сторонний zapret | Чужой `ImagePath` или портативный `winws.exe` без сервиса |
 | 17 | Конфликтующие сервисы | `GoodbyeDPI`, `discordfix_zapret`, `winws1`, `winws2` |
 
@@ -165,7 +165,7 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
   * `lists/` — `ipset-all.txt` (+ `.backup`), `list-general.txt`, `list-google.txt`, `list-exclude.txt`, `ipset-exclude.txt` + создаваемые `*-user.txt` заглушки (`list-general-user.txt`, `list-exclude-user.txt`, `ipset-exclude-user.txt`, лимит редактора 2 МБ)
   * `utils/` — `targets.txt`, результаты `test results/`, флаги `check_updates.enabled` / `game_filter.enabled`
   * `strategies/` — 22 × `*.json`
-  * служебные: `_backup/<timestamp>` (снапшоты перед обновлением), `_tmp/`, `tray-icons/` (сгенерированные PNG)
+  * служебные: `_backup/<timestamp>` (снапшоты перед обновлением, хранятся последние 5), `_tmp/`, `tray-icons/` (сгенерированные PNG)
 * Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `showTrayIcon`, `trayStrategyMenu`, `trayTuningMenu`, `trayQuickSettings`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`)
 * Лог: `%APPDATA%\zapret-gui\app.log`
 * Dev-режим: `bundled-assets` из репозитория, данные в `<repo>/.data`, `userData` изолирован в `zapret-gui-dev` во избежание лока кэша Chromium
@@ -216,16 +216,16 @@ src/
                 service-manager.ts (sc/net/reg/tasklist, install/remove/start/stop, GameFilter, IPSet, Discord-кэш, конфликты)
                 strategy-parser.ts (парсинг .bat в args, плейсхолдеры <BIN>/<LISTS>/<GAME_TCP>/<GAME_UDP>/<ROOT>)
                 strategy-updater.ts (version/IPSet/hosts/source-snapshot/engine bol-van, .bin-фейки)
-                diagnostics.ts (17 проверок)
+                diagnostics.ts (17 проверок, параллельно, таймаут 20с на проверку)
                 config-tester.ts (нативный тестер standard/dpi, targets.txt, test results/)
                 bypass-check.ts (HTTPS-пробы YouTube/Discord/Cloudflare из main-процесса)
                 user-lists.ts (*-user.txt: list/read/write, лимит 2 МБ)
                 app-updater.ts (electron-updater: check/download/install, диалог + баннер)
                 settings.ts (settings.json + systemDefaults + install-defaults.json + autoLaunch)
                 paths.ts (bundled-assets vs %APPDATA%/zapret-gui/data, Win7-детект + applyWin7Drivers)
-                exec.ts (cmd/powershell, isAdmin, RunAs, spawnLong)
+                exec.ts (cmd/powershell, isAdmin, RunAs, spawnLong, killPidTree)
                 window.ts (первое окно + best-effort IPC-отправка в renderer)
-                logger.ts (файл + буфер 2000 + zapret:on-log)
+                logger.ts (файл app.log до 2 МБ + ротация .1, буфер 2000 + zapret:on-log)
   preload/      index.ts — типизированный мост window.zapret
   renderer/     App.tsx + main.tsx + store.ts — zustand (page/locale/theme/status/strategies/logs/busy/error, logs→diagnostics)
                 components/ Layout.tsx (сайдбар, пикер языка с флагами SVG, темы, AboutModal с донатом) + ui.tsx

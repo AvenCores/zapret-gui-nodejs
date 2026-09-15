@@ -9,7 +9,7 @@ import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { ensureDataDirSeeded, getDataDir, getAppLogPath, getBundledAssetsDir, getListsDir } from './paths'
 import { initLogger, info, err, onLog, getBufferedLogs } from './logger'
 import { setupAutoUpdater } from './app-updater'
-import { registerIpcHandlers, listStrategies } from './ipc-handlers'
+import { registerIpcHandlers, listStrategies, stopAllTesting } from './ipc-handlers'
 import { setupTray, getTrayLabels, destroyTray, type TrayContext } from './tray'
 import { loadSettings, saveSettings, onSettingsChanged } from './settings'
 import {
@@ -48,6 +48,13 @@ function armLogForwarding(): void {
 }
 app.on('before-quit', () => {
   isQuitting = true
+  try {
+    // A foreground/config test spawns winws.exe directly (no service) —
+    // without this it keeps running as an orphan after the app exits.
+    stopAllTesting()
+  } catch {
+    /* best-effort */
+  }
   destroyTray()
 })
 
@@ -214,7 +221,17 @@ async function serviceAction(kind: 'start' | 'stop' | 'restart'): Promise<void> 
 
 /** Apply a strategy straight from the tray submenu. */
 async function applyStrategyFromTray(id: string): Promise<void> {
+  // Same guard as serviceAction: double-clicking two strategies must not
+  // run concurrent `sc delete/create` cycles.
+  if (serviceBusy) return
+  serviceBusy = true
   try {
+    const st = await getStatus(await isAdmin())
+    if (st.ownership === 'foreign') {
+      // A third-party service must not be touched — explain in the app.
+      navigateTo('strategies')
+      return
+    }
     const s = listStrategies().find((x) => x.id === id) ?? null
     if (!s) {
       navigateTo('strategies')
@@ -228,6 +245,7 @@ async function applyStrategyFromTray(id: string): Promise<void> {
     err('app', `Tray strategy install failed: ${msg.slice(0, 300)}`)
     dialog.showErrorBox('Zapret GUI', msg.slice(0, 500))
   } finally {
+    serviceBusy = false
     notifyRenderer()
     await refreshTray()
   }
@@ -300,7 +318,11 @@ function trayCallbacks() {
       })()
     },
     onOpenData: () => {
-      void shell.openPath(getDataDir())
+      try {
+        void shell.openPath(getDataDir()).catch(() => undefined)
+      } catch {
+        /* getDataDir failed — nothing to open */
+      }
     },
     onExportLogs: () => {
       void (async () => {

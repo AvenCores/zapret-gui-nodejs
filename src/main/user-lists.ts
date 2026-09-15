@@ -121,13 +121,33 @@ export function readUserList(listsDir: string, name: string): string {
 /** Overwrite a user list (creates parent dir). Returns fresh metadata. */
 export function writeUserList(listsDir: string, name: string, content: string): UserListMeta {
   if (!isValidUserListName(name)) throw new Error(`Invalid user list name: ${name}`)
-  const normalized = normalizeUserListContent(content)
+  const raw = String(content ?? '')
+  // Pre-check before normalize(): normalization fans one string out into a
+  // line array plus a joined copy (~3x memory), so reject absurd payloads
+  // before allocating. The post-normalize check below stays authoritative.
+  if (Buffer.byteLength(raw, 'utf8') > MAX_USER_LIST_BYTES * 4) {
+    throw new Error(`List too large (max ${MAX_USER_LIST_BYTES} bytes)`)
+  }
+  const normalized = normalizeUserListContent(raw)
   const bytes = Buffer.byteLength(normalized, 'utf8')
   if (bytes > MAX_USER_LIST_BYTES) {
     throw new Error(`List too large (${bytes} bytes, max ${MAX_USER_LIST_BYTES})`)
   }
   fs.mkdirSync(listsDir, { recursive: true })
-  fs.writeFileSync(path.join(listsDir, name), normalized, 'utf8')
+  // Atomic write: readers never see a half-written list.
+  const dest = path.join(listsDir, name)
+  const tmp = `${dest}.tmp-${process.pid}-${Date.now().toString(36)}`
+  fs.writeFileSync(tmp, normalized, 'utf8')
+  try {
+    fs.renameSync(tmp, dest)
+  } catch (e) {
+    try {
+      fs.rmSync(tmp, { force: true })
+    } catch {
+      /* ignore */
+    }
+    throw e
+  }
   return {
     name,
     kind: kindOfUserList(name),

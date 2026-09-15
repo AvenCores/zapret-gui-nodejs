@@ -50,7 +50,7 @@ import type { BypassTargetId } from '../shared/types'
 import { loadSettings, saveSettings } from './settings'
 import { translate } from '../shared/i18n'
 import { getBufferedLogs, info, warn, err } from './logger'
-import { isAdmin, relaunchAppAsAdmin, spawnLong } from './exec'
+import { isAdmin, relaunchAppAsAdmin, spawnLong, killPidTree } from './exec'
 import { WINWS_EXE } from '../shared/constants'
 import { abortActiveChild, runConfigTests } from './config-tester'
 import { win, safeSend } from './window'
@@ -67,28 +67,29 @@ function sendLog(source: 'app' | 'winws' | 'updater' | 'diag', level: 'info' | '
 
 /** Read strategies from data dir (seeded from bundled assets on first run). */
 export function listStrategies(): Strategy[] {
-  const dirs = [getStrategiesDir(), path.join(getBundledAssetsDir(), 'strategies')]
-  for (const dir of dirs) {
+  // Merge both dirs by id (data wins): returning only the first non-empty
+  // dir hid all 50 bundled strategies whenever a single file lingered in
+  // data/strategies (e.g. after a partial update or a lone import).
+  const byId = new Map<string, Strategy>()
+  for (const dir of [path.join(getBundledAssetsDir(), 'strategies'), getStrategiesDir()]) {
     try {
       if (!fs.existsSync(dir)) continue
-      const out: Strategy[] = []
       for (const f of fs.readdirSync(dir)) {
         if (!f.toLowerCase().endsWith('.json')) continue
         try {
           const parsed = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as Strategy
           // Configs generated before `origin` existed count as bundled.
           if (parsed.origin !== 'imported') parsed.origin = 'bundled'
-          out.push(parsed)
+          if (parsed.id) byId.set(parsed.id, parsed)
         } catch {
           /* skip broken file */
         }
       }
-      if (out.length > 0) return out.sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
     } catch {
       /* try next dir */
     }
   }
-  return []
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
 }
 
 function findStrategy(id: string): Strategy | null {
@@ -162,6 +163,8 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.testStrategy, async (_e, strategyId: string) => {
+    // Foreground test and config-tester share WinDivert — never run both.
+    if (configTesterAbort) throw new Error('Config tests are running — stop them first')
     stopTestInternal()
     const s = findStrategy(strategyId)
     if (!s) throw new Error(`Strategy not found: ${strategyId}`)
@@ -382,13 +385,9 @@ export function registerIpcHandlers(): void {
       /* ignore */
     }
     configTesterAbort = null
+    // PID-targeted via abortActiveChild — never a blanket `taskkill /IM
+    // winws.exe`, which would also kill foreign/service winws processes.
     abortActiveChild()
-    try {
-      const { runCmd } = await import('./exec')
-      await runCmd('taskkill /IM winws.exe /F >nul 2>&1', 8000)
-    } catch {
-      /* best-effort */
-    }
     sendLog('app', 'warn', 'Config tests stop requested.')
     return true
   })
@@ -473,13 +472,34 @@ export function registerIpcHandlers(): void {
 }
 
 function stopTestInternal(): void {
-  if (testProc && !testProc.killed) {
+  const proc = testProc
+  testProc = null
+  if (proc && !proc.killed) {
     try {
-      testProc.kill()
+      proc.kill()
     } catch {
       /* already dead */
     }
+    // winws.exe routinely ignores SIGTERM on Windows — finish it by PID
+    // (never by image name: that would kill foreign winws processes).
+    if (typeof proc.pid === 'number' && proc.pid > 0) {
+      void killPidTree(proc.pid)
+    }
     sendLog('winws', 'info', 'Test process stopped.')
   }
-  testProc = null
+}
+
+/**
+ * Kill every in-flight test process (foreground test + config tester).
+ * Called on app exit so no orphaned winws.exe survives a quit.
+ */
+export function stopAllTesting(): void {
+  stopTestInternal()
+  try {
+    configTesterAbort?.abort()
+  } catch {
+    /* ignore */
+  }
+  configTesterAbort = null
+  abortActiveChild()
 }

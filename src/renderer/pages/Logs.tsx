@@ -10,7 +10,7 @@ const levelColor: Record<string, string> = {
 }
 
 export default function LogsSection(): React.JSX.Element {
-  const { t, logs, clearLogs } = useUi()
+  const { t, logs, clearLogs, setError } = useUi()
   const [filter, setFilter] = useState<string>('')
   const [copied, setCopied] = useState<boolean>(false)
 
@@ -54,7 +54,10 @@ export default function LogsSection(): React.JSX.Element {
           <Btn variant="secondary" onClick={clearLogs} disabled={logs.length === 0}>
             {t('logs.clear')}
           </Btn>
-          <Btn variant="secondary" onClick={() => void window.zapret.exportLogs()}>
+          <Btn
+            variant="secondary"
+            onClick={() => void window.zapret.exportLogs().catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))}
+          >
             {t('action.export')}
           </Btn>
         </div>

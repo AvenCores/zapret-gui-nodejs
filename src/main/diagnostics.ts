@@ -190,9 +190,9 @@ async function checkWinDivertStuck(): Promise<DiagnosticCheck> {
   const r = await runCmd('tasklist /FI "IMAGENAME eq winws.exe" /FO CSV /NH')
   const winws = r.stdout.toLowerCase().includes('winws.exe')
   if (!winws && (wd === 'RUNNING' || wd === 'STOP_PENDING')) {
-    await runCmd('net stop "WinDivert" >nul 2>&1')
-    await runCmd('sc delete "WinDivert" >nul 2>&1')
-    return { id: 'windivertStuck', labelKey: 'diag.windivertStuck', level: 'warn', detail: 'winws not running but WinDivert active — removed stale service', detailKey: 'diag.detail.stuckRemoved' }
+    // Read-only: diagnostics must never mutate the system. Removal is
+    // offered explicitly via Tools ("Remove conflicting services").
+    return { id: 'windivertStuck', labelKey: 'diag.windivertStuck', level: 'fail', detail: 'winws is not running but WinDivert is active — stale service, remove it via Tools', detailKey: 'diag.detail.stuckFound' }
   }
   return { id: 'windivertStuck', labelKey: 'diag.windivertStuck', level: 'ok', detail: 'no stale state', detailKey: 'diag.detail.noStale' }
 }
@@ -285,27 +285,59 @@ async function checkVpn(): Promise<DiagnosticCheck> {
   }
 }
 
+/** Cap a single check: one hanging shell call must not stall the whole suite. */
+function withCheckTimeout(task: Promise<DiagnosticCheck>, fallback: { id: string; labelKey: I18nKey }): Promise<DiagnosticCheck> {
+  let timer: NodeJS.Timeout | null = null
+  const timeout = new Promise<DiagnosticCheck>((resolve) => {
+    timer = setTimeout(
+      () => resolve({ ...fallback, level: 'warn', detail: 'check timed out', detailKey: 'diag.detail.timeout' }),
+      20000
+    )
+  })
+  // Promise.race subscribes to `task`, so a late rejection is still handled.
+  return Promise.race([task, timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
+}
+
 /** Run the full diagnostics suite. */
 export async function runDiagnostics(installDir: string, appData: string): Promise<DiagnosticCheck[]> {
   const ctx: Ctx = { installDir, appData }
-  const results: DiagnosticCheck[] = []
-  results.push(await checkBFE())
-  results.push(await checkProxy())
-  results.push(await checkTimestamps())
-  results.push(await checkProcess('AdguardSvc.exe', 'adguard', 'diag.adguard', 'may break Discord voice', 'diag.detail.adguardFail'))
-  results.push(await checkServicePattern(/killer/i, 'killer', 'diag.killer', 'conflicts with zapret', 'diag.detail.conflictFail'))
-  results.push(await checkServicePattern(/intel.*connectivity|connectivity.*network/i, 'intel', 'diag.intel', 'conflicts with zapret', 'diag.detail.conflictFail'))
-  const cp = await checkServicePattern(/TracSrvWrapper|EPWD/i, 'checkpoint', 'diag.checkpoint', 'uninstall Check Point', 'diag.detail.checkpointFail')
-  results.push(cp)
-  results.push(await checkServicePattern(/smartbyte/i, 'smartbyte', 'diag.smartbyte', 'disable via services.msc', 'diag.detail.smartbyteFail'))
-  results.push(checkCyrillic(ctx))
-  results.push(checkOneDrive(ctx))
-  results.push(checkSysFile())
-  results.push(await checkVpn())
-  results.push(await checkSecureDNS())
-  results.push(await checkHostsYoutube())
-  results.push(await checkWinDivertStuck())
-  results.push(await checkForeign())
-  results.push(await checkConflicts())
-  return results
+  // Checks are independent — run them concurrently (Promise.all preserves
+  // order) instead of sequentially, where ~17 × up-to-30s shell calls could
+  // stall the UI for minutes.
+  return Promise.all([
+    withCheckTimeout(checkBFE(), { id: 'bfe', labelKey: 'diag.bfe' }),
+    withCheckTimeout(checkProxy(), { id: 'proxy', labelKey: 'diag.proxy' }),
+    withCheckTimeout(checkTimestamps(), { id: 'timestamps', labelKey: 'diag.timestamps' }),
+    withCheckTimeout(
+      checkProcess('AdguardSvc.exe', 'adguard', 'diag.adguard', 'may break Discord voice', 'diag.detail.adguardFail'),
+      { id: 'adguard', labelKey: 'diag.adguard' }
+    ),
+    withCheckTimeout(checkServicePattern(/killer/i, 'killer', 'diag.killer', 'conflicts with zapret', 'diag.detail.conflictFail'), {
+      id: 'killer',
+      labelKey: 'diag.killer'
+    }),
+    withCheckTimeout(
+      checkServicePattern(/intel.*connectivity|connectivity.*network/i, 'intel', 'diag.intel', 'conflicts with zapret', 'diag.detail.conflictFail'),
+      { id: 'intel', labelKey: 'diag.intel' }
+    ),
+    withCheckTimeout(
+      checkServicePattern(/TracSrvWrapper|EPWD/i, 'checkpoint', 'diag.checkpoint', 'uninstall Check Point', 'diag.detail.checkpointFail'),
+      { id: 'checkpoint', labelKey: 'diag.checkpoint' }
+    ),
+    withCheckTimeout(checkServicePattern(/smartbyte/i, 'smartbyte', 'diag.smartbyte', 'disable via services.msc', 'diag.detail.smartbyteFail'), {
+      id: 'smartbyte',
+      labelKey: 'diag.smartbyte'
+    }),
+    withCheckTimeout(Promise.resolve(checkCyrillic(ctx)), { id: 'cyrillic', labelKey: 'diag.cyrillic' }),
+    withCheckTimeout(Promise.resolve(checkOneDrive(ctx)), { id: 'onedrive', labelKey: 'diag.onedrive' }),
+    withCheckTimeout(Promise.resolve(checkSysFile()), { id: 'sysfile', labelKey: 'diag.sysfile' }),
+    withCheckTimeout(checkVpn(), { id: 'vpn', labelKey: 'diag.vpn' }),
+    withCheckTimeout(checkSecureDNS(), { id: 'dns', labelKey: 'diag.dns' }),
+    withCheckTimeout(checkHostsYoutube(), { id: 'hosts', labelKey: 'diag.hosts' }),
+    withCheckTimeout(checkWinDivertStuck(), { id: 'windivertStuck', labelKey: 'diag.windivertStuck' }),
+    withCheckTimeout(checkForeign(), { id: 'foreign', labelKey: 'diag.foreign' }),
+    withCheckTimeout(checkConflicts(), { id: 'conflicts', labelKey: 'diag.conflicts' })
+  ])
 }
