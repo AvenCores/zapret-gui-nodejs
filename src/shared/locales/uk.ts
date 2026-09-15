@@ -266,4 +266,12 @@ export const uk = {
   'updates.appInstall': 'Install and restart',
   'updates.updateTo': 'Update to {tag}',
   'updates.updateNow': 'Update now',
+  'settings.resetTitle': 'Скидання застосунку',
+  'settings.resetDesc': 'Повне скидання: налаштування повернуться до типових, тека даних (стратегії, списки, рушій, бекапи, результати тестів), логи та служби zapret буде видалено й створено заново. Системний Hosts не зачіпається. Дію не можна скасувати.',
+  'settings.resetButton': 'Скинути все',
+  'settings.resetBusy': 'Скидання…',
+  'settings.resetConfirm': 'Точно виконати повне скидання? Налаштування, дані, імпортовані стратегії та служби zapret буде видалено.',
+  'settings.resetDone': 'Налаштування та дані скинуто до типових.',
+  'settings.resetNoAdmin': 'Налаштування та дані скинуто, але служби не видалено — перезапустіть застосунок з правами адміністратора та повторіть скидання.',
+  'settings.resetBlocked': 'Спочатку зупиніть zapret (Дашборд → Зупинити): запущена служба блокує файли даних.',
 } as const

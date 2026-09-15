@@ -1,10 +1,35 @@
 /** Settings: autostart and tray behavior. */
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { useUi } from '../store'
-import { Card, Row } from '../components/ui'
+import { Btn, Card, Row, Spinner } from '../components/ui'
 
 export default function Settings(): React.JSX.Element {
-  const { t, settings, applySettings } = useUi()
+  const { t, settings, status, applySettings, busy, resetAll, refreshStatus } = useUi()
+  const [resetDone, setResetDone] = useState<string | null>(null)
+  const resetting = busy.reset === true
+
+  // Fresh service state on open: the button below is gated on it, and the
+  // user may have stopped/started zapret on another tab just before.
+  useEffect(() => {
+    void refreshStatus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // A running zapret (service or stray winws.exe) locks the data files —
+  // wiping then fails with EPERM, so the reset stays disabled until stopped.
+  const zapretActive =
+    status?.zapret === 'RUNNING' ||
+    status?.zapret === 'START_PENDING' ||
+    status?.zapret === 'STOP_PENDING' ||
+    status?.winwsRunning === true
+  const resetDisabled = resetting || zapretActive
+
+  async function onReset(): Promise<void> {
+    setResetDone(null)
+    if (!window.confirm(t('settings.resetConfirm'))) return
+    const r = await resetAll()
+    if (r) setResetDone(t(r.servicesRemoved ? 'settings.resetDone' : 'settings.resetNoAdmin'))
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -51,6 +76,21 @@ export default function Settings(): React.JSX.Element {
             />
           </Row>
         </Card>
+
+      <Card title={t('settings.resetTitle')}>
+        <p className="py-1 text-sm text-slate-600 dark:text-slate-300">{t('settings.resetDesc')}</p>
+        {zapretActive ? (
+          <p className="py-1 text-sm text-amber-700 dark:text-amber-300">⚠ {t('settings.resetBlocked')}</p>
+        ) : null}
+        {resetDone ? (
+          <p className="py-1 text-sm text-emerald-700 dark:text-emerald-300">✓ {resetDone}</p>
+        ) : null}
+        <div className="mt-2">
+          <Btn variant="danger" disabled={resetDisabled} onClick={() => void onReset()}>
+            {resetting ? <Spinner /> : null} {resetting ? t('settings.resetBusy') : t('settings.resetButton')}
+          </Btn>
+        </div>
+      </Card>
       </div>
     )
   }

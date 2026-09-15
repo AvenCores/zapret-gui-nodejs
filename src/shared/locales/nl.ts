@@ -266,4 +266,12 @@ export const nl = {
   'updates.appInstall': 'Install and restart',
   'updates.updateTo': 'Update to {tag}',
   'updates.updateNow': 'Update now',
+  'settings.resetTitle': 'Reset app',
+  'settings.resetDesc': 'Full reset: settings return to defaults; the data folder (strategies, lists, engine, backups, test results), logs and zapret services are wiped and recreated. The system Hosts file is left untouched. This cannot be undone.',
+  'settings.resetButton': 'Reset everything',
+  'settings.resetBusy': 'Resetting…',
+  'settings.resetConfirm': 'Perform a full reset? Settings, data, imported strategies and zapret services will be removed.',
+  'settings.resetDone': 'Settings and data were reset to defaults.',
+  'settings.resetNoAdmin': 'Settings and data were reset, but services were not removed — relaunch as administrator and reset again.',
+  'settings.resetBlocked': 'Stop zapret first (Dashboard → Stop): the running service locks the data files.',
 } as const

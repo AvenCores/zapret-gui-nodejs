@@ -48,6 +48,7 @@ import { checkBypassTarget } from './bypass-check'
 import { checkAppUpdates, downloadAppUpdate, getAppVersion, installAppUpdate } from './app-updater'
 import type { BypassTargetId } from '../shared/types'
 import { loadSettings, saveSettings } from './settings'
+import { resetAppData } from './app-reset'
 import { translate } from '../shared/i18n'
 import { getBufferedLogs, info, warn, err } from './logger'
 import { isAdmin, relaunchAppAsAdmin, spawnLong, killPidTree } from './exec'
@@ -425,6 +426,27 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.getSettings, async () => loadSettings())
   ipcMain.handle(IPC.saveSettings, async (_e, patch: Partial<AppSettings>) => saveSettings(patch))
+
+  ipcMain.handle(IPC.resetAppData, async () => {
+    // A foreground winws test holds files in data/bin + lists open — kill it
+    // first or the data-dir wipe below fails with EBUSY/EPERM.
+    stopTestInternal()
+    try {
+      configTesterAbort?.abort()
+    } catch {
+      /* ignore */
+    }
+    configTesterAbort = null
+    abortActiveChild()
+    sendLog('app', 'warn', 'Resetting app settings and data to defaults...')
+    const r = await resetAppData((t) => sendLog('app', 'info', t))
+    if (!r.servicesRemoved) {
+      sendLog('app', 'warn', 'Services were not removed (admin rights may be required) — files and settings were still reset.')
+    } else {
+      sendLog('app', 'info', 'App data reset complete.')
+    }
+    return r
+  })
 
   ipcMain.handle(IPC.listUserLists, async () => listUserLists(getListsDir()))
   ipcMain.handle(IPC.readUserList, async (_e, name: string) => readUserList(getListsDir(), name))

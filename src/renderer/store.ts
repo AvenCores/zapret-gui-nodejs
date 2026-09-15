@@ -81,6 +81,12 @@ interface UiState {
   applySettings: (patch: Partial<AppSettings>) => Promise<void>
   /** Re-read settings from disk (tray checkboxes change them behind our back). */
   refreshSettings: () => Promise<void>
+  /**
+   * Full factory reset (settings + data dir + logs + services).
+   * Refreshes status/strategies afterwards. Returns the raw IPC result
+   * (null when it failed — the error is already in `error`).
+   */
+  resetAll: () => Promise<{ settings: AppSettings; servicesRemoved: boolean } | null>
   /** Cached bypass results — survive Dashboard unmount on tab switches. */
   bypass: Record<BypassTargetId, BypassCheckResult | null>
   bypassChecking: Record<BypassTargetId, boolean>
@@ -312,6 +318,44 @@ export const useUi = create<UiState>((set, get) => ({
     if (settings) {
       set({ settings, locale: settings.locale, theme: settings.theme })
       syncThemeClass(settings.theme)
+    }
+  },
+
+  resetAll: async () => {
+    get().setBusy('reset', true)
+    try {
+      const r = await window.zapret.resetAppData()
+      set({
+        settings: r.settings,
+        locale: r.settings.locale,
+        theme: r.settings.theme,
+        error: null,
+        // Cached results belong to the wiped state (strategy, ipset, lists).
+        bypass: { youtube: null, cloudflare: null, discord: null },
+        bypassStrategyKey: null,
+        hostsCheck: null,
+        hostsCheckedAt: null,
+        configProgress: null,
+        configLogs: [],
+        configRows: [],
+        configBest: null,
+        configFilePath: null,
+        configCancelled: false
+      })
+      syncThemeClass(r.settings.theme)
+      try {
+        localStorage.removeItem('zapret:sidebar-collapsed')
+      } catch {
+        /* private mode — ignore */
+      }
+      await get().refreshStatus()
+      await get().refreshStrategies()
+      return r
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : String(e) })
+      return null
+    } finally {
+      get().setBusy('reset', false)
     }
   }
 }))

@@ -76,6 +76,8 @@ const api = {
   openBackupFolder: (backupDir: string): Promise<boolean> => ipcRenderer.invoke(IPC.openBackupFolder, backupDir),
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.getSettings),
   saveSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke(IPC.saveSettings, patch),
+  resetAppData: (): Promise<{ settings: AppSettings; servicesRemoved: boolean }> =>
+    ipcRenderer.invoke(IPC.resetAppData),
   listUserLists: (): Promise<UserListMeta[]> => ipcRenderer.invoke(IPC.listUserLists),
   readUserList: (name: string): Promise<string> => ipcRenderer.invoke(IPC.readUserList, name),
   saveUserList: (name: string, content: string): Promise<UserListMeta> =>

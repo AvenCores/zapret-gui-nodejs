@@ -161,6 +161,25 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   return next
 }
 
+/**
+ * Full factory reset of `settings.json`: delete the file, then recreate it
+ * with first-run defaults (system locale, `auto` theme, all BASE_DEFAULTS).
+ * Disables the OS auto-launch entry and notifies listeners (tray rebuild).
+ * Never throws for a missing/unwritable file — returns in-memory defaults.
+ */
+export function resetSettings(): AppSettings {
+  try {
+    fs.rmSync(getSettingsPath(), { force: true })
+  } catch {
+    /* missing file or locked — loadSettings below recreates defaults */
+  }
+  const next = loadSettings()
+  // loadSettings() only persists — make sure a stale login-item entry is off.
+  applyAutoLaunch(next.autoLaunch)
+  emitSettingsChanged(next)
+  return next
+}
+
 /** Windows auto-launch via Electron login-item settings (registry). */
 export function applyAutoLaunch(enabled: boolean): void {
   try {

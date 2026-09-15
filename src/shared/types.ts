@@ -268,6 +268,7 @@ export const IPC = {
   openBackupFolder: 'zapret:open-backup-folder',
   getSettings: 'zapret:get-settings',
   saveSettings: 'zapret:save-settings',
+  resetAppData: 'zapret:reset-app-data',
   listUserLists: 'zapret:list-user-lists',
   readUserList: 'zapret:read-user-list',
   saveUserList: 'zapret:save-user-list',
