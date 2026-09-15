@@ -14,7 +14,7 @@ function splitName(name: string): { base: string; tag: string | null } {
 }
 
 export default function Strategies(): React.JSX.Element {
-  const { t, strategies, refreshStrategies, refreshStatus, busy, setError, status, settings, applySettings } = useUi()
+  const { t, strategies, refreshStrategies, busy, setError, status, settings, applySettings } = useUi()
   const [selected, setSelected] = useState<string>('')
   const [testing, setTesting] = useState<string | null>(null)
   const [testOut, setTestOut] = useState<string>('')
@@ -52,7 +52,6 @@ export default function Strategies(): React.JSX.Element {
   /** Strategy picked via "Select" (persisted, does not touch the service). */
   const chosenId = settings?.activeStrategyId ?? null
   const chosen = strategies.find((s) => s.id === chosenId) ?? null
-  const installed = strategies.find((s) => s.id === installedId) ?? null
   const pending = chosen !== null && chosen.id !== installedId
   const isInstalled = (s: Strategy): boolean => s.id === installedId
   const isChosen = (s: Strategy): boolean => s.id === chosenId
@@ -202,24 +201,6 @@ export default function Strategies(): React.JSX.Element {
     )
   }
 
-  async function apply(id?: string): Promise<void> {
-    const target = strategies.find((s) => s.id === (id ?? selected)) ?? current
-    if (!target) return
-    if (status?.ownership === 'foreign') {
-      const binPath = status?.serviceBinPath ?? '—'
-      const msg = t('dashboard.takeoverConfirm').replace('{path}', binPath)
-      if (!window.confirm(`${t('action.apply')} "${target.name}"?\n${msg}`)) return
-    } else if (!window.confirm(`${t('action.apply')} "${target.name}"?\n${t('strategies.applyHint')}`)) {
-      return
-    }
-    try {
-      await window.zapret.installStrategy(target.id)
-      await refreshStatus()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }
-
   /** Pick a strategy without touching the Windows service. */
   async function select(id?: string): Promise<void> {
     const target = strategies.find((s) => s.id === (id ?? selected)) ?? current
@@ -227,16 +208,6 @@ export default function Strategies(): React.JSX.Element {
     try {
       await applySettings({ activeStrategyId: target.id })
       setSelected(target.id)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }
-
-  /** Drop the pending pick and return to the installed strategy. */
-  async function cancelSelection(): Promise<void> {
-    try {
-      await applySettings({ activeStrategyId: installedId })
-      if (installedId) setSelected(installedId)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -421,16 +392,8 @@ export default function Strategies(): React.JSX.Element {
             <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
               <span className="flex-1 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
                 ⚠{' '}
-                {t('strategies.pendingText')
-                  .replace('{chosen}', chosen.name)
-                  .replace('{active}', installed?.name ?? t('dashboard.none'))}
+                {t('strategies.pendingText').replace('{chosen}', chosen.name)}
               </span>
-              <Btn variant="secondary" onClick={() => void apply(chosen.id)} disabled={!status?.isAdmin}>
-                {t('action.apply')}
-              </Btn>
-              <Btn variant="ghost" onClick={() => void cancelSelection()}>
-                {t('strategies.cancelSelection')}
-              </Btn>
             </div>
           ) : null}
           <div className="mt-3 flex flex-wrap gap-2">

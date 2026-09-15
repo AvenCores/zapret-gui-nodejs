@@ -79,7 +79,7 @@ export const ru = {
   'strategies.search': 'Поиск… general…',
   'strategies.active': 'активна',
   'strategies.selected': 'выбрана',
-  'strategies.pendingText': 'Выбрана «{chosen}», но работает «{active}». Примените стратегию или отмените выбор.',
+  'strategies.pendingText': 'Стратегия «{chosen}» выбрана, но не применена. Примените стратегию.',
   'strategies.cancelSelection': 'Отменить выбор',
   'strategies.waitingOutput': '(ожидание вывода winws…)',
   'strategies.delete': 'Удалить',

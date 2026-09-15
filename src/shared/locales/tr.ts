@@ -247,7 +247,7 @@ export const tr = {
   'tool.conflictsNone': 'No conflicting services found',
   'action.select': 'Select',
   'strategies.selected': 'selected',
-  'strategies.pendingText': '"{chosen}" is selected, but "{active}" is running. Apply the strategy or cancel the selection.',
+  'strategies.pendingText': 'Strategy "{chosen}" is selected but not applied. Apply the strategy.',
   'strategies.cancelSelection': 'Cancel selection',
   'updates.engineTitle': 'zapret engine (winws)',
   'updates.engineLocal': 'Engine version',

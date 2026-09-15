@@ -79,7 +79,7 @@ export const en = {
   'strategies.search': 'Search… general…',
   'strategies.active': 'active',
   'strategies.selected': 'selected',
-  'strategies.pendingText': '"{chosen}" is selected, but "{active}" is running. Apply the strategy or cancel the selection.',
+  'strategies.pendingText': 'Strategy "{chosen}" is selected but not applied. Apply the strategy.',
   'strategies.cancelSelection': 'Cancel selection',
   'strategies.waitingOutput': '(waiting for winws output…)',
   'strategies.delete': 'Delete',
