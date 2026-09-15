@@ -2,9 +2,7 @@
  * Process execution helpers: plain exec, admin detection and UAC elevation.
  *
  * Strategy: the app asks to run elevated once (button "relaunch as admin").
- * Service/hosts operations then run directly. For single-shot elevation
- * without restart, {@link runElevated} re-launches a command via
- * `powershell Start-Process -Verb RunAs`.
+ * Service/hosts operations then run directly.
  * @module main/exec
  */
 import { spawn, execFile } from 'node:child_process'
@@ -60,18 +58,6 @@ export function runPowershell(script: string, timeoutMs = 30000): Promise<ExecRe
 export async function isAdmin(): Promise<boolean> {
   // `net session` succeeds only for admins.
   const r = await runCmd('net session >nul 2>&1')
-  return r.code === 0
-}
-
-/**
- * Relaunch an arbitrary command elevated via UAC prompt.
- * Shows a UAC dialog; resolves true if the user accepted (process started).
- */
-export async function runElevated(command: string, args: string[], cwd?: string): Promise<boolean> {
-  const argList = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(',')
-  const ps = `Start-Process -FilePath '${command.replace(/'/g, "''")}' -ArgumentList ${argList} -Verb RunAs` +
-    (cwd ? ` -WorkingDirectory '${cwd.replace(/'/g, "''")}'` : '')
-  const r = await runPowershell(ps, 60000)
   return r.code === 0
 }
 

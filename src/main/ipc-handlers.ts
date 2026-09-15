@@ -53,25 +53,11 @@ import { getBufferedLogs, info, warn, err } from './logger'
 import { isAdmin, relaunchAppAsAdmin, spawnLong } from './exec'
 import { WINWS_EXE } from '../shared/constants'
 import { abortActiveChild, runConfigTests } from './config-tester'
+import { win, safeSend } from './window'
 import type { ConfigTestMode } from '../shared/types'
 
 let testProc: ChildProcess | null = null
 let configTesterAbort: AbortController | null = null
-
-function win(): BrowserWindow | null {
-  return BrowserWindow.getAllWindows()[0] ?? null
-}
-
-function safeSend(channel: string, ...args: unknown[]): void {
-  try {
-    const w = win()
-    if (!w || w.webContents.isDestroyed()) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    w.webContents.send(channel, ...(args as any[]))
-  } catch {
-    /* renderer gone — best effort */
-  }
-}
 
 function sendLog(source: 'app' | 'winws' | 'updater' | 'diag', level: 'info' | 'warn' | 'error', text: string): void {
   const line =

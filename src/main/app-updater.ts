@@ -12,6 +12,7 @@ import { URLS } from '../shared/constants'
 import { translate } from '../shared/i18n'
 import { loadSettings } from './settings'
 import { info, err } from './logger'
+import { win, safeSend } from './window'
 
 let wired = false
 /** Version we already offered in this session (no dialog spam every 6h). */
@@ -20,21 +21,6 @@ let offeredVersion: string | null = null
 let downloadedVersion: string | null = null
 let downloading = false
 
-function win(): BrowserWindow | null {
-  return BrowserWindow.getAllWindows()[0] ?? null
-}
-
-function safeSend(channel: string, ...args: unknown[]): void {
-  try {
-    const w = win()
-    if (!w || w.webContents.isDestroyed()) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    w.webContents.send(channel, ...(args as any[]))
-  } catch {
-    /* renderer gone — best effort */
-  }
-}
-
 /** Installed version. Never throws (unit-test / dev safe). */
 export function getAppVersion(): string {
   try {
@@ -42,14 +28,6 @@ export function getAppVersion(): string {
   } catch {
     return '0.0.0'
   }
-}
-
-export function isAppUpdateDownloaded(): boolean {
-  return downloadedVersion !== null
-}
-
-export function isAppUpdateDownloading(): boolean {
-  return downloading
 }
 
 function buildInfo(availableVersion: string | null): AppUpdateInfo {

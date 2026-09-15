@@ -10,8 +10,6 @@
  *   placeholders (the GUI substitutes real paths / filter values at apply time).
  * @module main/strategy-parser
  */
-import fs from 'node:fs'
-import path from 'node:path'
 import type { ParsedStrategy, Strategy } from '../shared/types'
 
 /** Known `--dpi-desync=` method names (for descriptions / UI badges). */
@@ -165,12 +163,6 @@ export function describeStrategy(name: string, methods: string[], args: string[]
   if (name.toUpperCase().includes('EXP')) parts.push('экспериментальная')
   if (parts.length === 0) return 'Пользовательская стратегия'
   return parts.join(' + ')
-}
-
-/** Parse a `.bat` file into a {@link Strategy}. */
-export function parseBatFile(filePath: string): ParsedStrategy {
-  const content = fs.readFileSync(filePath, 'utf8')
-  return parseBatContent(content, path.basename(filePath))
 }
 
 /** Parse raw `.bat` content (pure — covered by unit tests). */

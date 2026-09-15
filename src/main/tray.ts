@@ -4,7 +4,7 @@
  * don't need binary assets in the repo (build/ may provide real icons).
  * @module main/tray
  */
-import { Tray, Menu, nativeImage, app, BrowserWindow } from 'electron'
+import { Tray, Menu, nativeImage, app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import zlib from 'node:zlib'
@@ -118,7 +118,7 @@ export interface TrayCallbacks {
   onPickStrategy: (id: string) => void
   onGameFilter: (mode: GameFilterMode) => void
   onIPSet: (mode: IPSetMode) => void
-  onToggleSetting: (key: 'autoLaunch' | 'minimizeToTrayOnClose' | 'startMinimizedToTray') => void
+  onToggleSetting: (key: 'autoLaunch' | 'minimizeToTrayOnClose' | 'startMinimizedToTray' | 'showTrayIcon') => void
   onRelaunchAdmin: () => void
   onOpenData: () => void
   onExportLogs: () => void
@@ -444,15 +444,4 @@ function buildMenu(status: ZapretStatus, labels: TrayLabels, ctx: TrayContext, c
 export function destroyTray(): void {
   tray?.destroy()
   tray = null
-}
-
-export function focusOrCreateMain(create: () => BrowserWindow, existing: () => BrowserWindow | null): void {
-  const w = existing()
-  if (w) {
-    if (w.isMinimized()) w.restore()
-    w.show()
-    w.focus()
-  } else {
-    create()
-  }
 }

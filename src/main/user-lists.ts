@@ -95,7 +95,7 @@ export function listUserLists(listsDir: string): UserListMeta[] {
   } catch {
     found = []
   }
-  const names = [...KNOWN_USER_LISTS.filter((n) => !found.includes(n)), ...found.sort((a, b) => a.localeCompare(b))]
+  const names = [...KNOWN_USER_LISTS.filter((n) => !found.includes(n)), ...found]
   // Known stubs come first in seed order, discovered extras alphabetically.
   const knownFirst = names.sort((a, b) => {
     const ai = (KNOWN_USER_LISTS as readonly string[]).indexOf(a)

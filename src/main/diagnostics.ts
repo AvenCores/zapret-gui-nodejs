@@ -6,7 +6,6 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import os from 'node:os'
 import { runCmd, runPowershell } from './exec'
 import { getBinDir } from './paths'
 import { SERVICE_NAME } from '../shared/constants'
@@ -14,9 +13,7 @@ import { CONFLICTING_SERVICES } from '../shared/constants'
 import { detectServiceOwnership, getWinwsProcessPath } from './service-manager'
 import type { DiagnosticCheck } from '../shared/types'
 import type { I18nKey } from '../shared/i18n'
-import { scQueryState } from './diagnostics-helpers'
-
-export { scQueryState }
+import { queryServiceState as scQueryState } from './service-manager'
 
 interface Ctx {
   installDir: string
@@ -291,7 +288,6 @@ async function checkVpn(): Promise<DiagnosticCheck> {
 /** Run the full diagnostics suite. */
 export async function runDiagnostics(installDir: string, appData: string): Promise<DiagnosticCheck[]> {
   const ctx: Ctx = { installDir, appData }
-  void os.platform
   const results: DiagnosticCheck[] = []
   results.push(await checkBFE())
   results.push(await checkProxy())

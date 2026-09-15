@@ -16,7 +16,7 @@
 # 🚀 Zapret GUI
 
 <p align="center">
-  <a href="https://github.com/AvenCores/zapret-gui-nodejs"><img src="https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54" alt="Python"></a>
+  <a href="https://github.com/AvenCores/zapret-gui-nodejs"><img src="https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge" alt="GPL-3.0 License"></a>
   <a href="https://github.com/AvenCores/zapret-gui-nodejs/releases/latest"><img src="https://img.shields.io/github/v/release/AvenCores/zapret-gui-nodejs?style=for-the-badge" alt="Latest release"></a>
   <a href="https://github.com/AvenCores/zapret-gui-nodejs/stargazers"><img src="https://img.shields.io/github/stars/AvenCores/zapret-gui-nodejs?style=for-the-badge" alt="GitHub stars"></a>
@@ -216,7 +216,7 @@ src/
                 service-manager.ts (sc/net/reg/tasklist, install/remove/start/stop, GameFilter, IPSet, Discord-кэш, конфликты)
                 strategy-parser.ts (парсинг .bat в args, плейсхолдеры <BIN>/<LISTS>/<GAME_TCP>/<GAME_UDP>/<ROOT>)
                 strategy-updater.ts (version/IPSet/hosts/source-snapshot/engine bol-van, .bin-фейки)
-                diagnostics.ts + diagnostics-helpers.ts (17 проверок)
+                diagnostics.ts (17 проверок)
                 config-tester.ts (нативный тестер standard/dpi, targets.txt, test results/)
                 bypass-check.ts (HTTPS-пробы YouTube/Discord/Cloudflare из main-процесса)
                 user-lists.ts (*-user.txt: list/read/write, лимит 2 МБ)
@@ -224,6 +224,7 @@ src/
                 settings.ts (settings.json + systemDefaults + install-defaults.json + autoLaunch)
                 paths.ts (bundled-assets vs %APPDATA%/zapret-gui/data, Win7-детект + applyWin7Drivers)
                 exec.ts (cmd/powershell, isAdmin, RunAs, spawnLong)
+                window.ts (первое окно + best-effort IPC-отправка в renderer)
                 logger.ts (файл + буфер 2000 + zapret:on-log)
   preload/      index.ts — типизированный мост window.zapret
   renderer/     App.tsx + main.tsx + store.ts — zustand (page/locale/theme/status/strategies/logs/busy/error, logs→diagnostics)

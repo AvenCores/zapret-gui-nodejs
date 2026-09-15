@@ -44,7 +44,6 @@ export default function Strategies(): React.JSX.Element {
 
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const itemRefs = useRef(new Map<string, HTMLButtonElement>())
-  const listRef = useRef<HTMLDivElement>(null)
 
   const flatIds = useMemo(() => filtered.map((s) => s.id), [filtered])
   /** Strategy installed as the Windows service (registry name). */
@@ -307,7 +306,6 @@ export default function Strategies(): React.JSX.Element {
 
         {filtered.length > 0 ? (
           <div
-            ref={listRef}
             role="listbox"
             aria-label={t('strategies.title')}
             tabIndex={0}

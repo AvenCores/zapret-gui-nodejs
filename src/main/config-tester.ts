@@ -699,10 +699,10 @@ export async function restoreWindivert(
   }
 }
 
-/** Migrate leftover `ipset_switched.flag` from interrupted PS1 runs. */
-function healLeftoverFlag(dataDir: string, listsDir: string): string | null {
+/** Remove leftover `ipset_switched.flag` from interrupted PS1 runs. */
+function healLeftoverFlag(dataDir: string, listsDir: string): void {
   try {
-    const candidates = [path.join(dataDir, 'ipset_switched.flag'), path.join(listsDir, '..', 'ipset_switched.flag')]
+    const candidates = new Set([path.join(dataDir, 'ipset_switched.flag'), path.join(listsDir, '..', 'ipset_switched.flag')])
     for (const flag of candidates) {
       if (fs.existsSync(flag)) {
         try {
@@ -715,7 +715,6 @@ function healLeftoverFlag(dataDir: string, listsDir: string): string | null {
   } catch {
     /* ignore */
   }
-  return null
 }
 
 /**

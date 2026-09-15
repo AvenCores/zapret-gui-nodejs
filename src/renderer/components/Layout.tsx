@@ -832,16 +832,6 @@ function StrokeIcon(props: { children: React.ReactNode; className?: string }): R
   )
 }
 
-function GlobeIcon(): React.JSX.Element {
-  return (
-    <StrokeIcon>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-      <path d="M2 12h20" />
-    </StrokeIcon>
-  )
-}
-
 function InfoIcon(): React.JSX.Element {
   return (
     <StrokeIcon className="h-3.5 w-3.5 shrink-0">
