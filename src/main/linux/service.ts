@@ -27,7 +27,7 @@ import {
   type FirewallBackendResolved,
   type InitSystem
 } from './constants'
-import { loadLinuxConf, saveLinuxConf, type LinuxConf } from './config'
+import { loadLinuxConf, saveLinuxConf, resolveDataOwnerUid, type LinuxConf } from './config'
 import {
   batchFailWhat,
   batchOut,
@@ -691,15 +691,28 @@ function writeRunner(dataDir: string, content: string): string {
 }
 
 /**
- * Whether a generated runner is fresh: has the runner-owned log *and* the
- * stay-root `--uid`/`--user` pin. Runners generated before the droproot fix
- * lack the pin — nfqws then drops to UID 2147483647 and dies with
+ * Whether a generated runner is fresh: has the runner-owned log *and* a
+ * working `--uid`/`--user` pin. Runners generated before the droproot fixes
+ * either lack the pin (nfqws drops to UID 2147483647) or pin root
+ * (`--uid=0:0` — still `EACCES`: `dropcaps()` strips `CAP_DAC_OVERRIDE`, so
+ * even uid 0 cannot traverse a `700` home dir). Both fail with
  * `cannot access hostlist file ... Permission denied` on lists under
- * `$HOME` (home dirs are not traversable by other users). Pure — unit tested.
+ * `$HOME`. Pure — unit tested.
  */
 export function isRunnerFresh(content: string): boolean {
   if (!content.includes('RUN_LOG=')) return false
-  return /--(user|uid)(=|\s)/.test(content)
+  const pins = [...content.matchAll(/--(user|uid)[=\s]+([^\s'"]+)/g)]
+  if (pins.length === 0) return false
+  // A root pin cannot read $HOME lists (no CAP_DAC_OVERRIDE after dropcaps).
+  return pins.some((m) => {
+    const kind = m[1]
+    const val = m[2] ?? ''
+    if (kind === 'uid') {
+      const uid = val.split(':')[0] ?? ''
+      return uid !== '' && uid !== '0'
+    }
+    return val !== '' && val !== 'root'
+  })
 }
 
 /**
@@ -750,7 +763,7 @@ export async function rebuildRunnerFromConf(dataDir: string): Promise<string | n
       listsDir
     })
     const backend = await detectFirewallBackend(conf.firewall_backend ?? 'auto')
-    const nfqwsArgv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: true })
+    const nfqwsArgv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: true, runUid: resolveDataOwnerUid(dataDir) })
     return writeRunner(
       dataDir,
       buildRunnerScript({
@@ -787,6 +800,20 @@ async function healStaleRunner(dataDir: string, runnerPath: string, onLog?: (t: 
   const rebuilt = await rebuildRunnerFromConf(dataDir).catch(() => null)
   if (!rebuilt) {
     onLog?.('Could not rebuild the runner — continuing with the stored one (consider applying the strategy again).')
+    return false
+  }
+  try {
+    if (!isRunnerFresh(fs.readFileSync(rebuilt, 'utf8'))) {
+      // Rebuild kept a root pin — only possible when the custom strategy
+      // itself forces `--user=root`/`--uid=0`: nfqws then runs cap-stripped
+      // and cannot read lists under a 700 $HOME. Tell the user plainly.
+      onLog?.(
+        'Strategy forces nfqws to run as root, which cannot read lists under your home directory ' +
+          '(missing CAP_DAC_OVERRIDE after privilege drop). Remove --user/--uid from the custom strategy and apply again.'
+      )
+      return false
+    }
+  } catch {
     return false
   }
   return true
@@ -982,7 +1009,7 @@ export async function installLinuxStrategy(
   }
   const backend = await detectFirewallBackend(conf.firewall_backend)
   say(`Firewall backend: ${backend} (requested: ${conf.firewall_backend})`)
-  const nfqwsArgv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: true })
+  const nfqwsArgv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: true, runUid: resolveDataOwnerUid(dataDir) })
   // Fail fast (zero prompts): a strategy pointing at missing list/fake
   // files would only die inside the daemon with a truncated log.
   const missingRefs = missingFiles(extractNfqwsFileRefs(nfqwsArgv))
@@ -1282,7 +1309,7 @@ export async function testLinuxStrategy(
   })
   const backend = await detectFirewallBackend(conf?.firewall_backend ?? 'auto')
   onLog?.(`Test firewall: ${backend} TCP=${parsed.tcpPorts} UDP=${parsed.udpPorts}`)
-  const argv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: false })
+  const argv = buildNfqwsArgv(parsed, { binDir, listsDir, daemon: false, runUid: resolveDataOwnerUid(dataDir) })
   onLog?.(`Starting foreground test: nfqws ${argv.join(' ')}`)
   const missingTestRefs = missingFiles(extractNfqwsFileRefs(argv))
   if (missingTestRefs.length > 0) {

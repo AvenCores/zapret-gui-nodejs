@@ -245,15 +245,16 @@ export function materializeNfqwsArgv(
  * `~/.config/zapret-gui/data/` (`Running as UID=2147483647 ... Permission
  * denied ... cannot access hostlist file ...`, exit 1, restart loop).
  * Upstream `/opt/zapret` works around it with `--user=<world-readable>`,
- * but `$HOME` is not traversable by other users — so we pin `--uid=0:0`
- * (stay root, `dropcaps()` still strips everything but
- * `NET_ADMIN`/`NET_RAW`). An explicit `--user`/`--uid` from a custom
- * strategy is respected and wins.
- * Pure.
+ * but `$HOME` is not traversable by other users — so we pin
+ * `--uid=<data-owner>` (see `resolveDataOwnerUid`). Note plain `--uid=0:0`
+ * does NOT work either: `dropcaps()` strips `CAP_DAC_OVERRIDE`, so even
+ * uid 0 gets `EACCES` on a `700` home dir. An explicit `--user`/`--uid`
+ * from a custom strategy is respected and wins.
+ * Pure (the owner uid is an input, resolved by the caller).
  */
 export function buildNfqwsArgv(
   parsed: LinuxParsedStrategy,
-  opts: { binDir: string; listsDir: string; fwMark?: string; qnum?: number; daemon?: boolean }
+  opts: { binDir: string; listsDir: string; fwMark?: string; qnum?: number; daemon?: boolean; runUid?: string }
 ): string[] {
   const argv: string[] = []
   if (opts.daemon) argv.push('--daemon')
@@ -261,7 +262,7 @@ export function buildNfqwsArgv(
   argv.push(`--qnum=${opts.qnum ?? 220}`)
   const materialized = materializeNfqwsArgv(parsed.nfqwsParams, opts)
   const hasUserPin = materialized.some((a) => /^--(user|uid)(=|$)/.test(a))
-  if (!hasUserPin) argv.push('--uid=0:0')
+  if (!hasUserPin) argv.push(`--uid=${opts.runUid ?? '0:0'}`)
   argv.push(...materialized)
   return argv
 }

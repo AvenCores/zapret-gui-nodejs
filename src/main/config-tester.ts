@@ -576,13 +576,21 @@ async function buildLinuxTesterArgs(
     const mapped = materializeArgsForSpawn(s.args, opts)
       .filter((a) => !/^--wf-(tcp|udp)=/i.test(a))
       .map((a) => a.replace(/"/g, ''))
-    // Same stay-root pin as buildNfqwsArgv: without it nfqws drops to
-    // UID 2147483647 and cannot read lists under ~/.config.
+    // Same owner-uid pin as buildNfqwsArgv: without it nfqws drops to
+    // UID 2147483647 (or stays a cap-stripped root) and cannot read lists
+    // under ~/.config.
     const hasUserPin = mapped.some((a) => /^--(user|uid)(=|$)/.test(a))
+    let runUid = '0:0'
+    try {
+      const { resolveDataOwnerUid } = await import('./linux/config')
+      runUid = resolveDataOwnerUid(path.dirname(opts.binDir))
+    } catch {
+      /* last-resort pin stands */
+    }
     return [
       '--dpi-desync-fwmark=0x40000000',
       '--qnum=220',
-      ...(hasUserPin ? [] : ['--uid=0:0']),
+      ...(hasUserPin ? [] : [`--uid=${runUid}`]),
       ...mapped
     ]
   }

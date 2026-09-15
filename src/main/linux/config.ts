@@ -88,6 +88,34 @@ export function saveLinuxConf(dataDir: string, conf: LinuxConf): void {
   fs.writeFileSync(confFilePath(dataDir), serializeConfEnv(conf), 'utf8')
 }
 
+/**
+ * `uid:gid` the nfqws daemon must run as (`--uid=` pin).
+ *
+ * Why not root: after `droproot()` upstream calls `dropcaps()`, which strips
+ * everything but `NET_ADMIN`/`NET_RAW` — including `CAP_DAC_OVERRIDE`. A uid-0
+ * process without that cap is subject to normal DAC checks, so it still gets
+ * `EACCES` on lists under a `700` home dir (`Running as UID=0 ... Permission
+ * denied`). Running as the data dir owner (upstream runs as `tpws`/`nobody`
+ * over world-readable `/opt/zapret`) keeps both file access and, via
+ * `PR_SET_KEEPCAPS`, the two netfilter caps. Never throws.
+ */
+export function resolveDataOwnerUid(dir: string): string {
+  try {
+    const st = fs.statSync(dir)
+    if (Number.isInteger(st.uid) && Number.isInteger(st.gid)) return `${st.uid}:${st.gid}`
+  } catch {
+    /* missing dir (first Apply) — fall through to the process owner */
+  }
+  try {
+    if (typeof process.getuid === 'function' && typeof process.getgid === 'function') {
+      return `${process.getuid()}:${process.getgid()}`
+    }
+  } catch {
+    /* non-POSIX — last resort below */
+  }
+  return '0:0'
+}
+
 /** Normalize a strategy reference to a `.bat` file name. Pure. */
 export function normalizeStrategyFileName(input: string): string {
   let s = String(input ?? '').trim()
