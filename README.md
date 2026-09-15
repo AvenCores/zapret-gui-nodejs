@@ -29,7 +29,8 @@
 </p>
 
 Десктопный GUI для [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube)
-— обход DPI-блокировок Discord / YouTube / Telegram через `winws.exe` + WinDivert.
+— обход DPI-блокировок Discord / YouTube / Telegram через `winws.exe` + WinDivert,
+плюс встроенный MTProto-прокси для Telegram Desktop (мост MTProto → WebSocket, порт `127.0.0.1:1443`).
 
 Стек: **Electron + React + TypeScript + TailwindCSS + zustand**,
 установщик через **electron-builder (NSIS)**, автообновление приложения через **electron-updater**.
@@ -43,11 +44,11 @@
 
 | Страница | Что умеет |
 |---|---|
-| Дашборд | Статус `zapret` / WinDivert / `winws.exe`, активная стратегия, путь сервиса, кнопки Старт / Стоп / Рестарт / Удалить, детект чужого сервиса + takeover, блок Hosts (проверка/применение/контроль), bypass-проверки Discord/YouTube/Cloudflare |
+| Дашборд | Статус `zapret` / WinDivert / `winws.exe`, активная стратегия, путь сервиса, кнопки Старт / Стоп / Рестарт / Удалить, детект чужого сервиса + takeover, блок Hosts (проверка/применение/контроль), блок Telegram-прокси (статус, Старт / Стоп / Рестарт, соединения, трафик, `tg://proxy`-ссылка + копирование / открытие в Telegram), bypass-проверки Discord/YouTube/Cloudflare |
 | Стратегии | Все 22 стратегии из upstream, установка службой Windows, тестовый запуск в foreground-режиме с живым выводом, поиск, бейджи desync-методов, импорт своих `.bat`, удаление импортированных + тюнинг поверх стратегии: Game Filter, режим IPSet, активные `.bin`-фейки Discord/Game |
 | Списки | Редактор пользовательских `*-user.txt` (`list-general-user.txt`, `list-exclude-user.txt`, `ipset-exclude-user.txt` + любые новые `*-user.txt`): счётчик записей, добавление, дедупликация, сортировка, лимит 2 МБ |
 | Обновления | Версия zapret-данных, IPSet, стратегии (снапшот ветки), движок `bol-van/zapret` (выбор тега, allowlist бинарей в `bin/`), автообновление приложения (`electron-updater`) |
-| Настройки | Только автозапуск с Windows и поведение трея: иконка в трее, сворачивание при закрытии, старт свёрнутым, пункты меню стратегий/тюнинга/быстрых настроек; флаг автопроверки обновлений — на странице Обновлений |
+| Настройки | Автозапуск с Windows + рядом опция «Запускаться свёрнутым в трей», поведение трея: иконка в трее, сворачивание при закрытии, пункты меню стратегий/тюнинга/быстрых настроек; секция Telegram-прокси (автозапуск прокси, CF-fallback, порт); флаг автопроверки обновлений — на странице Обновлений |
 | Диагностика | 17 проверок + инструменты: очистка кэша Discord, удаление конфликтующих сервисов, встроенные тесты стратегий (standard/dpi) + встроенная секция Логи (живой поток, фильтр, экспорт; отдельная страница `logs` оставлена как legacy-алиас на диагностику) |
 | Прочее | 28 языков с автоопределением языка ОС и fallback на английский, тёмная/светлая/авто тема, иконка трея с цветом статуса, мастер первого запуска, флаги языков в сайдбаре, выбор языка и темы на странице установщика |
 
@@ -62,6 +63,10 @@
   * Портативный кейс — сервиса нет, но `winws.exe` запущен → предупреждение о конфликте
 * Блок ссылок: репозиторий, проблемы, релизы, YouTube, Telegram, VK, Dzen
 * Блок Hosts: сверка системного `hosts` с upstream (маркеры first/last, размер блока, время проверки, превью содержимого), применение в системный `hosts` с бэкапом `.zapret-gui.bak` и автоповторной проверкой установки
+* Блок Telegram-прокси (подробности — в разделе «📡 Telegram-прокси» ниже):
+  статус `running` / `stopped` / `error`, кнопки Старт / Стоп / Рестарт,
+  `host:port`, активные соединения, трафик ↑/↓, `tg://proxy`-ссылка
+  с кнопками «Скопировать ссылку» и «Открыть в Telegram» (открытие — через main-процесс и `shell.openExternal`, ссылку собирает main из своих настроек)
 
 ## 🧩 Стратегии
 
@@ -85,9 +90,45 @@
 | IPSet (`lists/ipset-all.txt`) | Стратегии | `none` (`203.0.113.113/32`) / `loaded` (restore из `.backup`) / `any` (пустой файл) |
 | Фейки (`.bin`) | Стратегии | Списки из `bin/*.bin` (без `ACTIVE_*`), замена `ACTIVE_DISCORD_UDP.bin` / `ACTIVE_GAME_UDP.bin` копией выбранного фейка |
 | Автопроверка обновлений | Обновления | Флаг-файл `utils/check_updates.enabled` |
-| Автозапуск с Windows | Настройки | `app.setLoginItemSettings({ openAtLogin })` |
+| Автозапуск с Windows | Настройки | `app.setLoginItemSettings({ openAtLogin })` — окно при таком старте **показывается как обычно**; чтобы стартовать в фоне, включи рядом «Запускаться свёрнутым в трей» |
 | Трей | Настройки | `showTrayIcon`, `minimizeToTrayOnClose`, `startMinimizedToTray`, видимость секций `trayServiceMenu` / `trayStrategyMenu` / `trayNavigateMenu` / `trayGameFilterMenu` / `trayIPSetMenu` / `trayToolsMenu` / `trayQuickSettings` |
 | Язык / Тема | Сайдбар + установщик | Сохраняются в `settings.json`, применяются мгновенно (трей перестраивается сразу через `onSettingsChanged` + по таймеру ~15с) |
+
+## 📡 Telegram-прокси (встроенный MTProto → WebSocket мост)
+
+TypeScript-порт [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy),
+работает внутри приложения (`src/main/tg-proxy.ts`) без внешних зависимостей —
+только встроенные `node:net` / `node:tls` / `node:crypto` (raw TLS+WebSocket клиент
+написан вручную, как и `RawWebSocket` в оригинале).
+
+Как это работает:
+
+1. Слушает `127.0.0.1:1443`, перехватывает 64-байт MTProto obfuscation init-пакет
+2. Извлекает DC ID / media-флаг / протокол через AES-256-CTR + `sha256(prekey + secret)`
+3. Поднимает TLS WebSocket к DC (`kws{dc}(−1).web.telegram.org/apiws`), каждый MTProto-пакет — отдельный WS-фрейм (`MsgSplitter` режет TCP-поток по границам пакетов abridged/intermediate)
+4. Трафик перешифровывается на лету (4 потока `CryptoCtx`: клиент ↔ прокси ↔ Telegram)
+5. Fallback-цепочка: прямое WS → CF-прокси (`kws{dc}.*`, пул доменов с hourly-refresh с GitHub) → прямое TCP `:443` (включая `203 → 91.105.192.100`, у DC203 нет WS-релеев)
+
+Подключение Telegram Desktop: Настройки → Продвинутые → Тип соединения → Прокси → MTProto,
+сервер `127.0.0.1`, порт `1443`, secret из приложения — или одной кнопкой «Открыть в Telegram»
+(`tg://proxy`-ссылка, в т.ч. из трея виден статус `TG: …` в тултипе и подменю Старт / Стоп / Рестарт).
+
+Управление и состояние:
+
+* Дашборд: блок «Telegram-прокси», Настройки: автозапуск прокси / CF-fallback / порт
+* `settings.json → tgProxy`: `{ enabled, port, autoStart, secret, cfProxyEnabled }`
+  (secret из 32 hex генерируется один раз и хранится — иначе Telegram пришлось бы
+  перенастраивать после каждого перезапуска)
+* Автозапуск прокси при старте приложения (`tgProxy.autoStart`), graceful stop при выходе/сбросе
+* Логи идут через общий логгер с источником `tg-proxy`
+* IPC-каналы `tg-proxy:start` / `stop` / `restart` / `get-status` / `get-stats` / `update-settings` / `open-link`
+
+Известные нюансы реализации (найдены при отладке живого трафика):
+
+* Клиентский сокет ставится на `pause()` на время dial upstream и `resume()` при старте моста:
+  сокет без `data`-слушателя во flowing-режиме Node.js **молча теряет** пайплайнированные байты —
+  без этого все сессии висели с `^0.0B v0.0B` до idle-таймаута
+* Вне скоупа v1: FakeTLS (`ee`-секреты), PROXY-protocol, CF-Worker fallback
 
 ## 🔄 Обновления
 
@@ -137,7 +178,7 @@
 
 ## 📝 Логи
 
-* Источники: `app` / `winws` / `updater` / `diag`, уровни `info` / `warn` / `error`
+* Источники: `app` / `winws` / `updater` / `diag` / `tg-proxy`, уровни `info` / `warn` / `error`
 * Файл `%APPDATA%\zapret-gui\app.log` + in-memory буфер 2000 строк
 * Секция «Логи» встроена в страницу Диагностики (тип страницы `logs` в сторе — legacy-алиас на `diagnostics`): фильтр по тексту/источнику, моноширинный вывод `HH:MM:SS [source] text`, экспорт в `zapret-gui-logs-YYYY-MM-DD.log` через диалог сохранения + автооткрытие папки
 
@@ -154,7 +195,7 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
 ## 🎨 Тема и трей
 
 * Тёмная/светлая тема через класс `dark` + Tailwind, анимация переключения `.theme-anim` ~350мс
-* Трей: иконка по статусу `running` / `stopped` / `not-installed` / `unknown` (готовые `bundled-assets/tray/tray-*.png` или генерация 16×16 PNG-кружка), тултип `Zapret GUI — <статус>`, меню Старт / Стоп / Рестарт, подменю стратегий (лимит 8 + активная всегда видна), навигация по 6 страницам, GameFilter / IPSet / автозапуск / трей-тогглы, Открыть / Выйти, дабл-клик/клик — показать окно, автообновление каждые 15с + мгновенно по `onSettingsChanged`, скрытие через `showTrayIcon`, чужая служба (`ownership === 'foreign'`) блокирует управление из трея
+* Трей: иконка по статусу `running` / `stopped` / `not-installed` / `unknown` (готовые `bundled-assets/tray/tray-*.png` или генерация 16×16 PNG-кружка), тултип `Zapret GUI — <статус>[ · <стратегия>][ | TG: <статус прокси>]`, меню Старт / Стоп / Рестарт, подменю стратегий (лимит 8 + активная всегда видна), подменю «TG-прокси» (Старт / Стоп / Рестарт + строка статуса с портом), навигация по 6 страницам, GameFilter / IPSet / автозапуск / трей-тогглы, Открыть / Выйти, дабл-клик/клик — показать окно, автообновление каждые 15с + мгновенно по `onSettingsChanged`, скрытие через `showTrayIcon`, чужая служба (`ownership === 'foreign'`) блокирует управление из трея
 * Модалка «О программе»: версии приложения/данных, ссылки, лицензия GPL-3.0, донат-блок SBER с кнопкой копирования
 
 ## 💾 Раскладка установки (без папки `zapret-discord-youtube-main`!)
@@ -166,7 +207,7 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
   * `utils/` — `targets.txt`, результаты `test results/`, флаги `check_updates.enabled` / `game_filter.enabled`
   * `strategies/` — 22 × `*.json`
   * служебные: `_backup/<timestamp>` (снапшоты перед обновлением, хранятся последние 5), `_tmp/`, `tray-icons/` (сгенерированные PNG)
-* Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `showTrayIcon`, `trayServiceMenu`, `trayStrategyMenu`, `trayNavigateMenu`, `trayGameFilterMenu`, `trayIPSetMenu`, `trayToolsMenu`, `trayQuickSettings`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`; старый `trayTuningMenu` мигрирует в `trayGameFilterMenu` + `trayIPSetMenu`)
+* Настройки: `%APPDATA%\zapret-gui\settings.json` (`locale`, `theme`, `autoLaunch`, `showTrayIcon`, `trayServiceMenu`, `trayStrategyMenu`, `trayNavigateMenu`, `trayGameFilterMenu`, `trayIPSetMenu`, `trayToolsMenu`, `trayQuickSettings`, `startMinimizedToTray`, `minimizeToTrayOnClose`, `activeStrategyId`, `discordFake`, `gameFake`, `tgProxy: { enabled, port, autoStart, secret, cfProxyEnabled }`; старый `trayTuningMenu` мигрирует в `trayGameFilterMenu` + `trayIPSetMenu`)
 * Лог: `%APPDATA%\zapret-gui\app.log`
 * Dev-режим: `bundled-assets` из репозитория, данные в `<repo>/.data`, `userData` изолирован в `zapret-gui-dev` во избежание лока кэша Chromium
 
@@ -202,7 +243,7 @@ npm run preview              # electron-vite preview
 `npm run generate:strategies` автоматически выполняется перед каждой сборкой.
 В CI `bundled-assets/` уже закоммичен, скрипт только идемпотентно пересинхронизирует JSON-конфиги.
 
-Тесты (vitest, 14 файлов + `setup.ts`): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `paths-win7`, `config-tester`, `installer-update`, `settings-notify`, `status-dot`, `user-lists`.
+Тесты (vitest, 16 файлов + `setup.ts`): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `paths-win7`, `config-tester`, `installer-update`, `settings-notify`, `status-dot`, `user-lists`, `tg-proxy` (25 тестов: handshake roundtrip по схеме obfuscated2, relay-init, `MsgSplitter`, pause/resume dial-gap регрессия, lifecycle на свободном порту).
 
 CI (`.github/workflows/`): `build.yml` + `release.yml`.
 
@@ -210,9 +251,10 @@ CI (`.github/workflows/`): `build.yml` + `release.yml`.
 
 ```
 src/
-  main/         index.ts (окно 1625x935 min 1080x680, tray, auto-updater, first-run wizard)
-                tray.ts (цветные иконки, меню Start/Stop/Restart/Strategies/Goto/Tuning/QuickSettings)
-                ipc-handlers.ts (все IPC + foreground-тест + экспорт логов)
+  main/         index.ts (окно 1625x935 min 1080x680, tray, auto-updater, first-run wizard, автозапуск TG-прокси)
+                tray.ts (цветные иконки, меню Start/Stop/Restart/Strategies/Goto/Tuning/QuickSettings + подменю TG-прокси)
+                ipc-handlers.ts (все IPC + foreground-тест + экспорт логов + tg-proxy:start/stop/restart/status/stats/settings/open-link)
+                tg-proxy.ts (встроенный MTProto→WebSocket мост: handshake/DC, RawWebSocket, пул, MsgSplitter, CryptoCtx, CF/TCP fallback)
                 service-manager.ts (sc/net/reg/tasklist, install/remove/start/stop, GameFilter, IPSet, Discord-кэш, конфликты)
                 strategy-parser.ts (парсинг .bat в args, плейсхолдеры <BIN>/<LISTS>/<GAME_TCP>/<GAME_UDP>/<ROOT>)
                 strategy-updater.ts (version/IPSet/hosts/source-snapshot/engine bol-van, .bin-фейки)
@@ -227,16 +269,16 @@ src/
                 window.ts (первое окно + best-effort IPC-отправка в renderer)
                 logger.ts (файл app.log до 2 МБ + ротация .1, буфер 2000 + zapret:on-log)
   preload/      index.ts — типизированный мост window.zapret
-  renderer/     App.tsx + main.tsx + store.ts — zustand (page/locale/theme/status/strategies/logs/busy/error, logs→diagnostics)
+  renderer/     App.tsx + main.tsx + store.ts — zustand (page/locale/theme/status/strategies/logs/busy/error, logs→diagnostics, tgProxyStatus/tgProxyStats/tgProxySettings + экшены прокси)
                 components/ Layout.tsx (сайдбар, пикер языка с флагами SVG, темы, AboutModal с донатом) + ui.tsx
-                pages/ Dashboard Strategies Lists Updates Settings Diagnostics (+ Logs как секция диагностики)
+                pages/ Dashboard (статус + Hosts + Telegram-прокси + bypass) Strategies Lists Updates Settings (автозапуск + трей + TG-прокси + сброс) Diagnostics (+ Logs как секция диагностики)
                 assets/ app-icon.png
-  shared/       types.ts (ServiceState, Strategy, StatusSnapshot, DiagnosticCheck, UpdateInfo, EngineVersionInfo, AppSettings, IPC ~53 канала)
-                constants.ts (SERVICE_NAME=zapret, UPSTREAM_OWNER=Flowseal, ENGINE_OWNER=bol-van, URLS, CONFLICTING_SERVICES, FAKE_*.bin)
+  shared/       types.ts (ServiceState, Strategy, StatusSnapshot, DiagnosticCheck, UpdateInfo, EngineVersionInfo, AppSettings, TgProxySettings/TgProxyStats, IPC ~65 каналов)
+                constants.ts (SERVICE_NAME=zapret, UPSTREAM_OWNER=Flowseal, ENGINE_OWNER=bol-van, URLS, CONFLICTING_SERVICES, FAKE_*.bin, TG_PROXY_DEFAULT_PORT/DC_IPS/WS_PATH)
                 i18n.ts + locales/ (28 словарей)
 bundled-assets/ bin/ (engine-version.txt) bin-win7/ (WinDivert с подписью для Win7) lists/ utils/ strategies/ (22 JSON) bat/ (22 general*.bat + service.bat) service/ (version.txt + engine-version.txt + hosts) tray/ (4 PNG) icon.ico
 scripts/        generate-strategies.mjs + clean.mjs + make-icon.mjs
-tests/          14 x *.test.ts + setup.ts
+tests/          16 x *.test.ts + setup.ts
 .github/workflows/ build.yml release.yml
 build/ installer.nsh electron-builder.yml electron.vite.config.ts tailwind.config.js postcss.config.cjs
 ```
@@ -271,6 +313,11 @@ Bat-переменные при парсинге превращаются в п�
 * **YouTube не открывается** — проверьте записи `youtube.com` в hosts + настройте Secure DNS (DoH) в браузере/Windows 11.
 * **Конфликты (GoodbyeDPI и др.)** — кнопка «Удалить конфликтующие сервисы» в диагностике.
 * **Голосовой Discord хрипит** — проверьте AdGuard / Killer / SmartByte / VPN, очистите кэш Discord, попробуйте другую стратегию + foreground-тест.
+* **Telegram не грузится через встроенный прокси** — смотрите источник `tg-proxy` в логах:
+  сессии с `^0.0B v0.0B` означают, что трафик не идёт (старая версия без pause/resume фикса);
+  `DC203` без TCP-фолбэка (`HTTP 503` от CF) — обновитесь, теперь `203 → 91.105.192.100`;
+  постоянные `WS failed, cooldown 60s` — DPI режет `kws*.web.telegram.org`, должен спасать CF/TCP fallback.
+* **Кнопка «Открыть в Telegram» ничего не делает** — Telegram Desktop не зарегистрировал `tg://`-схему в ОС (обычно лечится переустановкой Telegram); скопируйте ссылку вручную и откройте её в «Избранном».
 
 # 📜 Лицензия
 
