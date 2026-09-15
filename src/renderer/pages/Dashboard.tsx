@@ -240,9 +240,6 @@ function TgProxyBlock(): React.JSX.Element {
             <Btn variant="secondary" onClick={() => void copyLink()}>
               {t('tgProxy.copyLink')}
             </Btn>
-            <Btn variant="secondary" onClick={() => void openTgProxyLink()} disabled={acting}>
-              {t('tgProxy.openLink')}
-            </Btn>
           </span>
         </Row>
       ) : null}
@@ -257,6 +254,14 @@ function TgProxyBlock(): React.JSX.Element {
         <Btn onClick={() => void restartTgProxy()} disabled={acting} variant="secondary">
           {t('action.restart')}
         </Btn>
+        {link !== '' ? (
+          <>
+            <span className="flex-1" />
+            <Btn variant="secondary" onClick={() => void openTgProxyLink()} disabled={acting}>
+              {t('tgProxy.openLink')}
+            </Btn>
+          </>
+        ) : null}
       </div>
     </Card>
   )
