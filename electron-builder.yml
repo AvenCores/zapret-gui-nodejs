@@ -15,7 +15,9 @@ win:
   icon: bundled-assets/icon.ico
   target:
     - nsis
-  requestedExecutionLevel: requireAdministrator
+  # No UAC prompt on launch: the app runs as the invoking user and only
+  # re-asks for elevation on demand (AdminBanner → "relaunch as admin").
+  requestedExecutionLevel: asInvoker
   # Apply icon + metadata via rcedit, but skip code signing (no certificate).
   signExecutable: false
 nsis:

@@ -208,7 +208,7 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
 
 ## 💾 Раскладка установки (без папки `zapret-discord-youtube-main`!)
 
-* Установщик (NSIS): `%LOCALAPPDATA%\Programs\Zapret GUI\` (+ ярлыки на рабочем столе и в меню «Пуск»), запрашивает повышение прав (`requestedExecutionLevel: requireAdministrator`, `oneClick: false`, цель только `nsis`, `include: build/installer.nsh` с выбором языка/темы через `install-defaults.json`)
+* Установщик (NSIS): `%LOCALAPPDATA%\Programs\Zapret GUI\` (+ ярлыки на рабочем столе и в меню «Пуск»), приложение запускается без UAC (`requestedExecutionLevel: asInvoker`, повышение прав только по требованию через «перезапустить как админ», `oneClick: false`, цель только `nsis`, `include: build/installer.nsh` с выбором языка/темы через `install-defaults.json`)
 * Рабочие данные (при первом запуске копируются из `resources/bundled-assets` установщика, пользовательские файлы не перезаписываются): `%APPDATA%\zapret-gui\data\{bin,lists,utils,strategies}`
   * `bin/` — `winws.exe`, `WinDivert64.sys`, `WinDivert.dll`, `cygwin1.dll`, `engine-version.txt`, `tls_clienthello_*.bin` / `quic_initial_*.bin` / `stun*.bin` / `ACTIVE_*.bin`
   * `lists/` — `ipset-all.txt` (+ `.backup`), `list-general.txt`, `list-google.txt`, `list-exclude.txt`, `ipset-exclude.txt` + создаваемые `*-user.txt` заглушки (`list-general-user.txt`, `list-exclude-user.txt`, `ipset-exclude-user.txt`, лимит редактора 2 МБ)
