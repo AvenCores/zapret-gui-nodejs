@@ -102,6 +102,28 @@ export interface UpdateInfo {
   appVersion: string
 }
 
+/** One bol-van/zapret engine release (carries Windows winws binaries). */
+export interface EngineRelease {
+  /** Tag name, e.g. `v72.13`. */
+  tag: string
+  name: string
+  publishedAt: string
+  htmlUrl: string
+  /** Direct URL of the `zapret-<tag>.zip` asset. */
+  zipUrl: string
+}
+
+/** Engine (winws.exe) version state. */
+export interface EngineVersionInfo {
+  /** Local engine version (`bin/engine-version.txt`, e.g. `v72.13`). */
+  local: string
+  /** Latest upstream tag (null when unreachable). */
+  remote: string | null
+  updateAvailable: boolean
+  releasesUrl: string
+  checkedAt: string
+}
+
 /** Progress event for long downloads. */
 export interface DownloadProgress {
   percent: number
@@ -219,6 +241,9 @@ export const IPC = {
   updateHosts: 'zapret:update-hosts',
   applyHosts: 'zapret:apply-hosts',
   updateStrategies: 'zapret:update-strategies',
+  listEngineReleases: 'zapret:list-engine-releases',
+  checkEngineUpdates: 'zapret:check-engine-updates',
+  updateEngine: 'zapret:update-engine',
   runDiagnostics: 'zapret:run-diagnostics',
   checkBypass: 'zapret:check-bypass',
   clearDiscordCache: 'zapret:clear-discord-cache',

@@ -35,6 +35,9 @@ import {
   checkHosts,
   applyHosts,
   updateStrategiesFromGithub,
+  listEngineReleases,
+  checkEngineUpdates,
+  updateEngineToTag,
   listAvailableFakes,
   replaceActiveFake
 } from './strategy-updater'
@@ -268,6 +271,26 @@ export function registerIpcHandlers(): void {
       (p) => safeSend(IPC.onDownloadProgress, p),
       (t) => sendLog('updater', 'info', t)
     )
+    return r
+  })
+
+  ipcMain.handle(IPC.listEngineReleases, async (_e, limit?: number) => {
+    const n = typeof limit === 'number' && Number.isFinite(limit) ? Math.min(Math.max(Math.floor(limit), 1), 50) : 20
+    return listEngineReleases(n)
+  })
+
+  ipcMain.handle(IPC.checkEngineUpdates, async () => checkEngineUpdates())
+
+  ipcMain.handle(IPC.updateEngine, async (_e, tag: string) => {
+    const cleanTag = String(tag ?? '').slice(0, 64)
+    sendLog('updater', 'info', `Updating zapret engine to ${cleanTag}...`)
+    const r = await updateEngineToTag(
+      getDataDir(),
+      cleanTag,
+      (p) => safeSend(IPC.onDownloadProgress, p),
+      (t) => sendLog('updater', 'info', t)
+    )
+    sendLog('updater', 'info', `Engine updated to ${r.tag}: ${r.filesUpdated.length} files.`)
     return r
   })
 

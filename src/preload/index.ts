@@ -12,6 +12,8 @@ import type {
   ConfigTestMode,
   DiagnosticCheck,
   DownloadProgress,
+  EngineRelease,
+  EngineVersionInfo,
   GameFilterMode,
   HostsCheckResult,
   IPSetMode,
@@ -55,6 +57,11 @@ const api = {
   applyHosts: (remoteContent: string): Promise<boolean> => ipcRenderer.invoke(IPC.applyHosts, remoteContent),
   updateStrategies: (): Promise<{ tag: string; filesUpdated: string[]; backupDir: string }> =>
     ipcRenderer.invoke(IPC.updateStrategies),
+  listEngineReleases: (limit?: number): Promise<EngineRelease[]> =>
+    ipcRenderer.invoke(IPC.listEngineReleases, limit),
+  checkEngineUpdates: (): Promise<EngineVersionInfo> => ipcRenderer.invoke(IPC.checkEngineUpdates),
+  updateEngine: (tag: string): Promise<{ tag: string; filesUpdated: string[]; backupDir: string }> =>
+    ipcRenderer.invoke(IPC.updateEngine, tag),
   runDiagnostics: (): Promise<DiagnosticCheck[]> => ipcRenderer.invoke(IPC.runDiagnostics),
   checkBypass: (id: BypassTargetId): Promise<BypassCheckResult> => ipcRenderer.invoke(IPC.checkBypass, id),
   clearDiscordCache: (): Promise<string[]> => ipcRenderer.invoke(IPC.clearDiscordCache),

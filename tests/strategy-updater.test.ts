@@ -3,7 +3,17 @@ import { describe, it, expect, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { getBundledZapretVersion, getSystemHostsPath, applyHosts, upstreamSourceArchiveUrl } from '../src/main/strategy-updater'
+import {
+  getBundledZapretVersion,
+  getSystemHostsPath,
+  applyHosts,
+  upstreamSourceArchiveUrl,
+  isValidEngineTag,
+  engineAssetUrl,
+  compareEngineVersions,
+  parseEngineReleases,
+  getLocalEngineVersion
+} from '../src/main/strategy-updater'
 
 describe('upstreamSourceArchiveUrl', () => {
   it('points at the source-tree snapshot, not release assets', () => {
@@ -28,6 +38,58 @@ describe('getBundledZapretVersion', () => {
 describe('getSystemHostsPath', () => {
   it('points at the Windows system hosts file', () => {
     expect(getSystemHostsPath().toLowerCase().replace(/\//g, '\\')).toContain('system32\\drivers\\etc\\hosts')
+  })
+})
+
+describe('engine tags (bol-van/zapret releases)', () => {
+  it('validates tags', () => {
+    expect(isValidEngineTag('v72.13')).toBe(true)
+    expect(isValidEngineTag('v72.9')).toBe(true)
+    expect(isValidEngineTag('72.13')).toBe(false)
+    expect(isValidEngineTag('')).toBe(false)
+    expect(isValidEngineTag('v72.13; rm -rf /')).toBe(false)
+    expect(isValidEngineTag('../../etc')).toBe(false)
+  })
+
+  it('builds the release asset URL, never a raw/path-traversal URL', () => {
+    expect(engineAssetUrl('v72.13')).toBe('https://github.com/bol-van/zapret/releases/download/v72.13/zapret-v72.13.zip')
+    expect(() => engineAssetUrl('../evil')).toThrow('Invalid engine tag')
+  })
+
+  it('compares versions numerically (v72.13 > v72.9)', () => {
+    expect(compareEngineVersions('v72.13', 'v72.9')).toBe(1)
+    expect(compareEngineVersions('v72.9', 'v72.13')).toBe(-1)
+    expect(compareEngineVersions('v72.13', 'v72.13')).toBe(0)
+    expect(compareEngineVersions('v73', 'v72.13')).toBe(1)
+  })
+
+  it('parses the GitHub releases API payload, skipping invalid entries', () => {
+    const payload = [
+      {
+        tag_name: 'v72.13',
+        name: 'v72.13',
+        published_at: '2026-07-21T06:25:03Z',
+        html_url: 'https://github.com/bol-van/zapret/releases/tag/v72.13',
+        assets: [{ name: 'zapret-v72.13.zip', browser_download_url: 'https://github.com/bol-van/zapret/releases/download/v72.13/zapret-v72.13.zip' }]
+      },
+      { tag_name: 'not-a-version', name: 'x' },
+      'garbage',
+      { tag_name: 'v72.12', published_at: '2026-03-12T11:43:00Z', assets: [] }
+    ]
+    const list = parseEngineReleases(payload)
+    expect(list.map((r) => r.tag)).toEqual(['v72.13', 'v72.12'])
+    expect(list[0].zipUrl).toContain('zapret-v72.13.zip')
+    // Missing asset entry falls back to the conventional URL.
+    expect(list[1].zipUrl).toBe('https://github.com/bol-van/zapret/releases/download/v72.12/zapret-v72.12.zip')
+    expect(parseEngineReleases({})).toEqual([])
+  })
+
+  it('reads the bundled engine version (bol-van tag)', () => {
+    expect(getLocalEngineVersion()).toMatch(/^v\d+/)
+    const file = path.join(process.cwd(), 'bundled-assets', 'bin', 'engine-version.txt')
+    if (fs.existsSync(file)) {
+      expect(getLocalEngineVersion()).toBe(fs.readFileSync(file, 'utf8').trim())
+    }
   })
 })
 

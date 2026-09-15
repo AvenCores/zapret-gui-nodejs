@@ -249,4 +249,14 @@ export const fa = {
   'strategies.selected': 'selected',
   'strategies.pendingText': '"{chosen}" is selected, but "{active}" is running. Apply the strategy or cancel the selection.',
   'strategies.cancelSelection': 'Cancel selection',
+  'updates.engineTitle': 'zapret engine (winws)',
+  'updates.engineLocal': 'Engine version',
+  'updates.engineRemote': 'Latest engine version',
+  'updates.engineAvailable': 'Engine update available!',
+  'updates.engineUpToDate': 'Engine is up to date.',
+  'updates.updateEngine': 'Update engine',
+  'updates.loadReleases': 'Load version list',
+  'updates.engineResult': 'Engine {tag}: {count} files updated. Backup: {dir}',
+  'updates.engineReleasesFailed': 'Failed to load the releases list',
+  'updates.engineRestartHint': 'Restart the zapret service after updating.'
 } as const

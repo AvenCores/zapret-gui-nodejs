@@ -12,6 +12,24 @@ export const UPSTREAM_OWNER = 'Flowseal'
 export const UPSTREAM_REPO = 'zapret-discord-youtube'
 export const UPSTREAM_BRANCH = 'main'
 
+/** Upstream DPI engine (winws.exe binaries): bol-van/zapret releases. */
+export const ENGINE_OWNER = 'bol-van'
+export const ENGINE_REPO = 'zapret'
+/** Windows x64 binaries inside a release asset (e.g. `zapret-v72.13.zip`). */
+export const ENGINE_WIN64_DIR = 'binaries/windows-x86_64'
+export const ENGINE_FAKES_DIR = 'files/fake'
+/** Engine binaries synced into `bin/` on update (allowlist — nothing else is touched). */
+export const ENGINE_BIN_FILES = [
+  'winws.exe',
+  'WinDivert.dll',
+  'WinDivert64.sys',
+  'cygwin1.dll',
+  'mdig.exe',
+  'ip2net.exe',
+  'killall.exe'
+] as const
+export const ENGINE_VERSION_FILE = 'engine-version.txt'
+
 export const APP_OWNER = 'AvenCores'
 export const APP_REPO = 'zapret-gui-nodejs'
 
@@ -25,6 +43,11 @@ export const URLS = {
   branchHeadApi: `https://api.github.com/repos/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/commits/${UPSTREAM_BRANCH}`,
   releasesPage: `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/releases/latest`,
   releaseTag: (tag: string) => `https://github.com/${UPSTREAM_OWNER}/${UPSTREAM_REPO}/releases/tag/${tag}`,
+  // DPI engine (bol-van/zapret): versioned release assets with Windows binaries.
+  engineReleasesApi: `https://api.github.com/repos/${ENGINE_OWNER}/${ENGINE_REPO}/releases?per_page=20`,
+  engineReleasesPage: `https://github.com/${ENGINE_OWNER}/${ENGINE_REPO}/releases`,
+  engineReleaseTag: (tag: string) => `https://github.com/${ENGINE_OWNER}/${ENGINE_REPO}/releases/tag/${tag}`,
+  engineAsset: (tag: string) => `https://github.com/${ENGINE_OWNER}/${ENGINE_REPO}/releases/download/${tag}/zapret-${tag}.zip`,
   // Project links + author socials (mirrors the badges at the top of README.md).
   appRepo: `https://github.com/${APP_OWNER}/${APP_REPO}`,
   appIssues: `https://github.com/${APP_OWNER}/${APP_REPO}/issues`,

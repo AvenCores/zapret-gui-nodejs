@@ -248,5 +248,15 @@ export const en = {
   'settings.showTrayIcon': 'Show tray icon',
   'settings.trayStrategyMenu': '“Strategies” submenu',
   'settings.trayTuningMenu': '“Game Filter / IPSet” submenus',
-  'settings.trayQuickSettings': 'Quick settings in menu'
+  'settings.trayQuickSettings': 'Quick settings in menu',
+  'updates.engineTitle': 'zapret engine (winws)',
+  'updates.engineLocal': 'Engine version',
+  'updates.engineRemote': 'Latest engine version',
+  'updates.engineAvailable': 'Engine update available!',
+  'updates.engineUpToDate': 'Engine is up to date.',
+  'updates.updateEngine': 'Update engine',
+  'updates.loadReleases': 'Load version list',
+  'updates.engineResult': 'Engine {tag}: {count} files updated. Backup: {dir}',
+  'updates.engineReleasesFailed': 'Failed to load the releases list',
+  'updates.engineRestartHint': 'Restart the zapret service after updating.'
 } as const

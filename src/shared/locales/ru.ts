@@ -248,5 +248,15 @@ export const ru = {
   'settings.showTrayIcon': 'Показывать иконку в трее',
   'settings.trayStrategyMenu': 'Подменю «Стратегии»',
   'settings.trayTuningMenu': 'Подменю «Game Filter / IPSet»',
-  'settings.trayQuickSettings': 'Быстрые настройки в меню'
+  'settings.trayQuickSettings': 'Быстрые настройки в меню',
+  'updates.engineTitle': 'Движок zapret (winws)',
+  'updates.engineLocal': 'Версия движка',
+  'updates.engineRemote': 'Последняя версия движка',
+  'updates.engineAvailable': 'Доступно обновление движка!',
+  'updates.engineUpToDate': 'Движок актуален.',
+  'updates.updateEngine': 'Обновить движок',
+  'updates.loadReleases': 'Загрузить список версий',
+  'updates.engineResult': 'Движок {tag}: обновлено файлов: {count}. Бэкап: {dir}',
+  'updates.engineReleasesFailed': 'Не удалось загрузить список релизов',
+  'updates.engineRestartHint': 'После обновления перезапустите сервис zapret.'
 } as const

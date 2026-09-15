@@ -9,8 +9,8 @@ import path from 'node:path'
 import https from 'node:https'
 import { execFile } from 'node:child_process'
 import { app } from 'electron'
-import { URLS, UPSTREAM_BRANCH } from '../shared/constants'
-import type { DownloadProgress, UpdateInfo } from '../shared/types'
+import { URLS, UPSTREAM_BRANCH, ENGINE_WIN64_DIR, ENGINE_FAKES_DIR, ENGINE_BIN_FILES, ENGINE_VERSION_FILE } from '../shared/constants'
+import type { DownloadProgress, EngineRelease, EngineVersionInfo, UpdateInfo } from '../shared/types'
 import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir, getBundledAssetsDir, applyWin7Drivers, isWindows7 } from './paths'
 import { parseBatContent } from './strategy-parser'
 
@@ -494,9 +494,279 @@ function filesEqual(a: string, b: string): boolean {
   }
 }
 
+/**
+ * DPI engine (bol-van/zapret) releases: versioned assets with Windows
+ * `winws.exe` binaries (`binaries/windows-x86_64/` inside
+ * `zapret-<tag>.zip`). Unlike the Flowseal data snapshot above, engine
+ * releases are version-pinned so the user can manually install any tag.
+ */
+
+/** True for a plausible engine tag (`v72.13`). Pure — covered by unit tests. */
+export function isValidEngineTag(tag: string): boolean {
+  return /^v\d[\w.\-]{0,31}$/.test(tag.trim())
+}
+
+/** Direct download URL of the release asset for a tag. Pure — covered by unit tests. */
+export function engineAssetUrl(tag: string): string {
+  const t = tag.trim()
+  if (!isValidEngineTag(t)) throw new Error(`Invalid engine tag: ${tag.slice(0, 32)}`)
+  return URLS.engineAsset(t)
+}
+
+/** Compare engine tags (`v72.13` > `v72.9`): 1 if a > b, -1 if a < b, 0 if equal. Pure. */
+export function compareEngineVersions(a: string, b: string): number {
+  const norm = (s: string): number[] =>
+    s
+      .trim()
+      .replace(/^v/i, '')
+      .split('.')
+      .map((p) => {
+        const n = parseInt(p, 10)
+        return Number.isFinite(n) && n >= 0 ? n : 0
+      })
+  const pa = norm(a)
+  const pb = norm(b)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? 0
+    const y = pb[i] ?? 0
+    if (x > y) return 1
+    if (x < y) return -1
+  }
+  return 0
+}
+
+interface GithubReleaseJson {
+  tag_name?: unknown
+  name?: unknown
+  published_at?: unknown
+  created_at?: unknown
+  html_url?: unknown
+  assets?: unknown
+}
+
+/**
+ * Map raw GitHub releases API JSON to {@link EngineRelease} list.
+ * Skips drafts/invalid entries, keeps API order (newest first).
+ * Pure — covered by unit tests.
+ */
+export function parseEngineReleases(json: unknown, limit = 20): EngineRelease[] {
+  if (!Array.isArray(json)) return []
+  const out: EngineRelease[] = []
+  for (const item of json as GithubReleaseJson[]) {
+    if (out.length >= limit) break
+    if (typeof item !== 'object' || item === null) continue
+    const tag = typeof item.tag_name === 'string' ? item.tag_name.trim() : ''
+    if (!isValidEngineTag(tag)) continue
+    const expectedAsset = `zapret-${tag}.zip`
+    let zipUrl: string | null = null
+    if (Array.isArray(item.assets)) {
+      for (const a of item.assets as Array<{ name?: unknown; browser_download_url?: unknown }>) {
+        if (
+          typeof a === 'object' &&
+          a !== null &&
+          a.name === expectedAsset &&
+          typeof a.browser_download_url === 'string' &&
+          a.browser_download_url.startsWith('https://')
+        ) {
+          zipUrl = a.browser_download_url
+          break
+        }
+      }
+    }
+    out.push({
+      tag,
+      name: typeof item.name === 'string' && item.name.trim() !== '' ? item.name.trim().slice(0, 64) : tag,
+      publishedAt:
+        typeof item.published_at === 'string'
+          ? item.published_at
+          : typeof item.created_at === 'string'
+            ? item.created_at
+            : '',
+      htmlUrl:
+        typeof item.html_url === 'string' && item.html_url.startsWith('https://')
+          ? item.html_url
+          : URLS.engineReleaseTag(tag),
+      zipUrl: zipUrl ?? URLS.engineAsset(tag)
+    })
+  }
+  return out
+}
+
+/** List bol-van/zapret releases (newest first). Throws on network errors. */
+export async function listEngineReleases(limit = 20): Promise<EngineRelease[]> {
+  const raw = await fetchText(URLS.engineReleasesApi, 20000)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw) as unknown
+  } catch {
+    throw new Error('Cannot parse engine releases response')
+  }
+  return parseEngineReleases(parsed, Math.min(Math.max(limit, 1), 50))
+}
+
+/** Local engine version: data `bin/` first, then bundled assets. Never throws. */
+export function getLocalEngineVersion(): string {
+  const candidates = [
+    path.join(getBinDir(), ENGINE_VERSION_FILE),
+    path.join(getBundledAssetsDir(), 'bin', ENGINE_VERSION_FILE),
+    path.join(getBundledAssetsDir(), 'service', ENGINE_VERSION_FILE)
+  ]
+  for (const p of candidates) {
+    try {
+      const v = fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, '').trim()
+      if (v) return v
+    } catch {
+      /* try next */
+    }
+  }
+  return 'v0'
+}
+
+/** Compare local engine version with the latest upstream tag (best-effort). */
+export async function checkEngineUpdates(): Promise<EngineVersionInfo> {
+  const local = getLocalEngineVersion()
+  let remote: string | null = null
+  try {
+    remote = (await listEngineReleases(5))[0]?.tag ?? null
+  } catch {
+    remote = null
+  }
+  return {
+    local,
+    remote,
+    updateAvailable: remote !== null && compareEngineVersions(remote, local) > 0,
+    releasesUrl: URLS.engineReleasesPage,
+    checkedAt: new Date().toISOString()
+  }
+}
+
+function runBestEffort(cmd: string, args: string[], timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      execFile(cmd, args, { windowsHide: true, timeout: timeoutMs }, () => resolve())
+    } catch {
+      resolve()
+    }
+  })
+}
+
+/**
+ * Install engine binaries for a pinned release tag into `data/bin/`:
+ * downloads `zapret-<tag>.zip`, backs up current `bin/` into
+ * `data/_backup/<timestamp>/bin`, then copies the allowlisted Windows
+ * x64 binaries + refreshes overlapping `.bin` fakes (never deletes
+ * Flowseal-specific files, never touches `ACTIVE_*`).
+ * Emits 0..100 progress through `onProgress`.
+ */
+export async function updateEngineToTag(
+  dataDir: string,
+  tag: string,
+  onProgress?: ProgressCb,
+  onLog?: (text: string) => void
+): Promise<{ tag: string; filesUpdated: string[]; backupDir: string }> {
+  const cleanTag = tag.trim()
+  if (!isValidEngineTag(cleanTag)) throw new Error(`Invalid engine tag: ${tag.slice(0, 32)}`)
+  const say = (t: string): void => {
+    onLog?.(t)
+  }
+  // winws.exe is locked while the service runs — quiesce best-effort so the
+  // copy below does not fail with EBUSY/EPERM (user restarts it afterwards).
+  say(`Stopping zapret service before engine update (if running)...`)
+  await runBestEffort('net.exe', ['stop', 'zapret'], 20000)
+  await runBestEffort('taskkill.exe', ['/IM', 'winws.exe', '/F'], 10000)
+
+  const zipUrl = engineAssetUrl(cleanTag)
+  say(`Downloading zapret engine ${cleanTag} ...`)
+  const safeTag = cleanTag.replace(/[\\/:"*?<>|]/g, '_')
+  const tmp = path.join(dataDir, '_tmp')
+  fs.mkdirSync(tmp, { recursive: true })
+  const zipPath = path.join(tmp, `zapret-engine-${safeTag}.zip`)
+  await downloadFile(zipUrl, zipPath, (p) => onProgress?.({ ...p, percent: Math.round(p.percent * 0.7) }))
+
+  const backupDir = path.join(dataDir, '_backup', new Date().toISOString().replace(/[:.]/g, '-'))
+  fs.mkdirSync(backupDir, { recursive: true })
+  const dataBin = path.join(dataDir, 'bin')
+  if (fs.existsSync(dataBin)) {
+    await copyRecursive(dataBin, path.join(backupDir, 'bin'))
+    say(`Backup saved to ${backupDir}`)
+  }
+
+  const extractDir = path.join(tmp, `engine-${safeTag}`)
+  fs.rmSync(extractDir, { recursive: true, force: true })
+  fs.mkdirSync(extractDir, { recursive: true })
+  await expandArchive(zipPath, extractDir)
+  onProgress?.({ percent: 75, transferred: 0, total: null })
+
+  const root = singleChildDir(extractDir) ?? extractDir
+  const srcWin = path.join(root, ...ENGINE_WIN64_DIR.split('/'))
+  if (!fs.existsSync(srcWin)) throw new Error(`Windows binaries not found in ${cleanTag} release asset`)
+  const filesUpdated: string[] = []
+  fs.mkdirSync(dataBin, { recursive: true })
+  for (const name of ENGINE_BIN_FILES) {
+    const src = path.join(srcWin, name)
+    if (!fs.existsSync(src)) continue
+    const dest = path.join(dataBin, name)
+    try {
+      if (!fs.existsSync(dest) || !filesEqual(src, dest)) {
+        fs.copyFileSync(src, dest)
+        filesUpdated.push(`bin/${name}`)
+      }
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException)?.code
+      if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') {
+        throw new Error(
+          `Cannot replace ${name}: file is locked. Stop the zapret service (Dashboard → Stop) and retry.`
+        )
+      }
+      throw e
+    }
+  }
+  // Refresh overlapping fake payloads from the release (`files/fake/`);
+  // Flowseal-specific names stay untouched, ACTIVE_* are user selection.
+  const srcFake = path.join(root, ...ENGINE_FAKES_DIR.split('/'))
+  if (fs.existsSync(srcFake)) {
+    let destFiles: string[] = []
+    try {
+      destFiles = fs.readdirSync(dataBin).filter((f) => f.toLowerCase().endsWith('.bin'))
+    } catch {
+      destFiles = []
+    }
+    for (const f of destFiles) {
+      if (/^ACTIVE_/i.test(f)) continue
+      const src = path.join(srcFake, f)
+      if (!fs.existsSync(src)) continue
+      const dest = path.join(dataBin, f)
+      if (!filesEqual(src, dest)) {
+        try {
+          fs.copyFileSync(src, dest)
+          filesUpdated.push(`bin/${f}`)
+        } catch {
+          /* best-effort: a locked fake must not fail the whole update */
+        }
+      }
+    }
+  }
+  fs.writeFileSync(path.join(dataBin, ENGINE_VERSION_FILE), `${cleanTag}\n`, 'utf8')
+
+  // On Windows 7 the stock drivers fail with 577 (bad signature): overlay
+  // the dual-signed variants (upstream install_win7.cmd).
+  if (isWindows7()) {
+    const fixed = applyWin7Drivers(getBundledAssetsDir(), dataBin)
+    for (const name of fixed) {
+      if (!filesUpdated.includes(`bin/${name}`)) filesUpdated.push(`bin/${name}`)
+      say(`Win7 driver restored: bin/${name}`)
+    }
+  }
+
+  onProgress?.({ percent: 100, transferred: 0, total: null })
+  fs.rmSync(zipPath, { force: true })
+  fs.rmSync(extractDir, { recursive: true, force: true })
+  say(`Engine updated to ${cleanTag}: ${filesUpdated.length} files.`)
+  return { tag: cleanTag, filesUpdated, backupDir }
+}
+
 /** Local .bin fake names available in bin/ (excluding ACTIVE_*). */
-export function listAvailableFakes(): { discordActive: string | null; gameActive: string | null; all: string[] } {
-  const bin = getBinDir()
+export function listAvailableFakes(): { discordActive: string | null; gameActive: string | null; all: string[] } {  const bin = getBinDir()
   let files: string[] = []
   try {
     files = fs.readdirSync(bin).filter((f) => f.toLowerCase().endsWith('.bin'))
