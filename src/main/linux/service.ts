@@ -174,6 +174,87 @@ export interface NfqwsDepsStatus {
   missing: string[]
 }
 
+/** `-rwxr-xr-x` style mode string. Pure. */
+function formatMode(mode: number, isDir: boolean): string {
+  const r = (b: number, c: string): string => ((mode & b) !== 0 ? c : '-')
+  const x = (b: number, s: number, sc: string): string => {
+    if ((mode & s) !== 0) return (mode & b) !== 0 ? sc.toLowerCase() : sc.toUpperCase()
+    return (mode & b) !== 0 ? 'x' : '-'
+  }
+  return `${isDir ? 'd' : '-'}${r(0o400, 'r')}${r(0o200, 'w')}${x(0o100, 0o4000, 's')}${r(0o40, 'r')}${r(
+    0o20,
+    'w'
+  )}${x(0o10, 0o2000, 's')}${r(0o4, 'r')}${r(0o2, 'w')}${x(0o1, 0o1000, 't')}`
+}
+
+export interface NfqwsBinaryInfo {
+  modeText: string
+  mode: number
+  uid: number
+  gid: number
+  setuid: boolean
+  setgid: boolean
+}
+
+/**
+ * stat() the engine binary: owner/mode/setuid bits. The classic Fedora
+ * trap is a setuid bit (restored from an archive in the root era) with a
+ * bogus numeric owner: the runner starts as root, but nfqws then runs as
+ * e.g. UID 2147483647 and cannot read its own lists (restart loop).
+ * Never throws (null when missing/unstatable).
+ */
+export function describeNfqwsBinary(nfqwsPath: string): NfqwsBinaryInfo | null {
+  try {
+    if (!fs.existsSync(nfqwsPath)) return null
+    const st = fs.statSync(nfqwsPath)
+    const mode = st.mode & 0o7777
+    return {
+      modeText: formatMode(mode, st.isDirectory()),
+      mode,
+      uid: st.uid,
+      gid: st.gid,
+      setuid: (mode & 0o4000) !== 0,
+      setgid: (mode & 0o2000) !== 0
+    }
+  } catch {
+    return null
+  }
+}
+
+export interface NfqwsLaunchCheck {
+  ok: boolean
+  /** Human problem list (empty when ok) — for errors and diagnostics detail. */
+  list: string
+  /** Fix hint (empty when ok). */
+  hint: string
+}
+
+/**
+ * Can the engine binary actually start: no setuid/setgid trap plus
+ * resolvable shared libraries. Unprivileged, no prompts, never throws.
+ * (A missing file is NOT our department — existence has better messages
+ * at each call site — so it counts as ok here.)
+ */
+export async function checkNfqwsLaunchable(nfqwsPath: string): Promise<NfqwsLaunchCheck> {
+  const problems: string[] = []
+  const hints: string[] = []
+  const info = describeNfqwsBinary(nfqwsPath)
+  if (info && (info.setuid || info.setgid)) {
+    const bits = [info.setuid && 'setuid', info.setgid && 'setgid'].filter(Boolean).join('/')
+    problems.push(`binary has ${bits} bits set (${info.modeText}, owner ${info.uid}:${info.gid})`)
+    hints.push(`re-download Linux dependencies (Updates page) or run: sudo chmod u-s,g-s ${nfqwsPath}`)
+  }
+  if (info) {
+    const deps = await checkNfqwsDeps(nfqwsPath)
+    if (!deps.ok) {
+      problems.push(`missing shared libraries: ${deps.missing.join(', ')}`)
+      hints.push(distroInstallHint())
+    }
+  }
+  if (problems.length === 0) return { ok: true, list: '', hint: '' }
+  return { ok: false, list: problems.join('; '), hint: [...new Set(hints)].join(' / ') }
+}
+
 /**
  * Whether the nfqws binary can actually load (shared libraries present).
  * `ldd` needs no privileges. Optimistic (ok) when ldd itself is unavailable
@@ -824,14 +905,11 @@ export async function installLinuxStrategy(
       `nfqws not found in ${binDir}. Open Updates → "Download Linux dependencies" (or run download-deps) first.`
     )
   }
-  // Fail fast (no prompts spent): a binary with unloadable shared libraries
-  // (e.g. Fedora without libnetfilter_queue) would only die in a restart
-  // loop after install.
-  const deps = await checkNfqwsDeps(nfqwsPath)
+  // Fail fast (no prompts spent): an unloadable binary (missing shared
+  // libraries, setuid trap, ...) would only die in a restart loop later.
+  const deps = await checkNfqwsLaunchable(nfqwsPath)
   if (!deps.ok) {
-    throw new Error(
-      `nfqws cannot start — missing shared libraries: ${deps.missing.join(', ')}. Install them: ${distroInstallHint()}`
-    )
+    throw new Error(`nfqws cannot start — ${deps.list}. ${deps.hint}`)
   }
   const prev = loadLinuxConf(dataDir)
   const conf: LinuxConf = {
@@ -937,11 +1015,9 @@ export async function startLinuxService(dataDir: string, onLog?: (t: string) => 
   if (!fs.existsSync(nfqwsPath)) {
     throw new Error(`nfqws not found in ${getLinuxBinDir(dataDir)} — download Linux dependencies or apply a strategy first`)
   }
-  const startDeps = await checkNfqwsDeps(nfqwsPath)
+  const startDeps = await checkNfqwsLaunchable(nfqwsPath)
   if (!startDeps.ok) {
-    throw new Error(
-      `nfqws cannot start — missing shared libraries: ${startDeps.missing.join(', ')}. Install them: ${distroInstallHint()}`
-    )
+    throw new Error(`nfqws cannot start — ${startDeps.list}. ${startDeps.hint}`)
   }
   if (init === 'unknown') {
     // No init: re-run the stored runner daemon directly (one batch).
@@ -1138,11 +1214,9 @@ export async function testLinuxStrategy(
   const listsDir = path.join(dataDir, 'lists')
   const nfqwsPath = getLinuxNfqwsPath(dataDir)
   if (!fs.existsSync(nfqwsPath)) throw new Error(`nfqws not found in ${binDir}`)
-  const testDeps = await checkNfqwsDeps(nfqwsPath)
+  const testDeps = await checkNfqwsLaunchable(nfqwsPath)
   if (!testDeps.ok) {
-    throw new Error(
-      `nfqws cannot start — missing shared libraries: ${testDeps.missing.join(', ')}. Install them: ${distroInstallHint()}`
-    )
+    throw new Error(`nfqws cannot start — ${testDeps.list}. ${testDeps.hint}`)
   }
   const conf = loadLinuxConf(dataDir)
   const parsed = parseStrategyArgsForLinux(strategy.args, {

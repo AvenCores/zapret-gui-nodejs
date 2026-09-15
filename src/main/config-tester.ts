@@ -836,13 +836,11 @@ export async function runConfigTests(opts: RunConfigTestsOptions): Promise<{ bes
     throw new Error(isLinux ? `nfqws not found in ${binDir} — download Linux deps first` : `winws.exe not found in ${binDir}`)
   }
   if (isLinux) {
-    // Fail fast: unloadable shared libraries would only die per strategy.
-    const { checkNfqwsDeps, distroInstallHint } = await import('./linux/service')
-    const deps = await checkNfqwsDeps(exe)
+    // Fail fast: unloadable binary would only die per strategy.
+    const { checkNfqwsLaunchable } = await import('./linux/service')
+    const deps = await checkNfqwsLaunchable(exe)
     if (!deps.ok) {
-      throw new Error(
-        `nfqws cannot start — missing shared libraries: ${deps.missing.join(', ')}. Install them: ${distroInstallHint()}`
-      )
+      throw new Error(`nfqws cannot start — ${deps.list}. ${deps.hint}`)
     }
   }
 

@@ -836,6 +836,45 @@ describe('nfqws shared-library deps (Fedora root cause)', () => {
     expect(distroInstallHintFor('nixos', '')).toContain('libnetfilter_queue')
   })
 
+  it('describes the binary identity (mode/owner/setuid)', async () => {
+    const { describeNfqwsBinary, checkNfqwsLaunchable } = await import('../src/main/linux/service')
+    expect(describeNfqwsBinary('/no/such/file')).toBeNull()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-bininfo-'))
+    try {
+      const p = path.join(dir, 'nfqws')
+      fs.writeFileSync(p, 'x', 'utf8')
+      const info = describeNfqwsBinary(p)
+      expect(info).not.toBeNull()
+      expect(info?.setuid).toBe(false)
+      expect(info?.setgid).toBe(false)
+      expect(info?.modeText).toMatch(/^-r/)
+      // A plain file with no missing libs is launchable (ldd absent → optimistic).
+      await expect(checkNfqwsLaunchable(p)).resolves.toMatchObject({ ok: true })
+      await expect(checkNfqwsLaunchable(path.join(dir, 'missing'))).resolves.toMatchObject({ ok: true })
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('flags a setuid binary as not launchable (Fedora restart-loop trap)', async () => {
+    if (process.platform === 'win32') return
+    const { describeNfqwsBinary, checkNfqwsLaunchable } = await import('../src/main/linux/service')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-setuid-'))
+    try {
+      const p = path.join(dir, 'nfqws')
+      fs.writeFileSync(p, 'x', 'utf8')
+      fs.chmodSync(p, 0o4755)
+      expect(describeNfqwsBinary(p)?.setuid).toBe(true)
+      expect(describeNfqwsBinary(p)?.modeText).toBe('-rwsr-xr-x')
+      const check = await checkNfqwsLaunchable(p)
+      expect(check.ok).toBe(false)
+      expect(check.list).toContain('setuid')
+      expect(check.hint).toContain('chmod')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('migrates a stale runner pkill -f → -x without privileges', async () => {
     const { migrateStaleRunner, getLinuxRunnerPath } = await import('../src/main/linux/service')
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zapret-migrate-'))
