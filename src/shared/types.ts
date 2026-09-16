@@ -366,6 +366,7 @@ export const IPC = {
   onAppUpdateDownloaded: 'zapret:app-update-downloaded',
   onAppUpdateDownloading: 'zapret:app-update-downloading',
   onAppUpdateError: 'zapret:app-update-error',
+  onAppUpdateNotAvailable: 'zapret:app-update-not-available',
   getAppVersion: 'zapret:get-app-version',
   checkAppUpdates: 'zapret:check-app-updates',
   getAppUpdateState: 'zapret:get-app-update-state',

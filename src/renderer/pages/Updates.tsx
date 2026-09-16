@@ -75,11 +75,13 @@ export default function Updates(): React.JSX.Element {
     void window.zapret.getAppVersion().then(setAppCurrentTracked).catch(() => undefined)
     // Late mount (user opened Updates while the banner already downloads):
     // pick up the cached snapshot so the card shows the same state.
+    // The snapshot also carries the startup auto-check result: when it
+    // succeeded with "up to date", show it + its time right away.
     void window.zapret
       .getAppUpdateState()
       .then((s) => {
         setAppCurrentTracked(s.currentVersion)
-        if (!s.availableVersion) return
+        if (!s.checkedAt) return
         setAppInfo({
           currentVersion: s.currentVersion,
           availableVersion: s.availableVersion,
@@ -133,6 +135,22 @@ export default function Updates(): React.JSX.Element {
         checkedAt: new Date().toISOString()
       }))
     })
+    // Startup / interval auto-check reporting "up to date": reflect it so
+    // the card shows the result + check time without a manual re-check.
+    const offNotAvailable = window.zapret.onAppUpdateNotAvailable((checkedAt) => {
+      setAppInfo((prev) => {
+        // A known pending update wins over a stale "up to date".
+        if (prev?.updateAvailable) return prev
+        return {
+          currentVersion: prev?.currentVersion ?? appCurrentRef.current,
+          availableVersion: null,
+          updateAvailable: false,
+          downloaded: false,
+          releasesUrl: prev?.releasesUrl ?? 'https://github.com/AvenCores/zapret-gui-nodejs/releases',
+          checkedAt
+        }
+      })
+    })
     const offAppError = window.zapret.onAppUpdateError((msg) => {
       // Only touch app state when an app download is (or was) in flight —
       // the shared error channel must not reset engine/strategies UI.
@@ -150,6 +168,7 @@ export default function Updates(): React.JSX.Element {
       offAvailable()
       offDownloading()
       offDownloaded()
+      offNotAvailable()
       offAppError()
       offAppProgress()
     }
@@ -177,6 +196,13 @@ export default function Updates(): React.JSX.Element {
     const d = new Date(iso)
     if (Number.isNaN(d.getTime())) return ''
     return d.toLocaleDateString()
+  }
+
+  function formatCheckedAt(iso: string): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return iso
+    return d.toLocaleString()
   }
 
   function checkEngine(): void {
@@ -338,7 +364,9 @@ export default function Updates(): React.JSX.Element {
           <Badge tone="gray">{appInfo?.currentVersion ?? appCurrent}</Badge>
         </Row>
         <Row label={t('updates.appRemote')}>
-          <Badge tone={appInfo?.updateAvailable ? 'yellow' : 'gray'}>{appInfo?.availableVersion ?? '…'}</Badge>
+          <Badge tone={appInfo?.updateAvailable ? 'yellow' : appInfo ? 'green' : 'gray'}>
+            {appInfo?.availableVersion ?? appInfo?.currentVersion ?? '…'}
+          </Badge>
         </Row>
         {appInfo ? (
           <p className="py-1 text-sm">
@@ -359,6 +387,11 @@ export default function Updates(): React.JSX.Element {
             ) : (
               <span className="text-emerald-700 dark:text-emerald-300">✓ {t('updates.appUpToDate')}</span>
             )}
+          </p>
+        ) : null}
+        {appInfo?.checkedAt ? (
+          <p className="py-1 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+            {t('updates.hostsCheckedAt').replace('{time}', formatCheckedAt(appInfo.checkedAt))}
           </p>
         ) : null}
         {appDownloading && appProgress ? (

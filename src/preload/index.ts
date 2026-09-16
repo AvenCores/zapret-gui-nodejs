@@ -157,6 +157,11 @@ const api = {
     const fn = (_e: unknown, message: string): void => cb(message)
     ipcRenderer.on(IPC.onAppUpdateError, fn)
     return () => ipcRenderer.removeListener(IPC.onAppUpdateError, fn)
+  },
+  onAppUpdateNotAvailable: (cb: (checkedAt: string) => void): (() => void) => {
+    const fn = (_e: unknown, checkedAt: string): void => cb(checkedAt)
+    ipcRenderer.on(IPC.onAppUpdateNotAvailable, fn)
+    return () => ipcRenderer.removeListener(IPC.onAppUpdateNotAvailable, fn)
   }
 }
 

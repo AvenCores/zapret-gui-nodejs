@@ -22,6 +22,12 @@ let downloadedVersion: string | null = null
 let downloading = false
 /** Version currently being downloaded (for the `downloading` event payload). */
 let downloadingVersion: string | null = null
+/**
+ * ISO time of the last SUCCESSFUL update check (startup auto-check, 6h
+ * interval or manual). Null until the first success — lets the Updates page
+ * tell "never checked" apart from "checked, up to date".
+ */
+let lastCheckedAt: string | null = null
 
 /** Installed version. Never throws (unit-test / dev safe). */
 export function getAppVersion(): string {
@@ -117,15 +123,19 @@ function offerAppRestart(version: string): void {
  * Cached snapshot of the app self-update state (no network).
  * Lets late-mounted views (Updates page opened after the banner, window
  * reloaded mid-download) synchronize without waiting for the next event.
+ * `checkedAt` is the real last-successful-check time ('' = never checked),
+ * so the Updates page can show the startup auto-check result + its time.
  */
 export function getAppUpdateState(): AppUpdateState {
-  return { ...buildInfo(offeredVersion), downloading }
+  return { ...buildInfo(offeredVersion), checkedAt: lastCheckedAt ?? '', downloading }
 }
 
 /** Manual check from the Updates page. Returns structured info for the UI. */
 export async function checkAppUpdates(): Promise<AppUpdateInfo> {
   if (!app.isPackaged) {
-    return buildInfo(null)
+    const info = buildInfo(null)
+    lastCheckedAt = info.checkedAt
+    return info
   }
   try {
     const res = await autoUpdater.checkForUpdates()
@@ -133,9 +143,15 @@ export async function checkAppUpdates(): Promise<AppUpdateInfo> {
     const current = getAppVersion()
     // electron-updater already compares versions, but stay defensive:
     // empty / same version → no offer.
-    if (!v || v === current) return buildInfo(null)
+    if (!v || v === current) {
+      const info = buildInfo(null)
+      lastCheckedAt = info.checkedAt
+      return info
+    }
     offerAppUpdate(v)
-    return buildInfo(v)
+    const info = buildInfo(v)
+    lastCheckedAt = info.checkedAt
+    return info
   } catch (e) {
     err('updater', `checkAppUpdates failed: ${e instanceof Error ? e.message : String(e)}`)
     return buildInfo(null)
@@ -200,13 +216,25 @@ export function setupAutoUpdater(): void {
   autoUpdater.on('update-available', (updateInfo) => {
     try {
       const v = String(updateInfo?.version ?? '').trim()
-      if (v) offerAppUpdate(v)
+      if (v) {
+        lastCheckedAt = new Date().toISOString()
+        offerAppUpdate(v)
+      }
     } catch (e) {
       err('updater', `update-available handler failed: ${e instanceof Error ? e.message : String(e)}`)
     }
   })
   autoUpdater.on('update-not-available', () => {
     info('updater', 'App is up to date.')
+    lastCheckedAt = new Date().toISOString()
+    // The startup / interval auto-check found nothing new: tell the
+    // renderer so the Updates page shows "up to date" + check time
+    // without requiring a manual re-check.
+    try {
+      safeSend(IPC.onAppUpdateNotAvailable, lastCheckedAt)
+    } catch {
+      /* best-effort */
+    }
   })
   autoUpdater.on('download-progress', (p) => {
     try {
@@ -257,4 +285,5 @@ export function __resetAppUpdaterForTest(): void {
   downloadedVersion = null
   downloading = false
   downloadingVersion = null
+  lastCheckedAt = null
 }
