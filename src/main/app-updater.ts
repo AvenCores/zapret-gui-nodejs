@@ -11,6 +11,8 @@ import { IPC, type AppUpdateInfo, type AppUpdateState } from '../shared/types'
 import { URLS } from '../shared/constants'
 import { translate } from '../shared/i18n'
 import { loadSettings } from './settings'
+import { getDataDir } from './paths'
+import { getAutoUpdateCheck } from './service-manager'
 import { info, err } from './logger'
 import { win, safeSend } from './window'
 
@@ -46,6 +48,18 @@ function buildInfo(availableVersion: string | null): AppUpdateInfo {
     downloaded: downloadedVersion !== null && downloadedVersion === availableVersion,
     releasesUrl: URLS.appReleases,
     checkedAt: new Date().toISOString()
+  }
+}
+
+/**
+ * The Updates toggle persists as `utils/check_updates.enabled`; scheduled
+ * (startup + interval) checks obey it, manual checks always run.
+ */
+function isAutoCheckEnabled(): boolean {
+  try {
+    return getAutoUpdateCheck(getDataDir())
+  } catch {
+    return true
   }
 }
 
@@ -201,7 +215,8 @@ export function installAppUpdate(): void {
 }
 
 /**
- * Wire electron-updater events once: background check on start + every 6h.
+ * Wire electron-updater events once: background check on start + every 6h
+ * while the Updates toggle is on (`utils/check_updates.enabled`).
  * Every `update-available` ends in {@link offerAppUpdate} so a new release
  * always produces a visible "update?" prompt (dialog + renderer banner),
  * never a silent log line.
@@ -272,9 +287,18 @@ export function setupAutoUpdater(): void {
     }
   })
 
-  void autoUpdater.checkForUpdates().catch(() => undefined)
-  setInterval(() => {
+  /** Scheduled check that obeys the Updates toggle (manual checks bypass it). */
+  function runScheduledCheck(): void {
+    if (!isAutoCheckEnabled()) {
+      info('updater', 'Skipping scheduled app update check (auto-check is off).')
+      return
+    }
     void autoUpdater.checkForUpdates().catch(() => undefined)
+  }
+
+  runScheduledCheck()
+  setInterval(() => {
+    runScheduledCheck()
   }, 6 * 60 * 60 * 1000).unref?.()
 }
 

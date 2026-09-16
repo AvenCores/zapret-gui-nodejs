@@ -6,7 +6,7 @@ import type { AppUpdateInfo, DownloadProgress, EngineRelease, EngineVersionInfo,
 
 export default function Updates(): React.JSX.Element {
   const { t, setError, status } = useUi()
-  const [autoCheck, setAutoCheck] = useState<boolean>(true)
+  const [autoCheck, setAutoCheck] = useState<boolean | null>(null)
   const [autoCheckLoading, setAutoCheckLoading] = useState<boolean>(true)
   const [info, setInfo] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState<boolean>(false)
@@ -68,6 +68,7 @@ export default function Updates(): React.JSX.Element {
         setAutoCheck(await window.zapret.getAutoUpdateCheck())
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
+        setAutoCheck(true)
       } finally {
         setAutoCheckLoading(false)
       }
@@ -342,20 +343,26 @@ export default function Updates(): React.JSX.Element {
 
       <Card>
         <Row label={t('settings.autoUpdateCheck')}>
-          <Toggle
-            value={autoCheck}
-            disabled={autoCheckLoading}
-            onChange={(v) => {
-              void (async () => {
-                try {
-                  await window.zapret.setAutoUpdateCheck(v)
-                  setAutoCheck(v)
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : String(e))
-                }
-              })()
-            }}
-          />
+          {autoCheck === null ? (
+            <span className="flex h-6 items-center text-slate-400">
+              <Spinner />
+            </span>
+          ) : (
+            <Toggle
+              value={autoCheck}
+              disabled={autoCheckLoading}
+              onChange={(v) => {
+                void (async () => {
+                  try {
+                    await window.zapret.setAutoUpdateCheck(v)
+                    setAutoCheck(v)
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : String(e))
+                  }
+                })()
+              }}
+            />
+          )}
         </Row>
       </Card>
 
