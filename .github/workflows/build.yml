@@ -91,5 +91,6 @@ jobs:
           name: zapret-gui-windows
           path: |
             dist/*.exe
+            dist/*.blockmap
             dist/latest.yml
           if-no-files-found: error

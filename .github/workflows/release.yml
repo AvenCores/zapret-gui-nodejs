@@ -86,6 +86,7 @@ jobs:
             - Download `Zapret-GUI-Setup-*.exe` and run as Administrator.
           files: |
             dist/*.exe
+            dist/*.blockmap
             dist/latest.yml
           draft: false
           prerelease: false
