@@ -19,6 +19,7 @@ import type {
   GameFilterMode,
   HostsCheckResult,
   IPSetMode,
+  LogCategory,
   LogLine,
   StatusSnapshot,
   Strategy,
@@ -87,11 +88,18 @@ const api = {
   saveUserList: (name: string, content: string): Promise<UserListMeta> =>
     ipcRenderer.invoke(IPC.saveUserList, name, content),
   relaunchAsAdmin: (): Promise<boolean> => ipcRenderer.invoke(IPC.relaunchAsAdmin),
-  exportLogs: (): Promise<string | null> => ipcRenderer.invoke(IPC.exportLogs),
+  exportLogs: (category?: LogCategory): Promise<string | null> => ipcRenderer.invoke(IPC.exportLogs, category ?? 'all'),
+  getLogs: (category?: LogCategory): Promise<LogLine[]> => ipcRenderer.invoke(IPC.getLogs, category ?? 'all'),
+  clearLogs: (category?: LogCategory): Promise<boolean> => ipcRenderer.invoke(IPC.clearLogs, category ?? 'all'),
   onLog: (cb: (line: LogLine) => void): (() => void) => {
     const fn = (_e: unknown, line: LogLine): void => cb(line)
     ipcRenderer.on(IPC.onLog, fn)
     return () => ipcRenderer.removeListener(IPC.onLog, fn)
+  },
+  onLogs: (cb: (lines: LogLine[]) => void): (() => void) => {
+    const fn = (_e: unknown, lines: LogLine[]): void => cb(lines)
+    ipcRenderer.on(IPC.onLogs, fn)
+    return () => ipcRenderer.removeListener(IPC.onLogs, fn)
   },
   onTestOutput: (cb: (out: TestOutput) => void): (() => void) => {
     const fn = (_e: unknown, out: TestOutput): void => cb(out)

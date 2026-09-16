@@ -72,6 +72,11 @@ export function getAppLogPath(): string {
   return path.join(app.getPath('appData'), 'zapret-gui', 'app.log')
 }
 
+/** tg-proxy has its own file so session spam never rotates away app logs. */
+export function getTgProxyLogPath(): string {
+  return path.join(app.getPath('appData'), 'zapret-gui', 'tg-proxy.log')
+}
+
 function copyDirRecursive(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true })
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {

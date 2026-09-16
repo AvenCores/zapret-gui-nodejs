@@ -20,6 +20,7 @@ const BASE_DEFAULTS = {
   autoLaunch: false,
   startMinimizedToTray: false,
   minimizeToTrayOnClose: true,
+  logsEnabled: true,
   showTrayIcon: true,
   trayStrategyMenu: true,
   trayServiceMenu: true,
@@ -161,6 +162,9 @@ export function loadSettings(): AppSettings {
     // supported code. Unknown/corrupted values fall back to English.
     merged.locale = normalizeLocale((parsed as Record<string, unknown>).locale ?? merged.locale)
     merged.theme = normalizeTheme((parsed as Record<string, unknown>).theme ?? merged.theme)
+    // Old files predate the switch — missing means "on" (previous behavior).
+    if ((parsed as Record<string, unknown>).logsEnabled === false) merged.logsEnabled = false
+    else if (typeof (parsed as Record<string, unknown>).logsEnabled !== 'boolean') merged.logsEnabled = true
     merged.tgProxy = normalizeTgProxySettings((parsed as Record<string, unknown>).tgProxy)
     // Backward compat: `trayTuningMenu` (one flag for both tuning submenus)
     // migrates to `trayGameFilterMenu` + `trayIPSetMenu`, each independently.
@@ -222,6 +226,9 @@ export function normalizeTgProxySettings(value: unknown): TgProxySettings {
 export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   if (patch.locale !== undefined) patch = { ...patch, locale: normalizeLocale(patch.locale) }
   if (patch.theme !== undefined) patch = { ...patch, theme: normalizeTheme(patch.theme) }
+  if (patch.logsEnabled !== undefined && typeof patch.logsEnabled !== 'boolean') {
+    patch = { ...patch, logsEnabled: true }
+  }
   if (patch.tgProxy !== undefined) patch = { ...patch, tgProxy: normalizeTgProxySettings(patch.tgProxy) }
   const next = { ...loadSettings(), ...patch }
   persistSettings(next)

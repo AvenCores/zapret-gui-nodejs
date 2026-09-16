@@ -16,7 +16,7 @@
  * @module main/app-reset
  */
 import fs from 'node:fs'
-import { getAppLogPath, getDataDir, ensureDataDirSeeded } from './paths'
+import { getAppLogPath, getTgProxyLogPath, getDataDir, ensureDataDirSeeded } from './paths'
 import { resetSettings } from './settings'
 import { removeServices } from './service-manager'
 import type { AppSettings } from '../shared/types'
@@ -78,6 +78,9 @@ export async function resetAppData(onLog?: (text: string) => void): Promise<Rese
     const logPath = getAppLogPath()
     fs.rmSync(logPath, { force: true })
     fs.rmSync(`${logPath}.1`, { force: true })
+    const tgLogPath = getTgProxyLogPath()
+    fs.rmSync(tgLogPath, { force: true })
+    fs.rmSync(`${tgLogPath}.1`, { force: true })
   } catch {
     /* logs are best-effort */
   }

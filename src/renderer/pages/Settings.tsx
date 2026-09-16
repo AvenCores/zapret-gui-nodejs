@@ -153,6 +153,13 @@ export default function Settings(): React.JSX.Element {
           </Row>
         </Card>
 
+      <Card title={t('settings.logsTitle')}>
+        <Row label={t('settings.logsEnabled')}>
+          <Toggle value={settings?.logsEnabled !== false} onChange={(v) => void applySettings({ logsEnabled: v })} />
+        </Row>
+        <p className="py-1 text-xs text-slate-500 dark:text-slate-400">{t('settings.logsHint')}</p>
+      </Card>
+
       <div ref={tgCardRef} className={highlightTg ? 'rounded-xl ring-2 ring-sky-500 ring-offset-2 ring-offset-slate-100 transition dark:ring-offset-slate-900' : ''}>
       <Card title={t('tgProxy.title')}>
         <p className="py-1 text-sm text-slate-600 dark:text-slate-300">{t('tgProxy.desc')}</p>

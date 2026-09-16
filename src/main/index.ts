@@ -6,8 +6,9 @@ import { app, BrowserWindow, shell, dialog } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
-import { ensureDataDirSeeded, getDataDir, getAppLogPath, getBundledAssetsDir, getListsDir } from './paths'
-import { initLogger, info, warn, err, onLog, getBufferedLogs } from './logger'
+import { ensureDataDirSeeded, getDataDir, getAppLogPath, getTgProxyLogPath, getBundledAssetsDir, getListsDir } from './paths'
+import { initLogger, setLogsEnabled, isLogsEnabled, clearBufferedLogs, info, warn, err, onLog, getBufferedLogs } from './logger'
+import type { LogLine } from '../shared/types'
 import { setupAutoUpdater } from './app-updater'
 import { registerIpcHandlers, listStrategies, stopAllTesting } from './ipc-handlers'
 import { setupTray, getTrayLabels, destroyTray, type TrayContext } from './tray'
@@ -35,18 +36,54 @@ let isQuitting = false
 // `onLog` subscription is global (not per-window): createWindow() runs on
 // every second-instance/activate, and a per-window subscribe would duplicate
 // log delivery N times.
+//
+// Delivery is batched: tg-proxy emits hundreds of session lines per minute
+// and one IPC + one React setState per line kept the renderer (and the
+// main process via sync file writes) needlessly hot. Lines are queued and
+// flushed as a single `on-logs` array every 400ms (or 100 lines).
 let logForwardingArmed = false
+let logQueue: LogLine[] = []
+let logFlushTimer: NodeJS.Timeout | null = null
+function flushLogQueue(): void {
+  if (logFlushTimer) {
+    clearTimeout(logFlushTimer)
+    logFlushTimer = null
+  }
+  if (logQueue.length === 0) return
+  const batch = logQueue
+  logQueue = []
+  try {
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send(IPC.onLogs, batch)
+    }
+  } catch {
+    /* renderer gone */
+  }
+}
+function scheduleLogFlush(): void {
+  if (logFlushTimer) return
+  logFlushTimer = setTimeout(() => {
+    logFlushTimer = null
+    flushLogQueue()
+  }, 400)
+  logFlushTimer.unref?.()
+}
+/** Drop queued (not yet delivered) lines — used when logs are switched off. */
+export function dropQueuedLogs(): void {
+  logQueue = []
+  if (logFlushTimer) {
+    clearTimeout(logFlushTimer)
+    logFlushTimer = null
+  }
+}
 function armLogForwarding(): void {
   if (logForwardingArmed) return
   logForwardingArmed = true
   onLog((line) => {
-    try {
-      if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-        mainWindow.webContents.send(IPC.onLog, line)
-      }
-    } catch {
-      /* renderer gone */
-    }
+    if (!isLogsEnabled()) return
+    logQueue.push(line)
+    if (logQueue.length >= 100) flushLogQueue()
+    else scheduleLogFlush()
   })
 }
 app.on('before-quit', () => {
@@ -69,8 +106,19 @@ app.on('before-quit', () => {
 })
 
 // Any settings save (GUI toggles included) rebuilds the tray menu at once
-// instead of waiting for the 15s timer tick.
-onSettingsChanged(() => {
+// instead of waiting for the 15s timer tick. The log switch is applied to
+// the logger here so `logsEnabled: false` stops all log work instantly and
+// drops everything buffered so far (stale tab counters must go to zero).
+onSettingsChanged((next) => {
+  try {
+    setLogsEnabled(next.logsEnabled !== false)
+    if (next.logsEnabled === false) {
+      dropQueuedLogs()
+      clearBufferedLogs()
+    }
+  } catch {
+    /* best-effort */
+  }
   void refreshTray()
 })
 
@@ -614,7 +662,12 @@ if (!app.requestSingleInstanceLock()) {
     })
 
     try {
-      initLogger(getAppLogPath())
+      initLogger(getAppLogPath(), getTgProxyLogPath())
+      try {
+        setLogsEnabled(loadSettings().logsEnabled !== false)
+      } catch {
+        /* defaults to on */
+      }
       ensureDataDirSeeded()
     } catch (e) {
       // A broken %APPDATA% / AV lock must not silently kill startup.

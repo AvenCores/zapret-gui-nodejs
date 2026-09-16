@@ -13,6 +13,7 @@ import type {
   ConfigTesterEvent,
   ConfigTestMode,
   HostsCheckResult,
+  LogCategory,
   LogLine,
   StatusSnapshot,
   Strategy,
@@ -21,6 +22,8 @@ import type {
   TgProxyStatus
 } from '../shared/types'
 import { translate, type I18nKey, type Locale } from '../shared/i18n'
+import { LOG_BUFFER_LIMITS } from '../shared/constants'
+import { logCategoryOf } from '../shared/types'
 
 export type Page = 'dashboard' | 'strategies' | 'settings' | 'lists' | 'updates' | 'diagnostics' | 'logs'
 
@@ -80,7 +83,9 @@ interface UiState {
   refreshStatus: () => Promise<void>
   refreshStrategies: () => Promise<void>
   pushLog: (l: LogLine) => void
-  clearLogs: () => void
+  /** Append a batch (one setState per IPC flush, not per line). */
+  pushLogs: (lines: LogLine[]) => void
+  clearLogs: (category?: LogCategory) => void
   applySettings: (patch: Partial<AppSettings>) => Promise<void>
   /** Re-read settings from disk (tray checkboxes change them behind our back). */
   refreshSettings: () => Promise<void>
@@ -265,6 +270,8 @@ export const useUi = create<UiState>((set, get) => ({
     // duplicate every log line. Subscribe once per page lifetime.
     if (!logSubscribed) {
       logSubscribed = true
+      // Batched delivery (main flushes every ~400ms) + legacy single-line.
+      window.zapret.onLogs((lines) => get().pushLogs(lines))
       window.zapret.onLog((line) => get().pushLog(line))
       // TG proxy start/stop (tray included) notifies here so Dashboard
       // badges stay fresh without polling.
@@ -305,6 +312,16 @@ export const useUi = create<UiState>((set, get) => ({
     if (settings) {
       set({ settings, locale: settings.locale, theme: settings.theme })
       syncThemeClass(settings.theme)
+      // Restore lines buffered before this view mounted (e.g. after a
+      // reload) — skipped when logs are switched off.
+      if (settings.logsEnabled !== false) {
+        try {
+          const buffered = await window.zapret.getLogs('all')
+          if (Array.isArray(buffered) && buffered.length > 0) get().pushLogs(buffered)
+        } catch {
+          /* logs are best-effort */
+        }
+      }
     }
     await get().refreshStatus()
     await get().refreshStrategies()
@@ -368,18 +385,57 @@ export const useUi = create<UiState>((set, get) => ({
     }
   },
 
-  pushLog: (line) =>
-    set((s) => {
-      const logs = [...s.logs, line]
-      return { logs: logs.slice(-1000) }
-    }),
+  pushLog: (line) => get().pushLogs([line]),
 
-  clearLogs: () => set({ logs: [] }),
+  pushLogs: (lines) => {
+    if (lines.length === 0) return
+    set((s) => {
+      const merged = s.logs.length > 0 ? [...s.logs, ...lines] : [...lines]
+      // Per-category caps (mirror of the main process): drop the oldest
+      // lines of an overfull category, preserving global time order.
+      const counts = { app: 0, zapret: 0, 'tg-proxy': 0 } as Record<'app' | 'zapret' | 'tg-proxy', number>
+      for (const l of merged) counts[logCategoryOf(l.source)] += 1
+      const over = {
+        app: Math.max(0, counts.app - LOG_BUFFER_LIMITS.app),
+        zapret: Math.max(0, counts.zapret - LOG_BUFFER_LIMITS.zapret),
+        'tg-proxy': Math.max(0, counts['tg-proxy'] - LOG_BUFFER_LIMITS['tg-proxy'])
+      }
+      if (over.app === 0 && over.zapret === 0 && over['tg-proxy'] === 0) return { logs: merged }
+      const drop = { ...over }
+      const logs = merged.filter((l) => {
+        const c = logCategoryOf(l.source)
+        if (drop[c] > 0) {
+          drop[c] -= 1
+          return false
+        }
+        return true
+      })
+      return { logs }
+    })
+  },
+
+  clearLogs: (category) => {
+    // Clear the main-process buffer too (otherwise Export still sees the
+    // "cleared" lines) — fire-and-forget, the local list updates instantly.
+    try {
+      void window.zapret.clearLogs(category ?? 'all').catch(() => undefined)
+    } catch {
+      /* preload unavailable in tests */
+    }
+    if (category === undefined || category === 'all') {
+      set({ logs: [] })
+      return
+    }
+    set((s) => ({ logs: s.logs.filter((l) => logCategoryOf(l.source) !== category) }))
+  },
 
   applySettings: async (patch) => {
     const prevTheme = get().theme
     const settings = await call('settings', () => window.zapret.saveSettings(patch), set, get)
     if (settings) {
+      // Switching logs off drops the frozen lines too (main buffer is
+      // cleared via onSettingsChanged) so the tab counters go to zero.
+      if (settings.logsEnabled === false) set({ logs: [] })
       set({ settings, locale: settings.locale, theme: settings.theme })
       syncThemeClass(settings.theme)
       if (settings.theme !== prevTheme) {
@@ -393,6 +449,7 @@ export const useUi = create<UiState>((set, get) => ({
   refreshSettings: async () => {
     const settings = await call('settings', () => window.zapret.getSettings(), set, get)
     if (settings) {
+      if (settings.logsEnabled === false) set({ logs: [] })
       set({ settings, locale: settings.locale, theme: settings.theme })
       syncThemeClass(settings.theme)
     }

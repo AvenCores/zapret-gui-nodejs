@@ -9,7 +9,7 @@ import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { IPC } from '../shared/types'
-import type { AppSettings, GameFilterMode, IPSetMode, Strategy, TgProxySettings } from '../shared/types'
+import type { AppSettings, GameFilterMode, IPSetMode, LogCategory, Strategy, TgProxySettings } from '../shared/types'
 import {
   getStatus,
   installStrategy,
@@ -50,7 +50,7 @@ import type { BypassTargetId } from '../shared/types'
 import { loadSettings, normalizeTgProxySettings, saveSettings } from './settings'
 import { resetAppData } from './app-reset'
 import { translate } from '../shared/i18n'
-import { getBufferedLogs, info, warn, err } from './logger'
+import { clearBufferedLogs, getBufferedLogs, info, warn, err } from './logger'
 import { isAdmin, relaunchAppAsAdmin, spawnLong, killPidTree } from './exec'
 import { WINWS_EXE } from '../shared/constants'
 import { abortActiveChild, runConfigTests } from './config-tester'
@@ -701,17 +701,26 @@ export function registerIpcHandlers(): void {
     return ok
   })
 
-  ipcMain.handle(IPC.exportLogs, async () => {
+  ipcMain.handle(IPC.getLogs, async (_e, category?: LogCategory) => getBufferedLogs(normalizeLogCategory(category)))
+
+  ipcMain.handle(IPC.clearLogs, async (_e, category?: LogCategory) => {
+    clearBufferedLogs(normalizeLogCategory(category))
+    return true
+  })
+
+  ipcMain.handle(IPC.exportLogs, async (_e, category?: LogCategory) => {
+    const cat = normalizeLogCategory(category)
     const w = win()
     const locale = loadSettings().locale
+    const suffix = cat === 'all' ? '' : `-${cat}`
     const res = await dialog.showSaveDialog(w ?? undefined as unknown as BrowserWindow, {
       title: translate(locale, 'dialog.exportTitle'),
-      defaultPath: `zapret-gui-logs-${new Date().toISOString().slice(0, 10)}.log`,
+      defaultPath: `zapret-gui-logs${suffix}-${new Date().toISOString().slice(0, 10)}.log`,
       filters: [{ name: translate(locale, 'dialog.exportFilter'), extensions: ['log', 'txt'] }]
     })
     if (res.canceled || !res.filePath) return null
     try {
-      const text = getBufferedLogs().map((l) => `[${l.ts}] [${l.source}/${l.level}] ${l.text}`).join('\n')
+      const text = getBufferedLogs(cat).map((l) => `[${l.ts}] [${l.source}/${l.level}] ${l.text}`).join('\n')
       fs.writeFileSync(res.filePath, text, 'utf8')
     } catch (e) {
       throw new Error(`Cannot write log file: ${e instanceof Error ? e.message : String(e)}`)
@@ -723,6 +732,11 @@ export function registerIpcHandlers(): void {
     }
     return res.filePath
   })
+}
+
+/** Coerce an unknown renderer value to a valid log category (fallback `all`). Pure. */
+function normalizeLogCategory(value: unknown): LogCategory {
+  return value === 'zapret' || value === 'tg-proxy' || value === 'app' ? value : 'all'
 }
 
 function stopTestInternal(): void {

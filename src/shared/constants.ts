@@ -72,6 +72,20 @@ export const STATUS_DOT_COLORS = {
   idle: '#9ca3af'
 } as const
 
+/**
+ * In-memory ring-buffer caps per log storage category. Each category is
+ * trimmed independently so the spammy tg-proxy sessions can never evict
+ * zapret/app lines (and vice versa).
+ */
+export const LOG_BUFFER_LIMITS: Record<'app' | 'zapret' | 'tg-proxy', number> = {
+  app: 1000,
+  zapret: 1000,
+  'tg-proxy': 500
+}
+
+/** Renderer-side mirror of the caps (single import, no drift). */
+export const LOG_TOTAL_LIMIT = LOG_BUFFER_LIMITS.app + LOG_BUFFER_LIMITS.zapret + LOG_BUFFER_LIMITS['tg-proxy']
+
 export const GAME_FILTER_FLAG = 'game_filter.enabled'
 export const CHECK_UPDATES_FLAG = 'check_updates.enabled'
 export const BYPASS_CHECK_TIMEOUT_MS = 10000

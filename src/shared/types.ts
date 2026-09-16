@@ -158,6 +158,31 @@ export interface LogLine {
   text: string
 }
 
+/** Log source (single producer). */
+export type LogSource = LogLine['source']
+
+/**
+ * Log category shown as a filter tab in the Logs view.
+ * - `all`: everything (union, not a separate buffer)
+ * - `zapret`: DPI-bypass engine (`winws`)
+ * - `tg-proxy`: built-in Telegram proxy (spams hundreds of session lines)
+ * - `app`: program itself (`app` + `updater` + `diag`)
+ */
+export type LogCategory = 'all' | 'zapret' | 'tg-proxy' | 'app'
+
+/** Storage category for a source (`all` never stores — it is a union view). */
+export type LogStoreCategory = Exclude<LogCategory, 'all'>
+
+/**
+ * Map a log source to its storage category. Pure.
+ * `all` is a view only and is never returned here.
+ */
+export function logCategoryOf(source: LogSource): LogStoreCategory {
+  if (source === 'winws') return 'zapret'
+  if (source === 'tg-proxy') return 'tg-proxy'
+  return 'app'
+}
+
 /** Telegram MTProto→WebSocket proxy status (in-process server). */
 export type TgProxyStatus = 'running' | 'stopped' | 'error'
 
@@ -238,6 +263,11 @@ export interface AppSettings {
   autoLaunch: boolean
   startMinimizedToTray: boolean
   minimizeToTrayOnClose: boolean
+  /**
+   * Master log switch. When false the main process drops every log line
+   * (no buffer, no file write, no IPC) so a background app costs ~0 CPU.
+   */
+  logsEnabled: boolean
   showTrayIcon: boolean
   /** Tray menu sections visibility (toggled from Settings → Tray). */
   trayStrategyMenu: boolean
@@ -358,7 +388,10 @@ export const IPC = {
   saveUserList: 'zapret:save-user-list',
   relaunchAsAdmin: 'zapret:relaunch-as-admin',
   exportLogs: 'zapret:export-logs',
+  getLogs: 'zapret:get-logs',
+  clearLogs: 'zapret:clear-logs',
   onLog: 'zapret:on-log',
+  onLogs: 'zapret:on-logs',
   onTestOutput: 'zapret:on-test-output',
   onConfigTesterEvent: 'zapret:on-config-tester-event',
   onDownloadProgress: 'zapret:on-download-progress',
