@@ -1,6 +1,6 @@
 {
   "name": "zapret-gui",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Desktop GUI for zapret DPI bypass (Discord / YouTube / Telegram) — Electron + React + TypeScript",
   "author": "avencores",
   "license": "MIT",
