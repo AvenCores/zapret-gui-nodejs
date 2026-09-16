@@ -109,10 +109,18 @@ export function applyWin7Drivers(bundledDir: string, dataBinDir: string): string
  * into the writable data dir (never overwrites user-modified files,
  * except that missing files are restored). Also creates `*-user.txt`
  * stubs exactly like `service.bat :load_user_lists`.
+ *
+ * Exception: `utils/check_updates.enabled` is user config behind the
+ * Updates toggle (deleting it means "auto-check off"), not a plain
+ * bundled asset — it is seeded only on fresh installs and never
+ * restored for existing installs, otherwise "off" would flip back
+ * on at every restart.
  */
 export function ensureDataDirSeeded(): void {
   const bundled = getBundledAssetsDir()
   const data = getDataDir()
+  const flagPath = path.join(data, 'utils', 'check_updates.enabled')
+  const keepFlagOff = fs.existsSync(data) && !fs.existsSync(flagPath)
   fs.mkdirSync(data, { recursive: true })
   if (fs.existsSync(bundled)) {
     for (const sub of ['bin', 'lists', 'utils', 'strategies']) {
@@ -120,6 +128,7 @@ export function ensureDataDirSeeded(): void {
       if (fs.existsSync(src)) copyDirRecursive(src, path.join(data, sub))
     }
   }
+  if (keepFlagOff) fs.rmSync(flagPath, { force: true })
   const lists = getListsDir()
   fs.mkdirSync(lists, { recursive: true })
   const stubs: Array<[string, string]> = [

@@ -295,7 +295,11 @@ export function setIPSetMode(listsDir: string, mode: IPSetMode): void {
   }
 }
 
-/** Auto-update-check flag (`utils/check_updates.enabled` existence). */
+/**
+ * Auto-update-check flag (`utils/check_updates.enabled` existence).
+ * Deleting it is the persisted "off" state — `ensureDataDirSeeded`
+ * never restores it for existing installs.
+ */
 export function getAutoUpdateCheck(dataDir: string): boolean {
   return fs.existsSync(path.join(dataDir, 'utils', 'check_updates.enabled'))
 }
