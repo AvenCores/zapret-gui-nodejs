@@ -96,7 +96,8 @@
 
 ## 📡 Telegram-прокси (встроенный MTProto → WebSocket мост)
 
-TypeScript-порт [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy),
+Сделан на базе [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) —
+TypeScript-порт оригинала,
 работает внутри приложения (`src/main/tg-proxy.ts`) без внешних зависимостей —
 только встроенные `node:net` / `node:tls` / `node:crypto` (raw TLS+WebSocket клиент
 написан вручную, как и `RawWebSocket` в оригинале).
