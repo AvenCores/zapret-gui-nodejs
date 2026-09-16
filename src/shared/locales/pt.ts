@@ -88,7 +88,7 @@ export const pt = {
   'settings.ipsetLoaded': 'Carregado',
   'settings.ipsetAny': 'Qualquer',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Verificação automática de atualizações do zapret',
+  'settings.autoUpdateCheck': 'Verificação automática de atualizações do Zapret GUI',
   'settings.autoLaunch': 'Iniciar com o Windows',
   'settings.tray': 'Minimizar para a bandeja ao fechar',
   'settings.startMinimized': 'Iniciar minimizado na bandeja',

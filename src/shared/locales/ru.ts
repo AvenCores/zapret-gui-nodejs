@@ -91,7 +91,7 @@ export const ru = {
   'settings.ipsetLoaded': 'Загружен',
   'settings.ipsetAny': 'Любой',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Автопроверка обновлений zapret',
+  'settings.autoUpdateCheck': 'Автопроверка обновлений Zapret GUI',
   'settings.autoLaunch': 'Автозапуск с Windows',
   'settings.tray': 'Сворачивать в трей при закрытии',
   'settings.startMinimized': 'Запускаться свёрнутым в трей',

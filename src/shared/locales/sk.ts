@@ -88,7 +88,7 @@ export const sk = {
   'settings.ipsetLoaded': 'Načítaný',
   'settings.ipsetAny': 'Ľubovoľný',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Automatická kontrola aktualizácií zapret',
+  'settings.autoUpdateCheck': 'Automatická kontrola aktualizácií Zapret GUI',
   'settings.autoLaunch': 'Spúšťať s Windows',
   'settings.tray': 'Minimalizovať do traya pri zatvorení',
   'settings.startMinimized': 'Spúšťať minimalizované do traya',

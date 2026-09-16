@@ -88,7 +88,7 @@ export const nl = {
   'settings.ipsetLoaded': 'Geladen',
   'settings.ipsetAny': 'Alle',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Automatisch controleren op zapret-updates',
+  'settings.autoUpdateCheck': 'Automatisch controleren op Zapret GUI-updates',
   'settings.autoLaunch': 'Automatisch starten met Windows',
   'settings.tray': 'Minimaliseren naar tray bij sluiten',
   'settings.startMinimized': 'Geminimaliseerd starten in tray',

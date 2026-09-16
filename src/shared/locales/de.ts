@@ -88,7 +88,7 @@ export const de = {
   'settings.ipsetLoaded': 'Geladen',
   'settings.ipsetAny': 'Beliebig',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Automatische zapret-Updateprüfung',
+  'settings.autoUpdateCheck': 'Automatische Zapret GUI-Updateprüfung',
   'settings.autoLaunch': 'Autostart mit Windows',
   'settings.tray': 'Beim Schließen in den Tray minimieren',
   'settings.startMinimized': 'Minimiert im Tray starten',

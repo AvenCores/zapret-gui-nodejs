@@ -88,7 +88,7 @@ export const el = {
   'settings.ipsetLoaded': 'Φορτώθηκε',
   'settings.ipsetAny': 'Οποιοδήποτε',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Αυτόματος έλεγχος ενημερώσεων zapret',
+  'settings.autoUpdateCheck': 'Αυτόματος έλεγχος ενημερώσεων Zapret GUI',
   'settings.autoLaunch': 'Αυτόματη εκκίνηση με τα Windows',
   'settings.tray': 'Ελαχιστοποίηση στο δίσκο κατά το κλείσιμο',
   'settings.startMinimized': 'Εκκίνηση ελαχιστοποιημένο στο δίσκο',

@@ -88,7 +88,7 @@ export const hi = {
   'settings.ipsetLoaded': 'लोडेड',
   'settings.ipsetAny': 'कोई भी',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'zapret अपडेट स्वतः जाँचें',
+  'settings.autoUpdateCheck': 'Zapret GUI अपडेट स्वतः जाँचें',
   'settings.autoLaunch': 'Windows के साथ प्रारंभ करें',
   'settings.tray': 'बंद करने पर ट्रे में छोटा करें',
   'settings.startMinimized': 'ट्रे में छोटा करके प्रारंभ करें',

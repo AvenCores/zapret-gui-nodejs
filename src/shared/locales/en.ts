@@ -91,7 +91,7 @@ export const en = {
   'settings.ipsetLoaded': 'loaded',
   'settings.ipsetAny': 'any',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Auto-check zapret updates',
+  'settings.autoUpdateCheck': 'Auto-check Zapret GUI updates',
   'settings.autoLaunch': 'Launch with Windows',
   'settings.tray': 'Minimize to tray on close',
   'settings.startMinimized': 'Start minimized to tray',

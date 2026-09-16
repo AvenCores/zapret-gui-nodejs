@@ -88,7 +88,7 @@ export const hr = {
   'settings.ipsetLoaded': 'Učitano',
   'settings.ipsetAny': 'Bilo koji',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Automatska provjera ažuriranja zapret-a',
+  'settings.autoUpdateCheck': 'Automatska provjera ažuriranja Zapret GUI',
   'settings.autoLaunch': 'Automatsko pokretanje sa Windows-om',
   'settings.tray': 'Minimiziraj u tray pri zatvaranju',
   'settings.startMinimized': 'Pokreći minimizirano u tray',

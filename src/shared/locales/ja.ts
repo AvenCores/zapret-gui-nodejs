@@ -88,7 +88,7 @@ export const ja = {
   'settings.ipsetLoaded': '読み込み済み',
   'settings.ipsetAny': 'すべて',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'zapret の更新を自動確認',
+  'settings.autoUpdateCheck': 'Zapret GUI の更新を自動確認',
   'settings.autoLaunch': 'Windows と一緒に起動',
   'settings.tray': '閉じるときトレイに最小化',
   'settings.startMinimized': 'トレイに最小化して起動',

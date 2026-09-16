@@ -88,7 +88,7 @@ export const id = {
   'settings.ipsetLoaded': 'Dimuat',
   'settings.ipsetAny': 'Apa pun',
   'settings.ipset': 'Filter IPSet',
-  'settings.autoUpdateCheck': 'Periksa otomatis pembaruan zapret',
+  'settings.autoUpdateCheck': 'Periksa otomatis pembaruan Zapret GUI',
   'settings.autoLaunch': 'Jalankan bersama Windows',
   'settings.tray': 'Minimalkan ke tray saat ditutup',
   'settings.startMinimized': 'Mulai diminimalkan ke tray',

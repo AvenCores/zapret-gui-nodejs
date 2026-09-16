@@ -88,7 +88,7 @@ export const uk = {
   'settings.ipsetLoaded': 'Завантажено',
   'settings.ipsetAny': 'Будь-який',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Автоперевірка оновлень zapret',
+  'settings.autoUpdateCheck': 'Автоперевірка оновлень Zapret GUI',
   'settings.autoLaunch': 'Автозапуск з Windows',
   'settings.tray': 'Згортати в трей при закритті',
   'settings.startMinimized': 'Запускатися згорнутим у трей',

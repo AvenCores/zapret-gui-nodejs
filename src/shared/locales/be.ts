@@ -88,7 +88,7 @@ export const be = {
   'settings.ipsetLoaded': 'Загружаны',
   'settings.ipsetAny': 'Любы',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Аўтаправерка абнаўленняў zapret',
+  'settings.autoUpdateCheck': 'Аўтаправерка абнаўленняў Zapret GUI',
   'settings.autoLaunch': 'Аўтазапуск з Windows',
   'settings.tray': 'Згортваць у трэй пры закрыцці',
   'settings.startMinimized': 'Запускацца згорнутым у трэй',

@@ -88,7 +88,7 @@ export const hu = {
   'settings.ipsetLoaded': 'Betöltve',
   'settings.ipsetAny': 'Bármely',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'zapret frissítések automatikus ellenőrzése',
+  'settings.autoUpdateCheck': 'Zapret GUI frissítések automatikus ellenőrzése',
   'settings.autoLaunch': 'Indítás Windows rendszerrel',
   'settings.tray': 'Tálcára minimalizálás bezáráskor',
   'settings.startMinimized': 'Indítás tálcára minimalizálva',

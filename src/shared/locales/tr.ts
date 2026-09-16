@@ -88,7 +88,7 @@ export const tr = {
   'settings.ipsetLoaded': 'Yüklendi',
   'settings.ipsetAny': 'Tümü',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Otomatik zapret güncelleme denetimi',
+  'settings.autoUpdateCheck': 'Otomatik Zapret GUI güncelleme denetimi',
   'settings.autoLaunch': 'Windows ile otomatik başlat',
   'settings.tray': 'Kapatınca tepsiye küçült',
   'settings.startMinimized': 'Tepside simge durumuna küçültülmüş başlat',

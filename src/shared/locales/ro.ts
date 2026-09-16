@@ -88,7 +88,7 @@ export const ro = {
   'settings.ipsetLoaded': 'Încărcat',
   'settings.ipsetAny': 'Oricare',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Verificare automată actualizări zapret',
+  'settings.autoUpdateCheck': 'Verificare automată actualizări Zapret GUI',
   'settings.autoLaunch': 'Pornire cu Windows',
   'settings.tray': 'Minimizează în tray la închidere',
   'settings.startMinimized': 'Pornește minimizat în tray',

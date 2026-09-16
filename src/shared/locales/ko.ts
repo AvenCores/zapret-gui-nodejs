@@ -88,7 +88,7 @@ export const ko = {
   'settings.ipsetLoaded': '로드됨',
   'settings.ipsetAny': '모두',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'zapret 업데이트 자동 확인',
+  'settings.autoUpdateCheck': 'Zapret GUI 업데이트 자동 확인',
   'settings.autoLaunch': 'Windows 시작 시 실행',
   'settings.tray': '닫을 때 트레이로 최소화',
   'settings.startMinimized': '트레이로 최소화된 상태로 시작',

@@ -88,7 +88,7 @@ export const fa = {
   'settings.ipsetLoaded': 'بارگذاری شده',
   'settings.ipsetAny': 'هر کدام',
   'settings.ipset': 'فیلتر IPSet',
-  'settings.autoUpdateCheck': 'بررسی خودکار به‌روزرسانی‌های zapret',
+  'settings.autoUpdateCheck': 'بررسی خودکار به‌روزرسانی‌های Zapret GUI',
   'settings.autoLaunch': 'اجرا با شروع Windows',
   'settings.tray': 'کمینه‌سازی به سینی هنگام بستن',
   'settings.startMinimized': 'شروع به‌صورت کمینه‌شده در سینی',

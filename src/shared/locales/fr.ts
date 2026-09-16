@@ -88,7 +88,7 @@ export const fr = {
   'settings.ipsetLoaded': 'Chargé',
   'settings.ipsetAny': 'Tous',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Vérification auto des mises à jour zapret',
+  'settings.autoUpdateCheck': 'Vérification auto des mises à jour Zapret GUI',
   'settings.autoLaunch': 'Lancer avec Windows',
   'settings.tray': 'Réduire dans la barre d\'état à la fermeture',
   'settings.startMinimized': 'Démarrer réduit dans la barre d\'état',

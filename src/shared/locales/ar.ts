@@ -88,7 +88,7 @@ export const ar = {
   'settings.ipsetLoaded': 'محمل',
   'settings.ipsetAny': 'الكل',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'التحقق التلقائي من تحديثات zapret',
+  'settings.autoUpdateCheck': 'التحقق التلقائي من تحديثات Zapret GUI',
   'settings.autoLaunch': 'التشغيل التلقائي مع Windows',
   'settings.tray': 'التصغير إلى الدرج عند الإغلاق',
   'settings.startMinimized': 'البدء مصغرًا في الدرج',

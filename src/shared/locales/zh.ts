@@ -88,7 +88,7 @@ export const zh = {
   'settings.ipsetLoaded': '已加载',
   'settings.ipsetAny': '任意',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': '自动检查 zapret 更新',
+  'settings.autoUpdateCheck': '自动检查 Zapret GUI 更新',
   'settings.autoLaunch': '随 Windows 启动',
   'settings.tray': '关闭时最小化到托盘',
   'settings.startMinimized': '启动时最小化到托盘',

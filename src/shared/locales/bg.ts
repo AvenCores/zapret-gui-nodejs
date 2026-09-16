@@ -88,7 +88,7 @@ export const bg = {
   'settings.ipsetLoaded': 'Зареден',
   'settings.ipsetAny': 'Всеки',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'Автоматична проверка за актуализации на zapret',
+  'settings.autoUpdateCheck': 'Автоматична проверка за актуализации на Zapret GUI',
   'settings.autoLaunch': 'Автоматично стартиране с Windows',
   'settings.tray': 'Свиване в трея при затваряне',
   'settings.startMinimized': 'Стартиране свито в трея',

@@ -88,7 +88,7 @@ export const kk = {
   'settings.ipsetLoaded': 'Жүктелген',
   'settings.ipsetAny': 'Кез келген',
   'settings.ipset': 'IPSet Filter',
-  'settings.autoUpdateCheck': 'zapret жаңартуларын автотексеру',
+  'settings.autoUpdateCheck': 'Zapret GUI жаңартуларын автотексеру',
   'settings.autoLaunch': 'Windows-пен автоіске қосу',
   'settings.tray': 'Жабылғанда трейге жиыру',
   'settings.startMinimized': 'Трейге жиырылған күйде іске қосу',
