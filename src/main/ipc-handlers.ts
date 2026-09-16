@@ -74,7 +74,7 @@ import {
   stopTgProxy,
   tgStartOptsFromSettings
 } from './tg-proxy'
-import { TG_PROXY_DEFAULT_HOST, TG_PROXY_RESTART_ARG } from '../shared/constants'
+import { TG_PROXY_DEFAULT_HOST, TG_PROXY_RESTART_ARG, ADMIN_RELAUNCH_ARG } from '../shared/constants'
 
 let testProc: ChildProcess | null = null
 let configTesterAbort: AbortController | null = null
@@ -659,6 +659,8 @@ export function registerIpcHandlers(): void {
     }
     const args = [...process.argv.slice(1)]
     if (tgHandover && !args.includes(TG_PROXY_RESTART_ARG)) args.push(TG_PROXY_RESTART_ARG)
+    // The elevated copy must show its window even with startMinimizedToTray.
+    if (!args.includes(ADMIN_RELAUNCH_ARG)) args.push(ADMIN_RELAUNCH_ARG)
     // Single-instance lock MUST be released BEFORE Start-Process: otherwise
     // the elevated copy sees the lock held, hits `requestSingleInstanceLock()
     // === false` and quits instantly — then this instance quits too and the

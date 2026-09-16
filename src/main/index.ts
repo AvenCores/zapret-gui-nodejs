@@ -23,7 +23,7 @@ import {
   setIPSetMode
 } from './service-manager'
 import { isAdmin, relaunchAppAsAdmin } from './exec'
-import { TG_PROXY_RESTART_ARG } from '../shared/constants'
+import { TG_PROXY_RESTART_ARG, ADMIN_RELAUNCH_ARG } from '../shared/constants'
 import { IPC } from '../shared/types'
 import { translate } from '../shared/i18n'
 import type { GameFilterMode, IPSetMode, TrayPage, ZapretStatus } from '../shared/types'
@@ -418,6 +418,7 @@ function trayCallbacks() {
         }
         const args = [...process.argv.slice(1)]
         if (tgHandover && !args.includes(TG_PROXY_RESTART_ARG)) args.push(TG_PROXY_RESTART_ARG)
+        if (!args.includes(ADMIN_RELAUNCH_ARG)) args.push(ADMIN_RELAUNCH_ARG)
         try {
           app.releaseSingleInstanceLock()
         } catch {
@@ -501,7 +502,9 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    if (settings.startMinimizedToTray) {
+    // After "relaunch as admin" the window always shows: the user clicked a
+    // button and expects to see the elevated app, even with startMinimizedToTray.
+    if (settings.startMinimizedToTray && !process.argv.includes(ADMIN_RELAUNCH_ARG)) {
       // Start hidden in tray; user opens via tray icon.
     } else {
       mainWindow?.show()

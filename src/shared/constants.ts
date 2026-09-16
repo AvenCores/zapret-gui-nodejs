@@ -123,6 +123,13 @@ export const TG_PROXY_DEFAULT_PORT = 1443
  * to free the port for handover. See `relaunchAsAdmin` handlers.
  */
 export const TG_PROXY_RESTART_ARG = '--restart-tg-proxy'
+/**
+ * CLI marker always passed to the elevated copy during "relaunch as admin".
+ * The new instance must show its window even if `startMinimizedToTray` is on:
+ * the user just clicked a button and expects to see the result, not to hunt
+ * the app in the tray.
+ */
+export const ADMIN_RELAUNCH_ARG = '--admin-relaunch'
 export const TG_PROXY_WS_PATH = '/apiws'
 export const TG_PROXY_WS_PATH_TEST = '/apiws_test'
 /** Default target IPs per DC (mirrors upstream `DC_DEFAULT_IPS`). */
