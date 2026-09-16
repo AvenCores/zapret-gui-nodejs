@@ -11,7 +11,7 @@ import { execFile } from 'node:child_process'
 import { app } from 'electron'
 import { URLS, UPSTREAM_BRANCH, ENGINE_WIN64_DIR, ENGINE_FAKES_DIR, ENGINE_BIN_FILES, ENGINE_VERSION_FILE } from '../shared/constants'
 import type { DownloadProgress, EngineRelease, EngineVersionInfo, UpdateInfo } from '../shared/types'
-import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir, getBundledAssetsDir, applyWin7Drivers, isWindows7 } from './paths'
+import { getListsDir, getStrategiesDir, getBinDir, getUtilsDir, getBundledAssetsDir } from './paths'
 import { parseBatContent } from './strategy-parser'
 import { getIPSetMode, setIPSetMode } from './service-manager'
 
@@ -562,16 +562,6 @@ export async function updateStrategiesFromGithub(
     }
   }
 
-  // 1b. upstream ships Win10-only drivers: on Win7 restore the
-  // dual-signed variants so WinDivert keeps loading (error 577 otherwise).
-  if (isWindows7()) {
-    const fixed = applyWin7Drivers(getBundledAssetsDir(), path.join(dataDir, 'bin'))
-    for (const name of fixed) {
-      if (!filesUpdated.includes(`bin/${name}`)) filesUpdated.push(`bin/${name}`)
-      say(`Win7 driver restored: bin/${name}`)
-    }
-  }
-
   // 2. refresh strategies/*.json from *.bat at archive root
   let batFiles: string[]
   try {
@@ -947,16 +937,6 @@ export async function updateEngineToTag(
     }
   }
   fs.writeFileSync(path.join(dataBin, ENGINE_VERSION_FILE), `${cleanTag}\n`, 'utf8')
-
-  // On Windows 7 the stock drivers fail with 577 (bad signature): overlay
-  // the dual-signed variants (upstream install_win7.cmd).
-  if (isWindows7()) {
-    const fixed = applyWin7Drivers(getBundledAssetsDir(), dataBin)
-    for (const name of fixed) {
-      if (!filesUpdated.includes(`bin/${name}`)) filesUpdated.push(`bin/${name}`)
-      say(`Win7 driver restored: bin/${name}`)
-    }
-  }
 
   onProgress?.({ percent: 100, transferred: 0, total: null })
   fs.rmSync(zipPath, { force: true })

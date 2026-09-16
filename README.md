@@ -150,7 +150,7 @@ TypeScript-порт оригинала,
   3. Бэкап `bin/lists/utils/strategies` → `data/_backup/<timestamp>` (хранятся последние 5)
   4. `Expand-Archive` через PowerShell, обход одного top-level каталога
   5. Копирование только изменённых файлов (сравнение по размеру + хешу), `lists/*-user.txt` никогда не затираются
-  6. Регенерация `strategies/*.json` из `*.bat` корня архива (`origin: 'bundled'`, `service.bat` исключён, импортированные стратегии с тем же id не затираются), поверх накатываются Win7-драйверы при необходимости
+  6. Регенерация `strategies/*.json` из `*.bat` корня архива (`origin: 'bundled'`, `service.bat` исключён, импортированные стратегии с тем же id не затираются)
 * Движок `bol-van/zapret` (`listEngineReleases/checkEngineUpdates/updateEngineToTag`):
   выбор тега `/^v\d[\w.\-]{0,31}$/` → `zapret-<tag>.zip` → синхронизация только allowlist `ENGINE_BIN_FILES`
   (`winws.exe`, `WinDivert.dll`, `WinDivert64.sys`, `cygwin1.dll`, `mdig.exe`, `ip2net.exe`, `killall.exe`)
@@ -220,16 +220,6 @@ RU • EN • UK • BE • KK • DE • FR • ES • IT • PT • NL • PL 
 * Лог: `%APPDATA%\zapret-gui\app.log`
 * Dev-режим: `bundled-assets` из репозитория, данные в `<repo>/.data`, `userData` изолирован в `zapret-gui-dev` во избежание лока кэша Chromium
 
-## 🖥️ Windows 7 (экспериментально)
-
-Штатно поддерживаются только Windows 10/11 x64: текущий Electron не запускается на Windows 7.
-Подмена драйверов ниже решает только ошибку 577 (`ERROR_INVALID_IMAGE_HASH`), но не запуск самого приложения.
-
-* `bundled-assets/bin-win7/` — WinDivert 2.2.0-C с двойной подписью SHA1+SHA256 (аналог `win7/` из zapret-win-bundle)
-* На Windows 7 приложение само перезаписывает `WinDivert.dll` / `WinDivert64.sys` в `%APPDATA%\zapret-gui\data\bin` версиями из `bin-win7/` — при первом запуске и после каждого обновления стратегий. Вручную копировать ничего не нужно
-* Без ESU-обновлений (патч KB3033929) стоковые драйверы из `bin/` на Windows 7 не загрузятся
-* Полноценная поддержка Windows 7 потребовала бы отдельной сборки на Electron 22 + проверки `winws.exe` / `cygwin1.dll` на Win7 — пока не делается
-
 ## 🛠️ Разработка
 
 ```powershell
@@ -252,7 +242,7 @@ npm run preview              # electron-vite preview
 `npm run generate:strategies` автоматически выполняется перед каждой сборкой.
 В CI `bundled-assets/` уже закоммичен, скрипт только идемпотентно пересинхронизирует JSON-конфиги.
 
-Тесты (vitest, 16 файлов + `setup.ts`): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `paths-win7`, `config-tester`, `installer-update`, `settings-notify`, `status-dot`, `user-lists`, `tg-proxy` (39 тестов: handshake roundtrip по схеме obfuscated2, relay-init, `MsgSplitter`, pause/resume dial-gap регрессия, lifecycle на свободном порту, валидаторы host/DC/domain, PROXY-строка, worker-путь, ee-ссылки, FakeTLS verify/hello/record layer).
+Тесты (vitest, 17 файлов + `setup.ts`): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `config-tester`, `installer-update`, `settings-notify`, `status-dot`, `user-lists`, `tg-proxy`, `app-reset`, `app-updater-autocheck`, `data-seed-flag` (39 тестов: handshake roundtrip по схеме obfuscated2, relay-init, `MsgSplitter`, pause/resume dial-gap регрессия, lifecycle на свободном порту, валидаторы host/DC/domain, PROXY-строка, worker-путь, ee-ссылки, FakeTLS verify/hello/record layer).
 
 CI (`.github/workflows/`): `build.yml` + `release.yml`.
 
@@ -273,7 +263,7 @@ src/
                 user-lists.ts (*-user.txt: list/read/write, лимит 2 МБ)
                 app-updater.ts (electron-updater: check/download/install, диалог + баннер)
                 settings.ts (settings.json + systemDefaults + install-defaults.json + autoLaunch)
-                paths.ts (bundled-assets vs %APPDATA%/zapret-gui/data, Win7-детект + applyWin7Drivers)
+                paths.ts (bundled-assets vs %APPDATA%/zapret-gui/data)
                 exec.ts (cmd/powershell, isAdmin, RunAs, spawnLong, killPidTree)
                 window.ts (первое окно + best-effort IPC-отправка в renderer)
                 logger.ts (файл app.log до 2 МБ + ротация .1, буфер 2000 + zapret:on-log)
@@ -285,9 +275,9 @@ src/
   shared/       types.ts (ServiceState, Strategy, StatusSnapshot, DiagnosticCheck, UpdateInfo, EngineVersionInfo, AppSettings, TgProxySettings/TgProxyStats, IPC ~65 каналов)
                 constants.ts (SERVICE_NAME=zapret, UPSTREAM_OWNER=Flowseal, ENGINE_OWNER=bol-van, URLS, CONFLICTING_SERVICES, FAKE_*.bin, TG_PROXY_DEFAULT_PORT/DC_IPS/WS_PATH)
                 i18n.ts + locales/ (28 словарей)
-bundled-assets/ bin/ (engine-version.txt) bin-win7/ (WinDivert с подписью для Win7) lists/ utils/ strategies/ (22 JSON) bat/ (22 general*.bat + service.bat) service/ (version.txt + engine-version.txt + hosts) tray/ (4 PNG) icon.ico
+bundled-assets/ bin/ (engine-version.txt) lists/ utils/ strategies/ (22 JSON) bat/ (22 general*.bat + service.bat) service/ (version.txt + engine-version.txt + hosts) tray/ (4 PNG) icon.ico
 scripts/        generate-strategies.mjs + clean.mjs + make-icon.mjs
-tests/          16 x *.test.ts + setup.ts
+tests/          17 x *.test.ts + setup.ts
 .github/workflows/ build.yml release.yml
 build/ installer.nsh electron-builder.yml electron.vite.config.ts tailwind.config.js postcss.config.cjs
 ```
