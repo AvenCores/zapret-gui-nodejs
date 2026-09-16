@@ -116,6 +116,13 @@ export const FAKE_GAME_ACTIVE = 'ACTIVE_GAME_UDP.bin'
  */
 export const TG_PROXY_DEFAULT_HOST = '127.0.0.1'
 export const TG_PROXY_DEFAULT_PORT = 1443
+/**
+ * CLI marker passed to the elevated copy during "relaunch as admin" when the
+ * TG proxy listener was running. The new instance must (re)start the proxy
+ * even if `tgProxy.autoStart` is off — the old instance stopped its listener
+ * to free the port for handover. See `relaunchAsAdmin` handlers.
+ */
+export const TG_PROXY_RESTART_ARG = '--restart-tg-proxy'
 export const TG_PROXY_WS_PATH = '/apiws'
 export const TG_PROXY_WS_PATH_TEST = '/apiws_test'
 /** Default target IPs per DC (mirrors upstream `DC_DEFAULT_IPS`). */

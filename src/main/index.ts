@@ -7,7 +7,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { ensureDataDirSeeded, getDataDir, getAppLogPath, getBundledAssetsDir, getListsDir } from './paths'
-import { initLogger, info, err, onLog, getBufferedLogs } from './logger'
+import { initLogger, info, warn, err, onLog, getBufferedLogs } from './logger'
 import { setupAutoUpdater } from './app-updater'
 import { registerIpcHandlers, listStrategies, stopAllTesting } from './ipc-handlers'
 import { setupTray, getTrayLabels, destroyTray, type TrayContext } from './tray'
@@ -23,6 +23,7 @@ import {
   setIPSetMode
 } from './service-manager'
 import { isAdmin, relaunchAppAsAdmin } from './exec'
+import { TG_PROXY_RESTART_ARG } from '../shared/constants'
 import { IPC } from '../shared/types'
 import { translate } from '../shared/i18n'
 import type { GameFilterMode, IPSetMode, TrayPage, ZapretStatus } from '../shared/types'
@@ -303,6 +304,36 @@ async function tgProxyAction(kind: 'start' | 'stop' | 'restart'): Promise<void> 
   }
 }
 
+/**
+ * Start the TG proxy with retries. Needed after admin handover: the old
+ * non-admin instance quits with a delay, so the first bind attempt can hit
+ * EADDRINUSE while the old listener is still releasing the port. Without
+ * retries the proxy stays in "Ошибка" until the user presses Start manually.
+ */
+async function startTgProxyWithRetry(tag: string, maxAttempts = 6, delayMs = 1000): Promise<void> {
+  const withSecret = ensureTgProxySecret()
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const bound = await startTgProxy(tgStartOptsFromSettings(withSecret.tgProxy))
+      info('tg-proxy', `Autostarted on ${bound.host}:${bound.port} (${tag}).`)
+      saveSettings({ tgProxy: { ...withSecret.tgProxy, enabled: true, port: bound.port } })
+      notifyRenderer()
+      void refreshTray()
+      return
+    } catch (e) {
+      const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300)
+      if (attempt < maxAttempts) {
+        warn('tg-proxy', `Autostart attempt ${attempt}/${maxAttempts} failed (${tag}): ${msg} — retrying.`)
+        await new Promise((r) => setTimeout(r, delayMs))
+      } else {
+        err('tg-proxy', `Autostart failed (${tag}): ${msg}`)
+        notifyRenderer()
+        void refreshTray()
+      }
+    }
+  }
+}
+
 function trayCallbacks() {
   return {
     onShow: () => {
@@ -371,20 +402,48 @@ function trayCallbacks() {
     },
     onRelaunchAdmin: () => {
       void (async () => {
+        // Same TG-proxy handover as the IPC handler: free the listen port
+        // before the elevated copy starts, or it fails with EADDRINUSE.
+        let tgHandover = false
+        if (app.isPackaged) {
+          try {
+            if (getTgProxyStatus().status === 'running') {
+              tgHandover = true
+              info('tg-proxy', 'Stopping TG proxy listener for admin handover (elevated copy will restart it).')
+              await stopTgProxy().catch(() => undefined)
+            }
+          } catch {
+            /* best-effort */
+          }
+        }
+        const args = [...process.argv.slice(1)]
+        if (tgHandover && !args.includes(TG_PROXY_RESTART_ARG)) args.push(TG_PROXY_RESTART_ARG)
         try {
           app.releaseSingleInstanceLock()
         } catch {
           /* best-effort */
         }
-        const ok = await relaunchAppAsAdmin(process.execPath, process.argv.slice(1))
+        const ok = await relaunchAppAsAdmin(process.execPath, args)
         if (ok && app.isPackaged) {
           info('app', 'Restarting with administrator rights — closing this instance.')
           setTimeout(() => app.quit(), 1000).unref?.()
-        } else if (!ok) {
+        } else {
           try {
             app.requestSingleInstanceLock()
           } catch {
             /* best-effort */
+          }
+          if (tgHandover) {
+            try {
+              const s = ensureTgProxySecret()
+              const bound = await startTgProxy(tgStartOptsFromSettings(s.tgProxy))
+              saveSettings({ tgProxy: { ...s.tgProxy, enabled: true, port: bound.port } })
+              info('tg-proxy', `TG proxy restored locally on ${bound.host}:${bound.port} (admin relaunch cancelled).`)
+            } catch (e) {
+              err('tg-proxy', `TG proxy restore failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}`)
+            }
+            notifyRenderer()
+            void refreshTray()
           }
         }
       })()
@@ -568,21 +627,19 @@ if (!app.requestSingleInstanceLock()) {
     createWindow()
     setupAutoUpdater()
     // Autostart the built-in TG proxy when enabled (best effort — a busy
-    // port must never break app startup).
+    // port must never break app startup). After "relaunch as admin" the old
+    // instance may still hold the port for ~1s, so start with retries.
+    // With the handover marker the proxy restarts even if autoStart is off:
+    // it was running before the relaunch and the old instance freed the port
+    // specifically for us.
     try {
       const s = loadSettings()
-      if (s.tgProxy.autoStart) {
-        const withSecret = ensureTgProxySecret()
-        void startTgProxy(tgStartOptsFromSettings(withSecret.tgProxy))
-          .then((bound) => {
-            info('tg-proxy', `Autostarted on ${bound.host}:${bound.port}.`)
-            saveSettings({ tgProxy: { ...withSecret.tgProxy, enabled: true, port: bound.port } })
-            notifyRenderer()
-            void refreshTray()
-          })
-          .catch((e: unknown) => {
-            err('tg-proxy', `Autostart failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}`)
-          })
+      const handover = process.argv.includes(TG_PROXY_RESTART_ARG)
+      if (handover) {
+        info('tg-proxy', 'Admin handover detected — restarting TG proxy.')
+        void startTgProxyWithRetry('admin-handover')
+      } else if (s.tgProxy.autoStart) {
+        void startTgProxyWithRetry('autoStart')
       }
     } catch {
       /* best-effort */
