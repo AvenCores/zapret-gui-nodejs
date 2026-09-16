@@ -477,7 +477,7 @@ function HostsBlock(): React.JSX.Element {
 }
 
 export default function Dashboard(): React.JSX.Element {
-  const { t, status, refreshStatus, busy, setError, settings, setPage, strategies } = useUi()
+  const { t, status, refreshStatus, refreshSettings, busy, setError, settings, setPage, strategies } = useUi()
   const [foreignExpanded, setForeignExpanded] = useState(false)
   const [acting, setActing] = useState<null | 'start' | 'stop' | 'restart' | 'remove'>(null)
 
@@ -507,7 +507,7 @@ export default function Dashboard(): React.JSX.Element {
           return
         }
         await window.zapret.installStrategy(target.id)
-        await refreshStatus()
+        await Promise.all([refreshStatus(), refreshSettings()])
         return
       }
       if (kind === 'start') await window.zapret.startService()

@@ -169,6 +169,7 @@ function ConfigTesterCard(): React.JSX.Element {
     status,
     strategies,
     refreshStatus,
+    refreshSettings,
     configMode: mode,
     setConfigMode: setMode,
     configRunning: running,
@@ -227,7 +228,10 @@ function ConfigTesterCard(): React.JSX.Element {
     if (!window.confirm(`${t('action.apply')} "${target.name}"?`)) return
     try {
       await window.zapret.installStrategy(target.id)
-      await refreshStatus()
+      // installStrategy в main сохраняет activeStrategyId и запускает сервис,
+      // поэтому обновляем и статус (запущенный сервис), и настройки (выбор
+      // стратегии), иначе вкладка «Стратегии» показывает старый выбор.
+      await Promise.all([refreshStatus(), refreshSettings()])
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
