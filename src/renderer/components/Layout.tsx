@@ -1169,27 +1169,70 @@ function AppUpdateBanner(): React.JSX.Element | null {
   const [dismissed, setDismissed] = useState<string | null>(null)
 
   useEffect(() => {
+    // Late mount / reload mid-download: restore the cached snapshot so the
+    // banner matches the Updates page and the native dialog state.
+    void window.zapret
+      .getAppUpdateState()
+      .then((s) => {
+        if (!s.availableVersion) return
+        setAvailable(s.availableVersion)
+        if (s.downloaded) {
+          setDownloaded(s.availableVersion)
+          setDownloading(false)
+          setPercent(null)
+        } else if (s.downloading) {
+          setDownloading(true)
+          setPercent(0)
+          setDismissed(null)
+        }
+      })
+      .catch(() => undefined)
     const offAvailable = window.zapret.onAppUpdateAvailable((v) => {
-      setAvailable(v)
+      setAvailable((prev) => (prev === v ? prev : v))
+      setDownloaded(null)
+      setDownloading(false)
+      setPercent(null)
       // A new version (or an explicit re-check) re-opens a dismissed banner.
+      setDismissed(null)
+    })
+    const offDownloading = window.zapret.onAppUpdateDownloading((v) => {
+      // The download can be started from the native dialog — the banner never
+      // called `download()` itself, so enter the loading state here. Otherwise
+      // the user sees a plain "Download" button with no indication anything
+      // is happening.
+      setAvailable((prev) => prev ?? v)
+      setDownloading(true)
+      setPercent(0)
       setDismissed(null)
     })
     const offDownloaded = window.zapret.onAppUpdateDownloaded((v) => {
       setDownloaded(v)
+      setAvailable((prev) => prev ?? v)
       setDownloading(false)
       setPercent(null)
       setDismissed(null)
     })
+    const offError = window.zapret.onAppUpdateError((msg) => {
+      setDownloading(false)
+      setPercent(null)
+      setError(msg)
+    })
     const offProgress = window.zapret.onDownloadProgress((p) => {
       // Shared channel (strategies/engine too) — only reflect it while an
-      // app download is in flight to avoid чужой progress.
-      setPercent((prev) => (prev === null ? prev : Math.max(0, Math.min(100, p.percent))))
+      // app download is in flight to avoid чужой progress. The in-flight flag
+      // is set either by this banner's own `download()` or by the
+      // `onAppUpdateDownloading` event (native dialog path).
+      const next = Math.max(0, Math.min(100, p.percent))
+      setPercent((prev) => (prev === null ? prev : next))
     })
     return () => {
       offAvailable()
+      offDownloading()
       offDownloaded()
+      offError()
       offProgress()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const shown = downloaded ?? available
@@ -1272,9 +1315,10 @@ function AppUpdateBanner(): React.JSX.Element | null {
         <button
           type="button"
           onClick={() => setDismissed(shown)}
+          disabled={downloading}
           title={t('action.close')}
           aria-label={t('action.close')}
-          className="rounded-lg p-2 text-sky-700/70 transition hover:bg-sky-500/20 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-95 dark:text-sky-300/70 dark:hover:bg-sky-500/10 dark:hover:text-sky-100"
+          className="rounded-lg p-2 text-sky-700/70 transition hover:bg-sky-500/20 hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70 active:scale-95 disabled:cursor-wait disabled:opacity-40 disabled:hover:bg-transparent dark:text-sky-300/70 dark:hover:bg-sky-500/10 dark:hover:text-sky-100"
         >
           ✕
         </button>

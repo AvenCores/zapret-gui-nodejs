@@ -137,6 +137,12 @@ export interface AppUpdateInfo {
   checkedAt: string
 }
 
+/** Cached app self-update snapshot (no network; for late-mounted views). */
+export interface AppUpdateState extends AppUpdateInfo {
+  /** True while the installer file is being downloaded right now. */
+  downloading: boolean
+}
+
 /** Progress event for long downloads. */
 export interface DownloadProgress {
   percent: number
@@ -358,8 +364,11 @@ export const IPC = {
   onDownloadProgress: 'zapret:on-download-progress',
   onAppUpdateAvailable: 'zapret:app-update-available',
   onAppUpdateDownloaded: 'zapret:app-update-downloaded',
+  onAppUpdateDownloading: 'zapret:app-update-downloading',
+  onAppUpdateError: 'zapret:app-update-error',
   getAppVersion: 'zapret:get-app-version',
   checkAppUpdates: 'zapret:check-app-updates',
+  getAppUpdateState: 'zapret:get-app-update-state',
   downloadAppUpdate: 'zapret:download-app-update',
   installAppUpdate: 'zapret:install-app-update',
   tgProxyStart: 'tg-proxy:start',

@@ -35,6 +35,14 @@ export default function Updates(): React.JSX.Element {
   }
   // Unsubscribe fns of an in-flight app download (cleanup on unmount).
   const appDlOff = useRef<Array<() => void> | null>(null)
+  // Mirror of `appDownloading` for IPC callbacks (avoids stale closures and
+  // lets the shared `onDownloadProgress` channel update only while an app
+  // download is actually in flight).
+  const appDownloadingRef = useRef<boolean>(false)
+  function setAppDownloadingTracked(v: boolean): void {
+    appDownloadingRef.current = v
+    setAppDownloading(v)
+  }
 
   useEffect(() => {
     return () => {
@@ -65,6 +73,27 @@ export default function Updates(): React.JSX.Element {
       }
     })()
     void window.zapret.getAppVersion().then(setAppCurrentTracked).catch(() => undefined)
+    // Late mount (user opened Updates while the banner already downloads):
+    // pick up the cached snapshot so the card shows the same state.
+    void window.zapret
+      .getAppUpdateState()
+      .then((s) => {
+        setAppCurrentTracked(s.currentVersion)
+        if (!s.availableVersion) return
+        setAppInfo({
+          currentVersion: s.currentVersion,
+          availableVersion: s.availableVersion,
+          updateAvailable: s.updateAvailable,
+          downloaded: s.downloaded,
+          releasesUrl: s.releasesUrl,
+          checkedAt: s.checkedAt
+        })
+        if (s.downloading && !s.downloaded) {
+          setAppDownloadingTracked(true)
+          setAppProgress({ percent: 0, transferred: 0, total: null })
+        }
+      })
+      .catch(() => undefined)
     // Background auto-check (main process) must be reflected here too:
     // a new release always re-opens the offer, even without manual check.
     const offAvailable = window.zapret.onAppUpdateAvailable((v) => {
@@ -77,8 +106,23 @@ export default function Updates(): React.JSX.Element {
         checkedAt: new Date().toISOString()
       }))
     })
+    const offDownloading = window.zapret.onAppUpdateDownloading((v) => {
+      // Download started from the native dialog (or another view): reflect it
+      // here so the user sees the spinner + progress instead of a stale
+      // "Download update" button.
+      setAppDownloadingTracked(true)
+      setAppProgress({ percent: 0, transferred: 0, total: null })
+      setAppInfo((prev) => ({
+        currentVersion: prev?.currentVersion ?? appCurrentRef.current,
+        availableVersion: prev?.availableVersion ?? v,
+        updateAvailable: true,
+        downloaded: false,
+        releasesUrl: prev?.releasesUrl ?? 'https://github.com/AvenCores/zapret-gui-nodejs/releases',
+        checkedAt: new Date().toISOString()
+      }))
+    })
     const offDownloaded = window.zapret.onAppUpdateDownloaded((v) => {
-      setAppDownloading(false)
+      setAppDownloadingTracked(false)
       setAppProgress(null)
       setAppInfo((prev) => ({
         currentVersion: prev?.currentVersion ?? appCurrentRef.current,
@@ -89,9 +133,25 @@ export default function Updates(): React.JSX.Element {
         checkedAt: new Date().toISOString()
       }))
     })
+    const offAppError = window.zapret.onAppUpdateError((msg) => {
+      // Only touch app state when an app download is (or was) in flight —
+      // the shared error channel must not reset engine/strategies UI.
+      if (!appDownloadingRef.current && appDlOff.current === null) return
+      setAppDownloadingTracked(false)
+      setAppProgress(null)
+      setError(msg)
+    })
+    const offAppProgress = window.zapret.onDownloadProgress((p) => {
+      // Shared channel (engine/strategies too): reflect only while an app
+      // download is in flight, otherwise we'd show чужой progress.
+      if (appDownloadingRef.current) setAppProgress(p)
+    })
     return () => {
       offAvailable()
+      offDownloading()
       offDownloaded()
+      offAppError()
+      offAppProgress()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -218,17 +278,19 @@ export default function Updates(): React.JSX.Element {
   }
 
   function downloadApp(): void {
-    if (appDownloading) return
-    setAppDownloading(true)
+    if (appDownloadingRef.current) return
+    setAppDownloadingTracked(true)
     setAppProgress({ percent: 0, transferred: 0, total: null })
-    const offProgress = window.zapret.onDownloadProgress(setAppProgress)
+    const offProgress = window.zapret.onDownloadProgress((p) => {
+      if (appDownloadingRef.current) setAppProgress(p)
+    })
     const finishDownloadListeners = (): void => {
       offProgress()
       offDone()
       appDlOff.current = null
     }
     const offDone = window.zapret.onAppUpdateDownloaded(() => {
-      setAppDownloading(false)
+      setAppDownloadingTracked(false)
       setAppProgress(null)
       finishDownloadListeners()
     })
@@ -236,8 +298,9 @@ export default function Updates(): React.JSX.Element {
     window.zapret
       .downloadAppUpdate()
       .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e))
-        setAppDownloading(false)
+        // The global `onAppUpdateError` handler already surfaces the message;
+        // keep this as a fallback for a direct IPC rejection.
+        setAppDownloadingTracked(false)
         setAppProgress(null)
         finishDownloadListeners()
       })

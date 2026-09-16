@@ -7,7 +7,7 @@
  */
 import { app, BrowserWindow, dialog } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { IPC, type AppUpdateInfo } from '../shared/types'
+import { IPC, type AppUpdateInfo, type AppUpdateState } from '../shared/types'
 import { URLS } from '../shared/constants'
 import { translate } from '../shared/i18n'
 import { loadSettings } from './settings'
@@ -20,6 +20,8 @@ let offeredVersion: string | null = null
 /** Version whose installer is downloaded and waits for restart. */
 let downloadedVersion: string | null = null
 let downloading = false
+/** Version currently being downloaded (for the `downloading` event payload). */
+let downloadingVersion: string | null = null
 
 /** Installed version. Never throws (unit-test / dev safe). */
 export function getAppVersion(): string {
@@ -111,6 +113,15 @@ function offerAppRestart(version: string): void {
   })()
 }
 
+/**
+ * Cached snapshot of the app self-update state (no network).
+ * Lets late-mounted views (Updates page opened after the banner, window
+ * reloaded mid-download) synchronize without waiting for the next event.
+ */
+export function getAppUpdateState(): AppUpdateState {
+  return { ...buildInfo(offeredVersion), downloading }
+}
+
 /** Manual check from the Updates page. Returns structured info for the UI. */
 export async function checkAppUpdates(): Promise<AppUpdateInfo> {
   if (!app.isPackaged) {
@@ -135,8 +146,29 @@ export async function checkAppUpdates(): Promise<AppUpdateInfo> {
 export async function downloadAppUpdate(): Promise<void> {
   if (!app.isPackaged || downloading) return
   downloading = true
+  downloadingVersion = offeredVersion
+  // Notify the renderer immediately (before the first `download-progress`):
+  // the download can be triggered from the native dialog, in which case the
+  // banner / Updates page would otherwise keep showing "Download" with no
+  // indication that anything is happening.
+  if (downloadingVersion) {
+    try {
+      safeSend(IPC.onAppUpdateDownloading, downloadingVersion)
+    } catch {
+      /* best-effort */
+    }
+  }
   try {
     await autoUpdater.downloadUpdate()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    err('updater', `App update download failed: ${msg}`)
+    try {
+      safeSend(IPC.onAppUpdateError, msg)
+    } catch {
+      /* best-effort */
+    }
+    throw e
   } finally {
     downloading = false
   }
@@ -189,6 +221,7 @@ export function setupAutoUpdater(): void {
   })
   autoUpdater.on('update-downloaded', (updateInfo) => {
     downloading = false
+    downloadingVersion = null
     try {
       const v = String(updateInfo?.version ?? '').trim() || offeredVersion || getAppVersion()
       downloadedVersion = v
@@ -199,7 +232,16 @@ export function setupAutoUpdater(): void {
   })
   autoUpdater.on('error', (e) => {
     downloading = false
-    err('updater', `autoUpdater error: ${String(e).slice(0, 300)}`)
+    downloadingVersion = null
+    const msg = String((e as Error)?.message ?? e).slice(0, 300)
+    err('updater', `autoUpdater error: ${msg}`)
+    // Reset the banner / Updates page spinner when the download was started
+    // from the native dialog (no awaiting renderer to catch the rejection).
+    try {
+      safeSend(IPC.onAppUpdateError, msg)
+    } catch {
+      /* best-effort */
+    }
   })
 
   void autoUpdater.checkForUpdates().catch(() => undefined)
@@ -214,4 +256,5 @@ export function __resetAppUpdaterForTest(): void {
   offeredVersion = null
   downloadedVersion = null
   downloading = false
+  downloadingVersion = null
 }

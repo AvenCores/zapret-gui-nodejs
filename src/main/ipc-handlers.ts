@@ -45,7 +45,7 @@ import {
 import { getDataDir, getBinDir, getListsDir, getStrategiesDir, getUtilsDir, getBundledAssetsDir } from './paths'
 import { listUserLists, readUserList, writeUserList } from './user-lists'
 import { checkBypassTarget } from './bypass-check'
-import { checkAppUpdates, downloadAppUpdate, getAppVersion, installAppUpdate } from './app-updater'
+import { checkAppUpdates, downloadAppUpdate, getAppUpdateState, getAppVersion, installAppUpdate } from './app-updater'
 import type { BypassTargetId } from '../shared/types'
 import { loadSettings, normalizeTgProxySettings, saveSettings } from './settings'
 import { resetAppData } from './app-reset'
@@ -333,6 +333,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.getAppVersion, async () => getAppVersion())
   ipcMain.handle(IPC.checkAppUpdates, async () => checkAppUpdates())
+  ipcMain.handle(IPC.getAppUpdateState, async () => getAppUpdateState())
   ipcMain.handle(IPC.downloadAppUpdate, async () => {
     await downloadAppUpdate()
     return true

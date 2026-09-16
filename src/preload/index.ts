@@ -7,6 +7,7 @@ import { IPC } from '../shared/types'
 import type {
   AppSettings,
   AppUpdateInfo,
+  AppUpdateState,
   BypassCheckResult,
   BypassTargetId,
   ConfigTesterEvent,
@@ -134,6 +135,7 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.tgProxyStatusChanged, fn)
   },
   checkAppUpdates: (): Promise<AppUpdateInfo> => ipcRenderer.invoke(IPC.checkAppUpdates),
+  getAppUpdateState: (): Promise<AppUpdateState> => ipcRenderer.invoke(IPC.getAppUpdateState),
   downloadAppUpdate: (): Promise<boolean> => ipcRenderer.invoke(IPC.downloadAppUpdate),
   installAppUpdate: (): Promise<boolean> => ipcRenderer.invoke(IPC.installAppUpdate),
   onAppUpdateAvailable: (cb: (version: string) => void): (() => void) => {
@@ -145,6 +147,16 @@ const api = {
     const fn = (_e: unknown, version: string): void => cb(version)
     ipcRenderer.on(IPC.onAppUpdateDownloaded, fn)
     return () => ipcRenderer.removeListener(IPC.onAppUpdateDownloaded, fn)
+  },
+  onAppUpdateDownloading: (cb: (version: string) => void): (() => void) => {
+    const fn = (_e: unknown, version: string): void => cb(version)
+    ipcRenderer.on(IPC.onAppUpdateDownloading, fn)
+    return () => ipcRenderer.removeListener(IPC.onAppUpdateDownloading, fn)
+  },
+  onAppUpdateError: (cb: (message: string) => void): (() => void) => {
+    const fn = (_e: unknown, message: string): void => cb(message)
+    ipcRenderer.on(IPC.onAppUpdateError, fn)
+    return () => ipcRenderer.removeListener(IPC.onAppUpdateError, fn)
   }
 }
 
