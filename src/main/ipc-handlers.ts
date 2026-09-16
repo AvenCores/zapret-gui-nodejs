@@ -641,13 +641,29 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.relaunchAsAdmin, async () => {
     const exe = process.execPath
+    // Single-instance lock MUST be released BEFORE Start-Process: otherwise
+    // the elevated copy sees the lock held, hits `requestSingleInstanceLock()
+    // === false` and quits instantly — then this instance quits too and the
+    // app "just closes" with nothing running.
+    try {
+      app.releaseSingleInstanceLock()
+    } catch {
+      /* best-effort */
+    }
     const ok = await relaunchAppAsAdmin(exe, process.argv.slice(1))
     if (ok && app.isPackaged) {
       // Elevated copy is starting — close this non-admin instance.
       // Delayed so the IPC response is delivered before teardown.
       // (In dev mode we stay alive: a raw elevated electron would lack the dev env.)
       sendLog('app', 'info', 'Restarting with administrator rights — closing this instance.')
-      setTimeout(() => app.quit(), 500).unref?.()
+      setTimeout(() => app.quit(), 1000).unref?.()
+    } else if (!ok) {
+      // UAC denied / launch failed: keep running as single instance.
+      try {
+        app.requestSingleInstanceLock()
+      } catch {
+        /* best-effort */
+      }
     }
     return ok
   })

@@ -63,10 +63,22 @@ export async function isAdmin(): Promise<boolean> {
 
 /** Relaunch the whole Electron app elevated (used by the dashboard button). */
 export async function relaunchAppAsAdmin(appPath: string, appArgs: string[]): Promise<boolean> {
+  const esc = (s: string): string => s.replace(/'/g, "''")
+  // Filter out Electron's own argv[0] (exe path) if the caller passed
+  // process.argv.slice(1) from a packaged app — passing the exe as an
+  // argument breaks the elevated launch and leaves no running instance.
+  const filtered = appArgs.filter((a) => a !== appPath)
+  const argsPs =
+    filtered.length > 0 ? ` -ArgumentList ${filtered.map((a) => `'${esc(a)}'`).join(',')}` : ''
+  // NOTE: powershell.exe exits with code 0 even when Start-Process throws
+  // (e.g. the user presses "No" on the UAC prompt). Without an explicit
+  // try/catch + exit code every denial looked like success: the caller
+  // quit the current instance while no elevated copy was starting —
+  // the app "just closed". Force a non-zero exit on any failure.
   const ps =
-    `Start-Process -FilePath '${appPath.replace(/'/g, "''")}'` +
-    (appArgs.length > 0 ? ` -ArgumentList '${appArgs.map((a) => a.replace(/'/g, "''")).join("','")}'` : '') +
-    ' -Verb RunAs'
+    `$ErrorActionPreference='Stop'; ` +
+    `try { Start-Process -FilePath '${esc(appPath)}'${argsPs} -Verb RunAs; exit 0 } ` +
+    `catch { Write-Host $_.Exception.Message; exit 1 }`
   const r = await runPowershell(ps, 60000)
   return r.code === 0
 }

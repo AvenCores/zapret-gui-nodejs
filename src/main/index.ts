@@ -371,10 +371,21 @@ function trayCallbacks() {
     },
     onRelaunchAdmin: () => {
       void (async () => {
+        try {
+          app.releaseSingleInstanceLock()
+        } catch {
+          /* best-effort */
+        }
         const ok = await relaunchAppAsAdmin(process.execPath, process.argv.slice(1))
         if (ok && app.isPackaged) {
           info('app', 'Restarting with administrator rights — closing this instance.')
-          setTimeout(() => app.quit(), 500).unref?.()
+          setTimeout(() => app.quit(), 1000).unref?.()
+        } else if (!ok) {
+          try {
+            app.requestSingleInstanceLock()
+          } catch {
+            /* best-effort */
+          }
         }
       })()
     },

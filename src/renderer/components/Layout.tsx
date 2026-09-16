@@ -1337,9 +1337,14 @@ function AdminBanner(): React.JSX.Element | null {
     if (pending) return
     setPending(true)
     try {
-      await window.zapret.relaunchAsAdmin()
+      const ok = await window.zapret.relaunchAsAdmin()
+      if (!ok) {
+        // UAC denied / launch failed: main keeps running, re-enable button.
+        // Success quits the app, so pending stays true on ok === true.
+        setPending(false)
+      }
     } catch (e) {
-      // Success quits the app; a failure re-enables the button and surfaces
+      // A failure re-enables the button and surfaces
       // the reason instead of failing silently.
       setPending(false)
       setError(e instanceof Error ? e.message : String(e))
