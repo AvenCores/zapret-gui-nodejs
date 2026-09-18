@@ -40,6 +40,20 @@
 > 
 <img width="1609" height="926" alt="1" src="https://i.ibb.co/6JYnxWSc/1.png" />
 
+# 🎦 Видео гайд по установке и решению проблем
+
+![maxresdefault](https://i.ibb.co/SwxyHpRX/2.png)
+
+<div align="center">
+
+[**Смотреть на YouTube**](https://youtu.be/OBO6CJBKgVU)
+
+[**Смотреть на Dzen**](https://dzen.ru/video/watch/6aaa90d3fff8b146741fe07f)
+
+[**Смотреть в VK Video**](https://vkvideo.ru/video-234234162_456239119)
+
+[**Смотреть в Telegram**](https://t.me/avencoreschat/579826)
+
 ## ✨ Возможности
 
 | Страница | Что умеет |
