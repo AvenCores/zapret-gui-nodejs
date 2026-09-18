@@ -187,7 +187,7 @@ export const ja = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': '初期設定',
   'wizard.step1': '戦略を選択してください。分からない場合は「general」のままにしてください。',
   'wizard.step2': 'ブラウザで Secure DNS を設定してください（設定しないと一部のブロックは回避できません）。',

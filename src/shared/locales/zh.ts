@@ -187,7 +187,7 @@ export const zh = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': '初始设置',
   'wizard.step1': '选择一个策略。如果不确定 — 保留“general”。',
   'wizard.step2': '在浏览器中配置 Secure DNS（否则部分封锁无法绕过）。',

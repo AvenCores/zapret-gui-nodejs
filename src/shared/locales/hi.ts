@@ -187,7 +187,7 @@ export const hi = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': 'प्रारंभिक सेटअप',
   'wizard.step1': 'रणनीति चुनें। यदि निश्चित न हों — “general” रखें।',
   'wizard.step2': 'अपने ब्राउज़र में Secure DNS कॉन्फ़िगर करें (इसके बिना कुछ अवरोध बायपास नहीं होंगे)।',

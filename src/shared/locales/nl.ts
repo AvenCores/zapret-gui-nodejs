@@ -187,7 +187,7 @@ export const nl = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': 'Eerste installatie',
   'wizard.step1': 'Kies een strategie. Weet je het niet — houd general aan.',
   'wizard.step2': 'Stel Secure DNS in in je browser (anders kunnen sommige blokkades niet worden omzeild).',

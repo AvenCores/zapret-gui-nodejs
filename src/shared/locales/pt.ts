@@ -187,7 +187,7 @@ export const pt = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': 'Configuração inicial',
   'wizard.step1': 'Escolha uma estratégia. Se não souber por onde começar — mantenha general.',
   'wizard.step2': 'Configure Secure DNS no navegador (caso contrário, parte dos bloqueios não pode ser evadida).',

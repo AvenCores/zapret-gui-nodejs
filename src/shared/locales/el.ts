@@ -187,7 +187,7 @@ export const el = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': 'Αρχική ρύθμιση',
   'wizard.step1': 'Επιλέξτε στρατηγική. Αν δεν ξέρετε από πού να ξεκινήσετε — αφήστε το general.',
   'wizard.step2': 'Ρυθμίστε το Secure DNS στο πρόγραμμα περιήγησης (διαφορετικά ορισμένοι αποκλεισμοί δεν παρακάμπτονται).',

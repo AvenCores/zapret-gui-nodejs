@@ -187,7 +187,7 @@ export const hr = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': 'Početno postavljanje',
   'wizard.step1': 'Odaberite strategiju. Ako ne znate odakle početi — ostavite general.',
   'wizard.step2': 'Podesite Secure DNS u pregledniku (inače se neke blokade ne mogu zaobići).',

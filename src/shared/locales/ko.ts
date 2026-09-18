@@ -187,7 +187,7 @@ export const ko = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': '초기 설정',
   'wizard.step1': '전략을 선택하세요. 잘 모르면 “general”을 유지하세요.',
   'wizard.step2': '브라우저에서 Secure DNS를 구성하세요(구성하지 않으면 일부 차단을 우회할 수 없습니다).',

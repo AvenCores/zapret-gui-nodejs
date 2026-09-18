@@ -187,7 +187,7 @@ export const id = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': 'Penyiapan awal',
   'wizard.step1': 'Pilih strategi. Jika ragu — tetap gunakan “general”.',
   'wizard.step2': 'Konfigurasikan Secure DNS di browser (sebagian pemblokiran tidak dapat dibypass tanpanya).',

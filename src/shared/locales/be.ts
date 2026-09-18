@@ -187,7 +187,7 @@ export const be = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': 'Пачатковая наладка',
   'wizard.step1': 'Выберыце стратэгію. Калі не ведаеце з чаго пачаць — пакіньце general.',
   'wizard.step2': 'Наладзьце Secure DNS у браўзеры (інакш частку блакіровак не абысці).',

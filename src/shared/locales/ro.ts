@@ -187,7 +187,7 @@ export const ro = {
   'logs.disabled': 'Logs are disabled in Settings — turn them on to see new entries.',
   'settings.logsTitle': 'Logs',
   'settings.logsEnabled': 'Enable logs',
-  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage in the background.',
+  'settings.logsHint': 'When off, the app writes no log files and streams nothing to the UI — less CPU and disk usage.',
   'wizard.title': 'Configurare inițială',
   'wizard.step1': 'Alegeți o strategie. Dacă nu știți — păstrați general.',
   'wizard.step2': 'Configurați Secure DNS în browser (altfel o parte din blocări nu pot fi ocolite).',
