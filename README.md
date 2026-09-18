@@ -40,7 +40,7 @@
 > 
 <img width="1609" height="926" alt="1" src="https://i.ibb.co/6JYnxWSc/1.png" />
 
-# 🎦 Видео гайд по установке и решению проблем
+# 🎦 Видео гайд по установке
 
 ![maxresdefault](https://i.ibb.co/SwxyHpRX/2.png)
 
