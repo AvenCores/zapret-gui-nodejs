@@ -1327,11 +1327,40 @@ function AppUpdateBanner(): React.JSX.Element | null {
   )
 }
 
+const ADMIN_BANNER_KEY = 'zapret:admin-banner-minimized'
+
+function readAdminBannerMinimized(): boolean {
+  try {
+    return localStorage.getItem(ADMIN_BANNER_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 function AdminBanner(): React.JSX.Element | null {
   const { status, t, setError } = useUi()
-  const [dismissed, setDismissed] = useState(false)
   const [pending, setPending] = useState(false)
-  if (!status || status.isAdmin || dismissed) return null
+  const [minimized, setMinimized] = useState<boolean>(() => readAdminBannerMinimized())
+
+  function minimize(): void {
+    setMinimized(true)
+    try {
+      localStorage.setItem(ADMIN_BANNER_KEY, '1')
+    } catch {
+      // private mode — stay minimized for this session only
+    }
+  }
+
+  function expand(): void {
+    setMinimized(false)
+    try {
+      localStorage.removeItem(ADMIN_BANNER_KEY)
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  if (!status || status.isAdmin) return null
 
   async function relaunch(): Promise<void> {
     if (pending) return
@@ -1352,13 +1381,87 @@ function AdminBanner(): React.JSX.Element | null {
   }
 
   return (
-    <div
-      role="alert"
-      className="flex animate-slide-down flex-wrap items-center gap-x-3 gap-y-2 border-b border-amber-500/30 bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent px-4 py-2.5 text-sm"
-    >
-      <span
-        aria-hidden
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400"
+    // Banner height animates via grid rows (1fr <-> 0fr); the shield is a
+    // floating button, so when minimized no bar remains — only the icon.
+    // z-10 is required: the page wrapper (animate-page-in, fill both) stays a
+    // stacking context painted later in DOM order, otherwise it would cover
+    // the shield's lower half and swallow part of its clicks.
+    <div role="alert" className="relative z-10 animate-slide-down">
+      <div
+        aria-hidden={minimized}
+        className={`grid transition-all duration-300 ease-in-out ${
+          minimized ? 'invisible grid-rows-[0fr] opacity-0' : 'visible grid-rows-[1fr] opacity-100'
+        }`}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div
+            className={`flex origin-top-right flex-wrap items-center gap-x-3 gap-y-2 border-b border-amber-500/30 bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent px-4 py-2.5 text-sm transition-all duration-300 ease-in-out ${
+              minimized ? '-translate-y-2 scale-[0.96] opacity-0' : 'translate-y-0 scale-100 opacity-100'
+            }`}
+          >
+            <span
+              aria-hidden
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+              >
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+                <path d="M12 9v4" />
+                <path d="M12 17h.01" />
+              </svg>
+            </span>
+            <span className="min-w-0 flex-1 basis-48 font-medium text-amber-900 dark:text-amber-100">
+              {t('dashboard.adminMissing')}
+            </span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => void relaunch()}
+                disabled={pending}
+                className="inline-flex min-h-[32px] items-center gap-2 rounded-lg bg-amber-500 px-3.5 py-1.5 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {pending ? (
+                  <Spinner />
+                ) : (
+                  <StrokeIcon className="h-4 w-4 shrink-0">
+                    <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+                    <path d="m9 12 2 2 4-4" />
+                  </StrokeIcon>
+                )}
+                {t('dashboard.relaunchAdmin')}
+              </button>
+              <button
+                type="button"
+                onClick={minimize}
+                title={t('action.close')}
+                aria-label={t('action.close')}
+                aria-expanded={!minimized}
+                className="rounded-lg p-2 text-amber-700/70 transition hover:bg-amber-500/20 hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 active:scale-95 dark:text-amber-300/70 dark:hover:bg-amber-500/10 dark:hover:text-amber-100"
+              >
+                ✕
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={expand}
+        title={t('dashboard.adminMissing')}
+        aria-label={t('dashboard.adminMissing')}
+        aria-expanded={!minimized}
+        aria-hidden={!minimized}
+        tabIndex={minimized ? undefined : -1}
+        className={`absolute right-5 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-amber-500/40 bg-amber-500/15 text-amber-600 shadow-md backdrop-blur-sm transition-all duration-300 ease-in-out hover:scale-105 hover:bg-amber-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 active:scale-95 dark:text-amber-400 ${
+          minimized ? 'visible scale-100 opacity-100' : 'invisible scale-50 opacity-0'
+        }`}
       >
         <svg
           viewBox="0 0 24 24"
@@ -1367,43 +1470,18 @@ function AdminBanner(): React.JSX.Element | null {
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden
           className="h-4 w-4"
         >
-          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
-          <path d="M12 9v4" />
-          <path d="M12 17h.01" />
+          <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+          <path d="M12 8v4" />
+          <path d="M12 12h.01" />
         </svg>
-      </span>
-      <span className="min-w-0 flex-1 basis-48 font-medium text-amber-900 dark:text-amber-100">
-        {t('dashboard.adminMissing')}
-      </span>
-      <span className="flex shrink-0 items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => void relaunch()}
-          disabled={pending}
-          className="inline-flex min-h-[32px] items-center gap-2 rounded-lg bg-amber-500 px-3.5 py-1.5 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {pending ? (
-            <Spinner />
-          ) : (
-            <StrokeIcon className="h-4 w-4 shrink-0">
-              <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
-              <path d="m9 12 2 2 4-4" />
-            </StrokeIcon>
-          )}
-          {t('dashboard.relaunchAdmin')}
-        </button>
-        <button
-          type="button"
-          onClick={() => setDismissed(true)}
-          title={t('action.close')}
-          aria-label={t('action.close')}
-          className="rounded-lg p-2 text-amber-700/70 transition hover:bg-amber-500/20 hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/70 active:scale-95 dark:text-amber-300/70 dark:hover:bg-amber-500/10 dark:hover:text-amber-100"
-        >
-          ✕
-        </button>
-      </span>
+        <span aria-hidden className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500 opacity-75" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500 dark:border-slate-900" />
+        </span>
+      </button>
     </div>
   )
 }
