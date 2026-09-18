@@ -245,6 +245,14 @@ export interface TgProxyStats {
   startedAt: string | null
   /** Last fatal error text (null when healthy). */
   lastError: string | null
+  /** WS pool hits/misses (mirrors stats.py `pool=`). Optional for old renderers. */
+  poolHits?: number
+  poolMisses?: number
+  /** CF-worker pool hits/misses (`cf_pool=`). */
+  cfPoolHits?: number
+  cfPoolMisses?: number
+  /** Handshakes completed via domain-fronting SNI (`front=`). */
+  connectionsFronting?: number
 }
 
 /** Full proxy status payload for the renderer. */

@@ -7,17 +7,19 @@
  * WebSocket to the Telegram DC (`kws{dc}.web.telegram.org/apiws`),
  * with Cloudflare-proxy / direct-TCP fallback.
  *
- * Zero external dependencies — only `node:net`, `node:tls` and
- * `node:crypto` (mirrors upstream `RawWebSocket`, which is also a
- * hand-rolled TLS+WS client).
+ * Zero external dependencies — only `node:net`, `node:tls`,
+ * `node:crypto` and `node:dgram` (mirrors upstream `RawWebSocket`, which is
+ * also a hand-rolled TLS+WS client).
  *
- * FakeTLS (`ee`-secrets), PROXY-protocol and CF-Worker fallbacks from the
- * Python version are intentionally out of scope for v1: the GUI only
- * provisions plain `dd`-secrets.
+ * Parity with upstream includes FakeTLS (`ee`-secrets with masking relay /
+ * 301 redirect), PROXY-protocol v1, CF-proxy + CF-Worker fallbacks,
+ * pooled WS upstreams with domain-fronting (`sprinthost.ru` SNI) and
+ * exponential-backoff refill.
  *
  * @module main/tg-proxy
  */
 import crypto from 'node:crypto'
+import dgram from 'node:dgram'
 import net from 'node:net'
 import tls from 'node:tls'
 import { info, warn, err } from './logger'
@@ -198,6 +200,59 @@ export function parseProxyV1Line(line: string): string | null {
 /** CF-Worker upstream path (`/apiws?dst=<ip>&dc=<n>`). Pure. */
 export function buildCfWorkerPath(dst: string, dc: number): string {
   return `/apiws?${new URLSearchParams({ dst, dc: String(dc) }).toString()}`
+}
+
+/**
+ * LAN IP for `tg://proxy` links when listening on `0.0.0.0`
+ * (mirrors `get_link_host`: UDP dial to 8.8.8.8 reveals the outbound IP).
+ * Falls back to `127.0.0.1` when the probe fails. Pure-ish (socket probe).
+ */
+export function getLinkHost(host: string): string {
+  if (host !== '0.0.0.0') return host
+  try {
+    // UDP connect() only sets the default remote — no packets are sent.
+    // dgram connect() is sync when called without callback in Node >=12.
+    const probe = dgram.createSocket('udp4')
+    try {
+      probe.connect(80, '8.8.8.8')
+      const local = probe.address()
+      const addr = typeof local === 'object' && local !== null ? (local as net.AddressInfo).address : ''
+      if (addr && addr !== '0.0.0.0') return addr
+    } catch {
+      /* ignore */
+    } finally {
+      try {
+        probe.close()
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return '127.0.0.1'
+}
+
+/**
+ * Censor user domains in log lines (mirrors `DomainCensorFilter`):
+ * keeps `*.telegram.org` readable, masks every other label but the TLD.
+ * Pure.
+ */
+export function censorDomains(text: string): string {
+  return text.replace(
+    /(?<![\w-])(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}(?![\w-])/g,
+    (domain) => {
+      const normalized = domain.toLowerCase().replace(/\.+$/, '')
+      if (normalized === 'telegram.org' || normalized.endsWith('.telegram.org') || normalized.endsWith('.log')) {
+        return domain
+      }
+      const parts = domain.split('.')
+      if (parts.length < 2) return domain
+      return parts
+        .map((part, i) => (i === parts.length - 1 ? part : part.slice(0, Math.floor(part.length / 2)) + '*'.repeat(part.length - Math.floor(part.length / 2))))
+        .join('.')
+    }
+  )
 }
 
 /** Fisher–Yates shuffle (copy) for worker-domain rotation. Pure. */
@@ -876,10 +931,16 @@ function readHttpHead(socket: tls.TLSSocket, timeoutMs: number): Promise<{ head:
     timer.unref?.()
     const onData = (d: Buffer): void => {
       acc = Buffer.concat([acc, d])
-      const idx = acc.indexOf('\r\n\r\n')
+      let idx = acc.indexOf('\r\n\r\n')
+      let skip = 4
+      if (idx < 0) {
+        // Tolerate bare-LF servers (upstream reads line-by-line until blank).
+        idx = acc.indexOf('\n\n')
+        skip = 2
+      }
       if (idx >= 0) {
         cleanup()
-        resolve({ head: acc.subarray(0, idx).toString('utf8'), extra: Buffer.from(acc.subarray(idx + 4)) })
+        resolve({ head: acc.subarray(0, idx).toString('utf8'), extra: Buffer.from(acc.subarray(idx + skip)) })
       } else if (acc.length > 65536) {
         cleanup()
         reject(new WsHandshakeError(0, 'header too large'))
@@ -955,7 +1016,7 @@ export function defaultCfProxyDomains(): string[] {
   return CFPROXY_ENC.map(decodeCfDomain)
 }
 
-class CfBalancer {
+export class CfBalancer {
   private domains: string[] = []
   private dcToDomain = new Map<number, string>()
 
@@ -978,7 +1039,9 @@ class CfBalancer {
 
   getDomainsForDc(dc: number): string[] {
     const current = this.dcToDomain.get(dc)
-    const rest = [...this.domains].sort(() => Math.random() - 0.5).filter((d) => d !== current)
+    // Fisher–Yates via shuffled() — sort(() => Math.random()-0.5) is biased
+    // (mirrors random.shuffle in balancer.py).
+    const rest = shuffled(this.domains).filter((d) => d !== current)
     return current ? [current, ...rest] : rest
   }
 
@@ -988,7 +1051,7 @@ class CfBalancer {
   }
 }
 
-const balancer = new CfBalancer()
+export const balancer = new CfBalancer()
 
 const CFPROXY_DOMAINS_URL = 'https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt'
 
@@ -1018,7 +1081,7 @@ async function refreshCfProxyDomains(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Idle WS connection pool (mirrors proxy/pool.py, on-demand variant)
+// Idle WS connection pool (mirrors proxy/pool.py)
 // ---------------------------------------------------------------------------
 
 interface PooledWs {
@@ -1026,9 +1089,22 @@ interface PooledWs {
   created: number
 }
 
-class WsPool {
+const WS_POOL_CHECK_INTERVAL_MS = 5000
+const REFILL_BACKOFF_INITIAL_MS = 1000
+const REFILL_BACKOFF_MAX_MS = 3600 * 1000
+const CF_WORKER_POOL_MAX_AGE_MS = 100 * 1000
+const CF_WORKER_PER_DC_LIMIT = 1
+/** SNI used for domain-fronting when the direct SNI is blocked (mirrors pool.py). */
+const FRONTING_SNI = 'sprinthost.ru'
+
+export class WsPool {
   private idle = new Map<string, PooledWs[]>()
   private refilling = new Set<string>()
+  private refillFailures = new Map<string, number>()
+  private refillAfter = new Map<string, number>()
+  private rotationTimer: NodeJS.Timeout | null = null
+  /** Mirrors `try_fronting_first`: prefer fronted handshake until a direct one works. */
+  private tryFrontingFirst = false
 
   private key(dc: number, isMedia: boolean): string {
     return `${dc}:${isMedia ? 'm' : ''}`
@@ -1036,8 +1112,11 @@ class WsPool {
 
   get(dc: number, isMedia: boolean): RawWebSocket | null {
     const k = this.key(dc, isMedia)
-    const bucket = this.idle.get(k)
-    if (!bucket) return null
+    let bucket = this.idle.get(k)
+    if (!bucket) {
+      bucket = []
+      this.idle.set(k, bucket)
+    }
     const now = Date.now()
     while (bucket.length > 0) {
       const item = bucket.shift()
@@ -1046,8 +1125,14 @@ class WsPool {
         void item.ws.close().catch(() => undefined)
         continue
       }
+      counters.poolHits += 1
+      this.reportSuccess(dc, isMedia)
+      // Keep the bucket full in the background (original schedules refill on hit).
+      const target = activeDcIps[dc] ?? TG_PROXY_DC_IPS[dc]
+      if (target) this.scheduleRefill(dc, isMedia, target, wsDomains(dc, isMedia))
       return item.ws
     }
+    counters.poolMisses += 1
     return null
   }
 
@@ -1061,25 +1146,122 @@ class WsPool {
     }
     bucket.push({ ws, created: Date.now() })
     this.idle.set(k, bucket)
+    this.ensureRotation()
   }
 
-  /** Fire-and-forget refill of one idle socket for the DC. */
+  reportSuccess(dc: number, isMedia: boolean): void {
+    const k = this.key(dc, isMedia)
+    this.refillFailures.delete(k)
+    this.refillAfter.delete(k)
+  }
+
+  /** Fire-and-forget refill up to `poolSize` (mirrors `_refill`). */
   scheduleRefill(dc: number, isMedia: boolean, targetIp: string, domains: string[]): void {
     const k = this.key(dc, isMedia)
     if (this.refilling.has(k)) return
+    if (Date.now() < (this.refillAfter.get(k) ?? 0)) return
     const bucket = this.idle.get(k)
     if (activePoolSize <= 0 || (bucket && bucket.length >= activePoolSize)) return
     this.refilling.add(k)
     void (async () => {
       try {
-        const ws = await connectFirstWs(targetIp, domains, TG_PROXY_WS_PATH, WS_CONNECT_TIMEOUT_MS)
-        if (ws) this.put(dc, isMedia, ws)
+        const current = this.idle.get(k) ?? []
+        const needed = Math.max(0, activePoolSize - current.length)
+        if (needed <= 0) return
+        let connected = 0
+        // Parallel dials like upstream (`needed` tasks), each tries fronting first.
+        const results = await Promise.all(
+          Array.from({ length: needed }, () => this.connectOne(targetIp, [...domains]).catch(() => null))
+        )
+        for (const ws of results) {
+          if (ws) {
+            this.put(dc, isMedia, ws)
+            connected += 1
+          }
+        }
+        if (connected > 0) {
+          this.reportSuccess(dc, isMedia)
+        } else {
+          const failures = (this.refillFailures.get(k) ?? 0) + 1
+          this.refillFailures.set(k, failures)
+          const delay = Math.min(REFILL_BACKOFF_INITIAL_MS * 2 ** Math.min(failures - 1, 12), REFILL_BACKOFF_MAX_MS)
+          this.refillAfter.set(k, Date.now() + delay)
+        }
       } catch {
         /* best effort */
       } finally {
         this.refilling.delete(k)
       }
     })()
+  }
+
+  /** Single WS dial with fronting fallback (mirrors `_connect_one`). */
+  private async connectOne(targetIp: string, domains: string[]): Promise<RawWebSocket | null> {
+    const hwm = activeHwm > 0 ? activeHwm : undefined
+    for (const domain of domains) {
+      if (this.tryFrontingFirst) {
+        const fronted = await this.connectFronted(targetIp, domain, hwm)
+        if (fronted) return fronted
+      }
+      try {
+        const ws = await RawWebSocket.connect(targetIp, domain, WS_CONNECT_TIMEOUT_MS, TG_PROXY_WS_PATH, undefined, hwm)
+        this.tryFrontingFirst = false
+        return ws
+      } catch (e) {
+        if (e instanceof WsHandshakeError && e.isRedirect) continue
+        // Timeout / reset → try fronted SNI before giving up on this domain.
+        if (e instanceof WsConnectTimeout || (e instanceof Error && /closed|reset|timeout/i.test(e.message))) {
+          if (this.tryFrontingFirst) return null
+          const fronted = await this.connectFronted(targetIp, domain, hwm)
+          if (fronted) return fronted
+          continue
+        }
+        if (e instanceof WsHandshakeError) return null
+        return null
+      }
+    }
+    return null
+  }
+
+  private async connectFronted(targetIp: string, domain: string, hwm?: number): Promise<RawWebSocket | null> {
+    try {
+      const ws = await RawWebSocket.connect(targetIp, domain, WS_CONNECT_TIMEOUT_MS, TG_PROXY_WS_PATH, FRONTING_SNI, hwm)
+      counters.fronting += 1
+      this.tryFrontingFirst = true
+      return ws
+    } catch {
+      return null
+    }
+  }
+
+  /** Drop expired idle sockets periodically (mirrors `_rotate`). */
+  private ensureRotation(): void {
+    if (this.rotationTimer) return
+    this.rotationTimer = setInterval(() => {
+      try {
+        const now = Date.now()
+        let hasWork = false
+        for (const [k, bucket] of this.idle) {
+          const ready: PooledWs[] = []
+          for (const item of bucket.splice(0)) {
+            if (now - item.created >= WS_POOL_MAX_AGE_MS || item.ws.closed) {
+              void item.ws.close().catch(() => undefined)
+            } else {
+              ready.push(item)
+            }
+          }
+          bucket.push(...ready)
+          if (bucket.length > 0) hasWork = true
+        }
+        if (!hasWork && this.rotationTimer) {
+          clearInterval(this.rotationTimer)
+          this.rotationTimer = null
+        }
+      } catch {
+        /* ignore */
+      }
+    }, WS_POOL_CHECK_INTERVAL_MS)
+    this.rotationTimer.unref?.()
   }
 
   /** Pre-connect idle sockets for all known DCs (best effort). */
@@ -1089,6 +1271,126 @@ class WsPool {
       for (const isMedia of [false, true]) {
         this.scheduleRefill(dc, isMedia, targetIp, wsDomains(dc, isMedia))
       }
+    }
+  }
+
+  clear(): void {
+    if (this.rotationTimer) {
+      clearInterval(this.rotationTimer)
+      this.rotationTimer = null
+    }
+    for (const bucket of this.idle.values()) {
+      for (const item of bucket) {
+        try {
+          item.ws.destroy()
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    this.idle.clear()
+    this.refilling.clear()
+    this.refillFailures.clear()
+    this.refillAfter.clear()
+    this.tryFrontingFirst = false
+  }
+}
+
+export const wsPool = new WsPool()
+
+interface PooledWorkerWs {
+  ws: RawWebSocket
+  created: number
+  domain: string
+}
+
+/**
+ * Pooled Cloudflare-Worker upstreams (mirrors `_CfWorkerPool`).
+ * Workers relay to `dst` themselves, so one warm socket per DC is enough.
+ */
+export class CfWorkerPool {
+  private idle = new Map<number, PooledWorkerWs[]>()
+  private refilling = new Set<number>()
+
+  get(dc: number): { ws: RawWebSocket; domain: string } | null {
+    const bucket = this.idle.get(dc) ?? []
+    this.idle.set(dc, bucket)
+    const now = Date.now()
+    while (bucket.length > 0) {
+      const item = bucket.shift()
+      if (!item) break
+      if (now - item.created > CF_WORKER_POOL_MAX_AGE_MS || item.ws.closed) {
+        void item.ws.close().catch(() => undefined)
+        continue
+      }
+      counters.cfPoolHits += 1
+      return { ws: item.ws, domain: item.domain }
+    }
+    counters.cfPoolMisses += 1
+    return null
+  }
+
+  put(dc: number, ws: RawWebSocket, domain: string): void {
+    if (ws.closed) return
+    const bucket = this.idle.get(dc) ?? []
+    const limit = Math.min(activePoolSize > 0 ? activePoolSize : CF_WORKER_PER_DC_LIMIT, CF_WORKER_PER_DC_LIMIT)
+    if (bucket.length >= limit) {
+      void ws.close().catch(() => undefined)
+      return
+    }
+    bucket.push({ ws, created: Date.now(), domain })
+    this.idle.set(dc, bucket)
+  }
+
+  availableDomains(domains: string[]): string[] {
+    return shuffled([...new Set(domains)])
+  }
+
+  scheduleRefill(dc: number, fallbackDst: string, workerDomains: string[]): void {
+    if (this.refilling.has(dc)) return
+    const bucket = this.idle.get(dc) ?? []
+    const limit = Math.min(activePoolSize > 0 ? activePoolSize : CF_WORKER_PER_DC_LIMIT, CF_WORKER_PER_DC_LIMIT)
+    if (bucket.length >= limit) return
+    this.refilling.add(dc)
+    void (async () => {
+      try {
+        const conn = await this.connectOne([...workerDomains], fallbackDst, dc)
+        if (conn) this.put(dc, conn.ws, conn.domain)
+      } catch {
+        /* best effort */
+      } finally {
+        this.refilling.delete(dc)
+      }
+    })()
+  }
+
+  async connectOne(workerDomains: string[], fallbackDst: string, dc: number): Promise<{ ws: RawWebSocket; domain: string } | null> {
+    const path = buildCfWorkerPath(fallbackDst, dc)
+    for (const workerDomain of this.availableDomains(workerDomains)) {
+      try {
+        const ws = await RawWebSocket.connect(
+          workerDomain,
+          workerDomain,
+          CF_CONNECT_TIMEOUT_MS,
+          path,
+          undefined,
+          activeHwm > 0 ? activeHwm : undefined
+        )
+        return { ws, domain: workerDomain }
+      } catch {
+        continue
+      }
+    }
+    return null
+  }
+
+  warmup(dcRedirects: Record<number, string>): void {
+    if (activeWorkerDomains.length === 0) return
+    for (const [dcStr, targetIp] of Object.entries(dcRedirects)) {
+      const dc = Number(dcStr)
+      // Upstream warms workers only for DCs missing from direct targets;
+      // warming all known DCs is harmless and keeps behaviour simple.
+      this.scheduleRefill(dc, targetIp, [...activeWorkerDomains])
     }
   }
 
@@ -1107,7 +1409,7 @@ class WsPool {
   }
 }
 
-const wsPool = new WsPool()
+export const cfWorkerPool = new CfWorkerPool()
 
 async function connectFirstWs(targetIp: string, domains: string[], wsPath: string, timeoutMs: number): Promise<RawWebSocket | null> {
   for (const domain of domains) {
@@ -1286,6 +1588,8 @@ class SocketReader {
 export class FakeTlsSession {
   private readonly reader: SocketReader
   private readonly listeners = new Map<string, Set<(...args: any[]) => void>>()
+  /** Leftover decrypted bytes from an over-sized record (mirrors FakeTlsStream._read_buf). */
+  private pending = Buffer.alloc(0)
   destroyed = false
 
   constructor(private readonly socket: net.Socket) {
@@ -1302,11 +1606,14 @@ export class FakeTlsSession {
 
   /**
    * Read exactly n decrypted bytes (handshake phase, before `start()`).
-   * Overall timeout → throws.
+   * Overall timeout → throws. Over-read bytes are buffered in `pending`
+   * and redelivered first by the record loop (like _read_buf upstream) —
+   * otherwise pipelined client bytes after the 64-byte init are lost.
    */
   async readExactly(n: number, timeoutMs: number): Promise<Buffer> {
     const deadline = Date.now() + timeoutMs
-    let acc = Buffer.alloc(0)
+    let acc = Buffer.from(this.pending)
+    this.pending = Buffer.alloc(0)
     while (acc.length < n) {
       const left = deadline - Date.now()
       if (left <= 0) throw new Error('fake-tls read timed out')
@@ -1314,7 +1621,11 @@ export class FakeTlsSession {
       if (payload === null) throw new Error('fake-tls unexpected record')
       acc = Buffer.concat([acc, payload])
     }
-    return acc.subarray(0, n)
+    if (acc.length > n) {
+      this.pending = Buffer.from(acc.subarray(n))
+      acc = Buffer.from(acc.subarray(0, n))
+    }
+    return acc
   }
 
   /** Next application-data payload, or null on close/unexpected record. */
@@ -1357,6 +1668,13 @@ export class FakeTlsSession {
 
   private async recordLoop(): Promise<void> {
     try {
+      // Flush handshake over-read first so pipelined bytes survive the
+      // transition from readExactly() to streaming mode.
+      if (this.pending.length > 0) {
+        const head = this.pending
+        this.pending = Buffer.alloc(0)
+        this.emitLocal('data', head)
+      }
       for (;;) {
         if (this.destroyed) break
         const payload = await this.readRecord()
@@ -1574,10 +1892,32 @@ interface Counters {
   wsErrors: number
   bytesUp: number
   bytesDown: number
+  /** Pool hits/misses + fronted handshakes (mirrors stats.py). */
+  poolHits: number
+  poolMisses: number
+  cfPoolHits: number
+  cfPoolMisses: number
+  fronting: number
 }
 
 function freshCounters(): Counters {
-  return { total: 0, active: 0, ws: 0, tcpFallback: 0, cf: 0, bad: 0, masked: 0, wsErrors: 0, bytesUp: 0, bytesDown: 0 }
+  return {
+    total: 0,
+    active: 0,
+    ws: 0,
+    tcpFallback: 0,
+    cf: 0,
+    bad: 0,
+    masked: 0,
+    wsErrors: 0,
+    bytesUp: 0,
+    bytesDown: 0,
+    poolHits: 0,
+    poolMisses: 0,
+    cfPoolHits: 0,
+    cfPoolMisses: 0,
+    fronting: 0
+  }
 }
 
 let server: net.Server | null = null
@@ -1658,6 +1998,14 @@ export function readTcpExactly(socket: net.Socket, n: number, timeoutMs: number)
     socket.on('data', onData)
     socket.once('error', onError)
     socket.once('close', onClose)
+    // An explicit pause() is sticky: attaching a new 'data' listener does NOT
+    // auto-resume (verified with loopback repro). Resume here so buffered
+    // (unshifted) bytes plus new arrivals are delivered; cleanup pauses again.
+    try {
+      socket.resume()
+    } catch {
+      /* ignore */
+    }
   })
 }
 
@@ -1710,6 +2058,12 @@ export function readTcpLine(socket: net.Socket, timeoutMs: number, maxLen = 512)
     socket.on('data', onData)
     socket.once('error', onError)
     socket.once('close', onClose)
+    // See readTcpExactly: explicit pause() is sticky, resume for this read.
+    try {
+      socket.resume()
+    } catch {
+      /* ignore */
+    }
   })
 }
 
@@ -1991,12 +2345,24 @@ async function cfWorkerFallback(
   dc: number,
   isMedia: boolean,
   fallbackDst: string,
-  teardown: () => void
+  teardown: () => void,
+  isTestDc: boolean
 ): Promise<boolean> {
   const mediaTag = isMedia ? ' media' : ''
+  if (activeWorkerDomains.length === 0) return false
+  // Pooled worker socket first (test DCs never use the pool, like upstream).
+  const pooled = isTestDc ? null : cfWorkerPool.get(dc)
+  if (pooled) {
+    info('tg-proxy', `[${label}] DC${dc}${mediaTag} -> CF worker pool hit for ${fallbackDst}`)
+    cfWorkerPool.scheduleRefill(dc, fallbackDst, [...activeWorkerDomains])
+    counters.cf += 1
+    await pooled.ws.send(Buffer.from(relayInit))
+    await bridgeWs(io, pooled.ws, ctx, null, label, dc, isMedia, teardown).catch(() => undefined)
+    return true
+  }
   const path = buildCfWorkerPath(fallbackDst, dc)
-  for (const workerDomain of shuffled(activeWorkerDomains)) {
-    info('tg-proxy', `[${label}] DC${dc}${mediaTag} -> trying CF worker ${workerDomain} for ${fallbackDst}`)
+  for (const workerDomain of cfWorkerPool.availableDomains([...activeWorkerDomains])) {
+    info('tg-proxy', `[${label}] DC${dc}${mediaTag} -> trying CF worker for ${fallbackDst}`)
     try {
       const ws = await RawWebSocket.connect(workerDomain, workerDomain, CF_CONNECT_TIMEOUT_MS, path, undefined, activeHwm > 0 ? activeHwm : undefined)
       counters.cf += 1
@@ -2043,7 +2409,7 @@ async function doFallback(
   const ipTable = isTestDc ? TG_PROXY_DC_TEST_IPS : TG_PROXY_DC_FALLBACK_IPS
   const dst = ipTable[dc]
   if (activeWorkerDomains.length > 0 && dst) {
-    if (await cfWorkerFallback(io, relayInit, ctx, label, dc, isMedia, dst, teardown)) return true
+    if (await cfWorkerFallback(io, relayInit, ctx, label, dc, isMedia, dst, teardown, isTestDc)) return true
   }
   if (cfEnabled && !isTestDc) {
     if (await cfProxyFallback(io, relayInit, ctx, splitter, label, dc, isMedia, teardown)) return true
@@ -2066,12 +2432,26 @@ async function handleClient(client: net.Socket, secret: Buffer): Promise<void> {
   try {
     if (activeProxyProtocol) {
       // Behind nginx/haproxy: consume the `PROXY TCP4/6 ...` line first.
+      // Upstream always calls readline() here, so a direct client that
+      // omits the header either corrupts its 64-byte init (binary contains
+      // 0x0A) or hangs until timeout (no 0x0A in 64 random bytes, ~78%).
+      // We peek at the first 6 bytes instead: only a real `PROXY ` prefix
+      // enters the line reader, everything else is pushed back untouched.
       try {
-        const { line } = await readTcpLine(client, CLIENT_INIT_TIMEOUT_MS)
-        const parsed = parseProxyV1Line(line)
-        if (parsed) {
-          label = parsed
-          info('tg-proxy', `[${label}] PROXY protocol header accepted`)
+        const prefix = await readTcpExactly(client, 6, CLIENT_INIT_TIMEOUT_MS).catch(() => null)
+        if (!prefix) return
+        if (prefix.toString('ascii') === 'PROXY ') {
+          client.unshift(prefix)
+          const { line } = await readTcpLine(client, CLIENT_INIT_TIMEOUT_MS).catch(() => ({ line: '', rest: Buffer.alloc(0) }))
+          const parsed = parseProxyV1Line(line)
+          if (parsed) {
+            label = parsed
+            info('tg-proxy', `[${label}] PROXY protocol header accepted`)
+          }
+          // PROXY UNKNOWN etc: header consumed, handshake follows (rest
+          // already re-queued inside readTcpLine).
+        } else {
+          client.unshift(prefix)
         }
       } catch {
         return
@@ -2221,6 +2601,7 @@ async function handleClient(client: net.Socket, secret: Buffer): Promise<void> {
         }
       }
       if (ws !== null && target) ipFailUntil.delete(target)
+      if (ws !== null) wsPool.reportSuccess(dc, parsed.isMedia)
     }
 
     if (ws === null) {
@@ -2240,6 +2621,7 @@ async function handleClient(client: net.Socket, secret: Buffer): Promise<void> {
     }
 
     counters.ws += 1
+    wsPool.reportSuccess(dc, parsed.isMedia)
     if (target) wsPool.scheduleRefill(dc, parsed.isMedia, target, wsDomains(dc, parsed.isMedia))
     let splitter: MsgSplitter | null = null
     try {
@@ -2295,6 +2677,7 @@ export async function startTgProxy(opts: TgProxyStartOptions): Promise<{ host: s
   dcFailUntil.clear()
   ipFailUntil.clear()
   wsPool.clear()
+  cfWorkerPool.clear()
 
   const userCfDomains = [...(opts.cfDomains ?? [])]
   if (userCfDomains.length > 0) {
@@ -2345,7 +2728,7 @@ export async function startTgProxy(opts: TgProxyStartOptions): Promise<{ host: s
   startedAt = new Date().toISOString()
   lastError = null
   activeSecret = secretHex
-  const linkHost = listenHost === '0.0.0.0' ? '127.0.0.1' : listenHost
+  const linkHost = getLinkHost(listenHost)
   info('tg-proxy', `Listening on ${listenHost}:${listenPort} (secret ${secretHex.slice(0, 6)}…). Connect: ${buildTgLink(linkHost, listenPort, secretHex, activeFakeTlsDomain)}`)
   info(
     'tg-proxy',
@@ -2355,7 +2738,9 @@ export async function startTgProxy(opts: TgProxyStartOptions): Promise<{ host: s
   )
   // Pre-warm idle WS sockets in the background (best effort, never blocks).
   try {
-    wsPool.warmup({ ...TG_PROXY_DC_IPS, ...activeDcIps })
+    const targets = { ...TG_PROXY_DC_IPS, ...activeDcIps }
+    wsPool.warmup(targets)
+    cfWorkerPool.warmup(targets)
   } catch {
     /* ignore */
   }
@@ -2369,6 +2754,7 @@ export async function stopTgProxy(): Promise<void> {
     cfRefreshTimer = null
   }
   wsPool.clear()
+  cfWorkerPool.clear()
   for (const c of [...clients]) {
     try {
       c.destroy()
@@ -2419,7 +2805,12 @@ export function getTgProxyStats(): TgProxyStats {
     bytesUp: counters.bytesUp,
     bytesDown: counters.bytesDown,
     startedAt,
-    lastError
+    lastError,
+    poolHits: counters.poolHits,
+    poolMisses: counters.poolMisses,
+    cfPoolHits: counters.cfPoolHits,
+    cfPoolMisses: counters.cfPoolMisses,
+    connectionsFronting: counters.fronting
   }
 }
 

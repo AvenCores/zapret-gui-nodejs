@@ -258,7 +258,7 @@ npm run preview              # electron-vite preview
 `npm run generate:strategies` автоматически выполняется перед каждой сборкой.
 В CI `bundled-assets/` уже закоммичен, скрипт только идемпотентно пересинхронизирует JSON-конфиги.
 
-Тесты (vitest, 17 файлов + `setup.ts`): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `config-tester`, `installer-update`, `settings-notify`, `status-dot`, `user-lists`, `tg-proxy`, `app-reset`, `app-updater-autocheck`, `data-seed-flag` (39 тестов: handshake roundtrip по схеме obfuscated2, relay-init, `MsgSplitter`, pause/resume dial-gap регрессия, lifecycle на свободном порту, валидаторы host/DC/domain, PROXY-строка, worker-путь, ee-ссылки, FakeTLS verify/hello/record layer).
+Тесты (vitest, 18 файлов + `setup.ts`): `strategy-parser`, `service-manager`, `strategies`, `strategy-updater`, `diagnostics-detail`, `exec`, `i18n-25`, `locale-tray`, `config-tester`, `installer-update`, `settings-notify`, `status-dot`, `user-lists`, `tg-proxy`, `tg-proxy-parity`, `app-reset`, `app-updater-autocheck`, `data-seed-flag` (50 тестов прокси: handshake roundtrip по схеме obfuscated2, relay-init, `MsgSplitter`, pause/resume dial-gap регрессия, lifecycle на свободном порту, валидаторы host/DC/domain, PROXY-строка, worker-путь, ee-ссылки, FakeTLS verify/hello/record layer + parity с оригиналом: fronting-пул/ротация/бэкофф, CF-worker пул, over-read буфер FakeTLS, PROXY peek без заголовка, censor доменов, LAN IP для `0.0.0.0`).
 
 CI (`.github/workflows/`): `build.yml` + `release.yml`.
 
